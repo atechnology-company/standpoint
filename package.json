@@ -1,7 +1,11 @@
 {
 	"name": "standpoint",
 	"private": true,
-	"version": "0.0.1",
+	"version": "0.1.0-dev",
+	"author": {
+		"name": "atechnology company",
+		"email": "imhere@atechnology.company"
+	},
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
@@ -24,6 +28,7 @@
 		"@tailwindcss/vite": "^4.0.0",
 		"@testing-library/jest-dom": "^6.6.3",
 		"@testing-library/svelte": "^5.2.4",
+		"@types/node": "^24.0.1",
 		"eslint": "^9.18.0",
 		"eslint-config-prettier": "^10.0.1",
 		"eslint-plugin-svelte": "^3.0.0",
@@ -44,5 +49,10 @@
 		"onlyBuiltDependencies": [
 			"esbuild"
 		]
+	},
+	"dependencies": {
+		"@tailwindcss/cli": "^4.1.8",
+		"dotenv": "^16.5.0",
+		"shadcn-svelte": "^0.14.2"
 	}
 }

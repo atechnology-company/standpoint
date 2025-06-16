@@ -1,1 +1,15 @@
 @import 'tailwindcss';
+
+/* Custom shapes for poll types */
+.pentagon {
+	clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
+}
+
+.triangle {
+	width: 0 !important;
+	height: 0 !important;
+	border-left: 12px solid transparent;
+	border-right: 12px solid transparent;
+	border-bottom: 20px solid currentColor;
+	background: transparent !important;
+}

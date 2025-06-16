@@ -1,0 +1,13 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"command": "cd src-sanic && python3 main.py",
+			"group": "test",
+			"isBackground": true,
+			"label": "Run Sanic Backend Server",
+			"problemMatcher": [],
+			"type": "shell"
+		}
+	]
+}

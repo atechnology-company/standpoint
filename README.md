@@ -1,6 +1,9 @@
 # this is standpoint
+
 ---
-*an atechnology company project*
+
+_an atechnology company project_
+
 ## Imagine this
 
 You have a set of things, and you want to show how much you like each item with your friends. What do you do?
@@ -14,3 +17,14 @@ Every single person born in the age of the New Internet can relate to this, and 
 I want to make an app that people actually find useful and fun, that is made with modern day technology for a modern age of people that do want a purpose-built tool that is expressive and doesn’t look like it stopped evolving since 2012. I also want to make sure that its done in the most efficient, beautiful manner that exceeds your expectations on every open, something that goes against design norms to create a piece of art in an user interface that is fun to use.
 
 Standpoint is a platform built for the New Internet centered around sharing opinions and creating tierlists. AI-powered, blazing quick and literally just my school project.
+
+## standpoint is made with
+
+- svelte
+- tailwindcss
+- sanic
+- pydantic
+
+# run dev server
+- pnpm dev
+- source src-sanic/bin/activate && python3 src-sanic/main.py
