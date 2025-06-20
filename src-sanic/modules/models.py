@@ -42,17 +42,28 @@ class PollResponse(BaseModel):
 class TierCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     position: float = Field(..., description="Position for dynamic tierlists (0.0 to 1.0)")
+
+class TierItem(BaseModel):
+    id: str = Field(..., description="Unique identifier for the item")
+    text: str = Field(..., min_length=1, max_length=200, description="Display text for the item")
+    image: Optional[str] = Field(None, description="Image URL if item has an image")
+    type: Literal["text", "image", "search"] = Field(default="text", description="Type of item")
+    position: Optional[dict] = Field(None, description="Position for dynamic mode {x: float, y: float}")
+    size: Optional[dict] = Field(None, description="Size for dynamic mode {width: float, height: float}")
+    naturalSize: Optional[dict] = Field(None, description="Natural image size {width: float, height: float}")
     
 class ItemPlacement(BaseModel):
     item_id: str
     tier_position: float = Field(..., description="Position within tier (0.0 to 1.0 for dynamic, tier index for classic)")
+    position: Optional[dict] = Field(None, description="2D position for dynamic mode {x: float, y: float}")
+    size: Optional[dict] = Field(None, description="Item size for dynamic mode {width: float, height: float}")
     
 class TierListCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=1000)
     list_type: Literal["classic", "dynamic"] = Field(..., description="Classic = discrete tiers, Dynamic = continuous positioning")
     tiers: List[TierCreate] = Field(..., min_items=2, max_items=10)
-    items: List[str] = Field(..., min_items=1, description="Available items to rank")
+    items: List[TierItem] = Field(..., min_items=1, description="Available items to rank with full data")
     
 class TierListUpdate(BaseModel):
     item_placements: List[ItemPlacement] = Field(..., description="Updated positions of items")
@@ -63,7 +74,7 @@ class TierListResponse(BaseModel):
     description: Optional[str]
     list_type: str
     tiers: List[TierCreate]
-    items: List[str]
+    items: List[TierItem]
     item_placements: List[ItemPlacement]
     created_at: str 
     

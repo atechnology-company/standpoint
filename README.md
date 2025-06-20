@@ -28,3 +28,9 @@ Standpoint is a platform built for the New Internet centered around sharing opin
 # run dev server
 - pnpm dev
 - source src-sanic/bin/activate && python3 src-sanic/main.py
+
+### v0.1.1
+- added proper tier list viewing
+- revised backend to work with posting tierlists
+- revised google images fetching to work with this project
+- seperated sidebars for tierlist and polls

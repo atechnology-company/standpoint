@@ -1,7 +1,7 @@
 from sanic import Blueprint
 from sanic.response import json
 from pydantic import ValidationError
-from modules.models import TierListCreate, TierListResponse, TierListUpdate, ItemPlacement, TierCreate
+from modules.models import TierListCreate, TierListResponse, TierListUpdate, ItemPlacement, TierCreate, TierItem
 from datetime import datetime
 
 tierlists_bp = Blueprint("tierlists", url_prefix="/api/tierlists")
@@ -24,7 +24,7 @@ async def create_tierlist(request):
             "description": tierlist_data.description,
             "list_type": tierlist_data.list_type,
             "tiers": [tier.model_dump() for tier in tierlist_data.tiers],
-            "items": tierlist_data.items,
+            "items": [item.model_dump() for item in tierlist_data.items],
             "created_at": datetime.utcnow().isoformat()
         }
 
@@ -147,3 +147,21 @@ async def remove_item_from_tierlist(request, tierlist_id: int, item_name: str):
         ]
     
     return json({"message": "Item removed", "item": item_name})
+
+@tierlists_bp.delete("/<tierlist_id:int>")
+async def delete_tierlist(request, tierlist_id: int):
+    """Delete a tier list"""
+    global tierlists_storage, tierlist_placements
+    
+    tierlist = next((t for t in tierlists_storage if t["id"] == tierlist_id), None)
+    if not tierlist:
+        return json({"error": "Tier list not found"}, status=404)
+    
+    # Remove from storage
+    tierlists_storage = [t for t in tierlists_storage if t["id"] != tierlist_id]
+    
+    # Remove placements
+    if tierlist_id in tierlist_placements:
+        del tierlist_placements[tierlist_id]
+    
+    return json({"message": "Tier list deleted successfully"})

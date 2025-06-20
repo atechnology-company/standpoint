@@ -19,6 +19,10 @@
 		poll.gradients.colors = colors.slice(0, poll.customOptions.length);
 		onUpdate(poll);
 	}
+
+	$: if (poll.responseType) {
+		onUpdate(poll);
+	}
 </script>
 
 <!-- Response Type Selection -->
@@ -56,6 +60,7 @@
 				<input
 					type="color"
 					bind:value={poll.gradients.colors[index]}
+					on:input={() => onUpdate(poll)}
 					class="h-12 w-12 cursor-pointer rounded-lg border border-gray-600 bg-transparent"
 					title="Choose color for {option}"
 				/>
@@ -79,7 +84,7 @@
 	<div class="mb-4 flex items-center justify-between">
 		<span class="block text-sm font-medium text-white/90">Background Gradient</span>
 		<label class="relative inline-flex cursor-pointer items-center">
-			<input type="checkbox" bind:checked={poll.gradients.enabled} class="peer sr-only" />
+			<input type="checkbox" bind:checked={poll.gradients.enabled} on:change={() => onUpdate(poll)} class="peer sr-only" />
 			<div class="peer h-6 w-11 rounded-full bg-gray-600 peer-checked:bg-[#ff5705] peer-focus:ring-4 peer-focus:ring-[#ff5705]/20 peer-focus:outline-none after:absolute after:top-[2px] after:left-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"></div>
 		</label>
 	</div>

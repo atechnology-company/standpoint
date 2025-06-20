@@ -37,17 +37,29 @@ export interface TierCreate {
 	position: number;
 }
 
+export interface TierItem {
+	id: string;
+	text: string;
+	image?: string;
+	type: 'text' | 'image' | 'search';
+	position?: { x: number; y: number };
+	size?: { width: number; height: number };
+	naturalSize?: { width: number; height: number };
+}
+
 export interface ItemPlacement {
 	item_id: string;
 	tier_position: number;
+	position?: { x: number; y: number };
+	size?: { width: number; height: number };
 }
 
 export interface TierListCreate {
 	title: string;
 	description?: string;
 	list_type?: 'classic' | 'dynamic';
-	tiers: TierCreate[] | string[];
-	items: string[];
+	tiers: TierCreate[];
+	items: TierItem[];
 }
 
 export interface TierListUpdate {
@@ -60,7 +72,7 @@ export interface TierListResponse {
 	description?: string;
 	list_type: string;
 	tiers: TierCreate[];
-	items: string[];
+	items: TierItem[];
 	item_placements: ItemPlacement[];
 	created_at: string;
 }
@@ -155,6 +167,12 @@ class ApiClient {
 		return this.request(`/api/tierlists/${tierListId}/placements`, {
 			method: 'PUT',
 			body: JSON.stringify(update)
+		});
+	}
+
+	async deleteTierList(tierListId: number): Promise<void> {
+		return this.request(`/api/tierlists/${tierListId}`, {
+			method: 'DELETE'
 		});
 	}
 }

@@ -79,23 +79,41 @@
 		const optionCounts = { line: 2, triangle: 3, square: 4, pentagon: 5 };
 		const targetCount = optionCounts[poll.responseType];
 
-		if (poll.customOptions.length < targetCount) {
-			for (let i = poll.customOptions.length; i < targetCount; i++) {
-				poll.customOptions.push(`Option ${String.fromCharCode(65 + i)}`);
+		let newCustomOptions = [...poll.customOptions];
+		let newColors = [...poll.gradients.colors];
+
+		if (newCustomOptions.length < targetCount) {
+			for (let i = newCustomOptions.length; i < targetCount; i++) {
+				newCustomOptions.push(`Option ${String.fromCharCode(65 + i)}`);
 			}
 		} else {
-			poll.customOptions = poll.customOptions.slice(0, targetCount);
+			newCustomOptions = newCustomOptions.slice(0, targetCount);
 		}
 
 		const defaultColors = ['#ff5705', '#0066cc', '#00ff88', '#ff4488', '#ffaa00'];
-		while (poll.gradients.colors.length < targetCount) {
-			poll.gradients.colors.push(defaultColors[poll.gradients.colors.length % defaultColors.length]);
+		while (newColors.length < targetCount) {
+			newColors.push(defaultColors[newColors.length % defaultColors.length]);
 		}
-		poll.gradients.colors = poll.gradients.colors.slice(0, targetCount);
+		newColors = newColors.slice(0, targetCount);
+
+		poll = {
+			...poll,
+			customOptions: newCustomOptions,
+			gradients: {
+				...poll.gradients,
+				colors: newColors
+			}
+		};
 	}
 
 	function updateOption(index: number, value: string) {
-		poll.customOptions[index] = value;
+		const newCustomOptions = [...poll.customOptions];
+		newCustomOptions[index] = value;
+		
+		poll = {
+			...poll,
+			customOptions: newCustomOptions
+		};
 	}
 
 	async function vote(position: number, position2D?: { x: number; y: number }) {

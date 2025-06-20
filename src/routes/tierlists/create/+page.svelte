@@ -10,6 +10,8 @@
 		image?: string;
 		type: 'text' | 'image' | 'search';
 		position?: { x: number; y: number }; 
+		size?: { width: number; height: number };
+		naturalSize?: { width: number; height: number };
 	}
 
 	interface Tier {
@@ -17,6 +19,13 @@
 		name: string;
 		color: string;
 		items: TierItem[];
+	}
+
+	interface itemPlacement {
+		item_id: string;
+		tier_position: number;
+		position?: { x: number; y: number };
+		size?: { width: number; height: number };
 	}
 
 	// States
@@ -53,6 +62,10 @@
 	let searchResults: any[] = [];
 	let searching = false;
 	let searchTimeout: any;
+	let searchPage = 1;
+	let hasMoreResults = true;
+	let loadingMore = false;
+	let scrollLoadTimeout: any;
 
 	// Modal state
 	let showColorPicker = false;
@@ -73,15 +86,27 @@
 	let dragOverPosition: number | null = null;
 	let isDragging = false;
 
-	// === CONSTANTS ===
+	// Responsive layout state
+	let windowWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
+	let windowHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+
+	// Dynamic mode resize state
+	let isResizing = false;
+	let resizingItemId: string | null = null;
+	let resizeStartX = 0;
+	let resizeStartY = 0;
+	let resizeStartWidth = 0;
+	let resizeStartHeight = 0;
+
+	// Color definitions for tiers
 	const tierColors = [
 		'#ff7f7f', '#ffbf7f', '#ffff7f', '#bfff7f', '#7fff7f',
 		'#7fffff', '#7fbfff', '#7f7fff', '#bf7fff', '#ff7fff'
 	];
 
-	// === UTILITY FUNCTIONS ===
-	
-	/** Dims a hex color by a given factor for better background contrast */
+	// Utility Functions
+
+	// Dims a hex color by a given factor for better background contrast
 	function dimColor(color: string, factor: number = 0.7): string {
 		const hex = color.replace('#', '');
 		const r = Math.round(parseInt(hex.substr(0, 2), 16) * factor);
@@ -90,16 +115,52 @@
 		return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 	}
 
-	/** Generates dynamic gradient background based on tier colors */
-	function getDynamicGradient(): string {
-		if (tierList.tiers.length <= 1) return 'background: linear-gradient(to bottom, #2d7a2d, #7a2d2d);';
+	// Calculates optimal grid layout for tier items based on height and wrapping
+	function getTierItemsStyle(itemCount: number): { gridStyle: string; itemHeight: string; itemWidth: string; margin: string } {
+		if (itemCount === 0) return { gridStyle: '', itemHeight: '8rem', itemWidth: '8rem', margin: '0' };
 		
-		const colors = tierList.tiers.map(tier => dimColor(tier.color, 0.6));
-		const gradientStops = colors
-			.map((color, index) => `${color} ${(index / (colors.length - 1)) * 100}%`)
-			.join(', ');
+		// Calculate available height per tier dynamically
+		const totalTiers = tierList.tiers.length;
+		const topBarHeight = 80;
+		const availableScreenHeight = windowHeight;
+		const tierContainerHeight = Math.max(120, Math.floor((availableScreenHeight - topBarHeight) / totalTiers) - 32);
 		
-		return `background: linear-gradient(to bottom, ${gradientStops});`;
+		const gap = 16; 
+		const margin = 8;
+		
+		// Available width
+		const availableWidth = windowWidth - 320 - 64; 
+		
+		// Try full height first
+		let itemHeight = Math.max(80, tierContainerHeight - (gap * 2));
+		let itemWidth = itemHeight; // square □
+		
+		// Calculate how many full-height square items can fit in one row
+		const itemsPerRowFullHeight = Math.floor((availableWidth + gap) / (itemWidth + gap));
+		
+		// Check if all items fit in one row at full height
+		if (itemCount <= itemsPerRowFullHeight) {
+			return {
+				gridStyle: `grid-template-columns: repeat(${itemCount}, ${itemWidth}px); height: ${tierContainerHeight}px;`,
+				itemHeight: `${itemHeight}px`,
+				itemWidth: `${itemWidth}px`,
+				margin: '0'
+			};
+		} else {
+			const maxRows = 2;
+			const halfHeight = Math.max(40, Math.floor((tierContainerHeight - gap * (maxRows - 1)) / maxRows) - margin);
+			const halfItemWidth = halfHeight;
+			
+			// Calculate items per row at half height
+			const itemsPerRowHalfHeight = Math.floor((availableWidth + gap) / (halfItemWidth + gap));
+			
+			return {
+				gridStyle: `grid-template-columns: repeat(${itemsPerRowHalfHeight}, ${halfItemWidth}px); height: ${tierContainerHeight}px;`,
+				itemHeight: `${halfHeight}px`,
+				itemWidth: `${halfItemWidth}px`,
+				margin: `${margin}px`
+			};
+		}
 	}
 
 	/** Sets focus on input element after DOM update */
@@ -128,7 +189,7 @@
 		return null;
 	}
 
-	/** Updates item properties across all tiers and unassigned items */
+	// Updates item properties across all tiers and unassigned items
 	function updateItemEverywhere(itemId: string, updates: Partial<TierItem>) {
 		tierList.tiers = tierList.tiers.map(tier => ({
 			...tier,
@@ -142,7 +203,7 @@
 		);
 	}
 
-	/** Removes item from all locations */
+	// Removes item from all locations
 	function removeItemEverywhere(itemId: string) {
 		tierList.tiers = tierList.tiers.map(tier => ({
 			...tier,
@@ -245,6 +306,12 @@
 		targetPosition = null;
 		addItemType = 'text';
 		clearTimeout(searchTimeout);
+		clearTimeout(scrollLoadTimeout);
+		searchQuery = '';
+		searchResults = [];
+		searchPage = 1;
+		hasMoreResults = true;
+		loadingMore = false;
 	}
 
 	// Item Editing
@@ -419,7 +486,7 @@
 
 	// Item Creation
 
-	/** Creates initial position for dynamic mode items */
+	// Creates initial position for dynamic mode items
 	function createItemPosition(tierId?: string): { x: number; y: number } | undefined {
 		if (tierList.type !== 'dynamic') return undefined;
 		
@@ -439,7 +506,7 @@
 		};
 	}
 
-	/** Adds item to appropriate location (tier or unassigned) */
+	// Adds item to appropriate location (tier or unassigned)
 	function addItemToLocation(item: TierItem) {
 		if (targetTierId) {
 			tierList.tiers = tierList.tiers.map(tier =>
@@ -490,35 +557,95 @@
 			position: createItemPosition(targetTierId || undefined)
 		};
 
+		// Load natural image size for dynamic mode
+		if (tierList.type === 'dynamic') {
+			loadImageNaturalSize(newItem);
+		}
+
 		addItemToLocation(newItem);
 		closeAddItemModal();
 	}
 
 	// Search Functionality
 
-	async function searchImages() {
+	async function searchImages(reset = true) {
 		if (!searchQuery.trim()) return;
 
-		searching = true;
+		console.log('searchImages called', { reset, searchQuery, searchPage, hasMoreResults, loadingMore, searching });
+
+		if (reset) {
+			searching = true;
+			searchResults = [];
+			searchPage = 1;
+			hasMoreResults = true;
+		} else {
+			loadingMore = true;
+		}
+
 		try {
-			const results = await searchGoogleImages(searchQuery, 12);
-			searchResults = results.map(result => ({
+			// Calculate proper start index for pagination  
+			const startIndex = reset ? 1 : (searchPage * 10) + 1;
+			console.log('Searching with startIndex:', startIndex);
+			
+			const results = await searchGoogleImages(searchQuery, 10, startIndex);
+			console.log('Search results received:', results.length);
+			
+			const newResults = results.map(result => ({
 				url: result.image?.thumbnailLink || result.link,
 				fullUrl: result.link,
 				title: result.title,
-				snippet: result.snippet
+				snippet: result.snippet,
+				id: `${searchQuery}-${startIndex}-${result.title}` // Unique ID to prevent duplicates
 			}));
+
+			if (reset) {
+				searchResults = newResults;
+				searchPage = 1;
+			} else {
+				// Filter out any potential duplicates based on URL
+				const existingUrls = new Set(searchResults.map(r => r.url));
+				const uniqueNewResults = newResults.filter(r => !existingUrls.has(r.url));
+				console.log('Adding unique results:', uniqueNewResults.length, 'out of', newResults.length);
+				searchResults = [...searchResults, ...uniqueNewResults];
+				searchPage++;
+			}
+
+			// With proper API pagination, we have more results if we got the full amount requested
+			hasMoreResults = newResults.length === 10;
+			console.log('hasMoreResults:', hasMoreResults, 'newResults.length:', newResults.length, 'searchResults.length:', searchResults.length);
+
 		} catch (err) {
 			console.error('Search error:', err);
-			// Fallback results for development
-			searchResults = Array.from({ length: 6 }, (_, i) => ({
-				url: `https://picsum.photos/seed/fallback-${i + 1}/150/100`,
-				fullUrl: `https://picsum.photos/seed/fallback-${i + 1}/300/200`,
-				title: `${searchQuery} ${i + 1}`,
-				snippet: 'Fallback result'
+			// Fallback results for development with pagination simulation
+			const fallbackStartIndex = reset ? 0 : searchResults.length;
+			const fallbackResults = Array.from({ length: 6 }, (_, i) => ({
+				url: `https://picsum.photos/seed/fallback-${searchQuery}-${fallbackStartIndex + i + 1}/150/100`,
+				fullUrl: `https://picsum.photos/seed/fallback-${searchQuery}-${fallbackStartIndex + i + 1}/300/200`,
+				title: `${searchQuery} ${fallbackStartIndex + i + 1}`,
+				snippet: 'Fallback result',
+				id: `fallback-${searchQuery}-${fallbackStartIndex + i + 1}`
 			}));
+			
+			if (reset) {
+				searchResults = fallbackResults;
+				searchPage = 1;
+			} else {
+				searchResults = [...searchResults, ...fallbackResults];
+				searchPage++;
+			}
+			
+			hasMoreResults = true; // Keep fallback working
 		} finally {
 			searching = false;
+			loadingMore = false;
+		}
+	}
+
+	async function loadMoreImages() {
+		console.log('loadMoreImages called', { loadingMore, hasMoreResults, searchQuery: searchQuery.trim(), searchResultsLength: searchResults.length });
+		if (!loadingMore && hasMoreResults && searchQuery.trim()) {
+			console.log('Loading more images...');
+			await searchImages(false);
 		}
 	}
 
@@ -546,15 +673,47 @@
 
 			const tierListData = {
 				title: tierList.title,
-				list_type: 'classic' as const,
+				list_type: tierList.type, // Use actual type instead of hardcoded 'classic'
 				tiers: tierList.tiers.map((tier, index) => ({
 					name: tier.name,
 					position: index / tierList.tiers.length
 				})),
-				items: allItems.map(item => item.text)
+				items: allItems // Send full item objects instead of just text
 			};
 
-			await apiClient.createTierList(tierListData);
+			const createdTierList = await apiClient.createTierList(tierListData);
+			
+			// After creating the tier list, save item placements
+			const itemPlacements: itemPlacement[] = [];
+
+			tierList.tiers.forEach((tier, tierIndex) => {
+				tier.items.forEach(item => {
+					const placement: any = {
+						item_id: item.id,
+						tier_position: tierIndex
+					};
+					
+					// For dynamic mode, include position and size
+					if (tierList.type === 'dynamic') {
+						if (item.position) {
+							placement.position = item.position;
+						}
+						if (item.size) {
+							placement.size = item.size;
+						}
+					}
+					
+					itemPlacements.push(placement);
+				});
+			});
+			
+			// Save placements if there are any
+			if (itemPlacements.length > 0) {
+				await apiClient.updateTierListPlacements(createdTierList.id, {
+					item_placements: itemPlacements
+				});
+			}
+
 			window.location.href = '/tierlists';
 		} catch (err) {
 			error = 'Failed to create tier list';
@@ -564,13 +723,147 @@
 		}
 	}
 
-	// Lifecycle
+	/** Generates dynamic gradient background based on tier colors */
+	function getDynamicGradient(): string {
+		if (tierList.tiers.length <= 1) return 'background: linear-gradient(to bottom, #2d7a2d, #7a2d2d);';
+		
+		const colors = tierList.tiers.map(tier => dimColor(tier.color, 0.6));
+		const gradientStops = colors
+			.map((color, index) => `${color} ${(index / (colors.length - 1)) * 100}%`)
+			.join(', ');
+		
+		return `background: linear-gradient(to bottom, ${gradientStops});`;
+	}
 
+	function startResize(event: MouseEvent, itemId: string, currentWidth: number, currentHeight: number) {
+		if (tierList.type !== 'dynamic') return;
+		
+		event.stopPropagation();
+		event.preventDefault();
+		
+		isResizing = true;
+		resizingItemId = itemId;
+		resizeStartX = event.clientX;
+		resizeStartY = event.clientY;
+		resizeStartWidth = currentWidth;
+		resizeStartHeight = currentHeight;
+		
+		document.addEventListener('mousemove', handleResize);
+		document.addEventListener('mouseup', stopResize);
+	}
+
+	function handleResize(event: MouseEvent) {
+		if (!isResizing || !resizingItemId) return;
+		
+		const deltaX = event.clientX - resizeStartX;
+		const deltaY = event.clientY - resizeStartY;
+		
+		// Calculate new size (maintaining minimum size)
+		const newWidth = Math.max(50, resizeStartWidth + deltaX);
+		const newHeight = Math.max(50, resizeStartHeight + deltaY);
+		
+		// Update item size
+		updateItemEverywhere(resizingItemId, {
+			size: { width: newWidth, height: newHeight }
+		});
+	}
+
+	function stopResize() {
+		isResizing = false;
+		resizingItemId = null;
+		document.removeEventListener('mousemove', handleResize);
+		document.removeEventListener('mouseup', stopResize);
+	}
+
+	function getItemSize(item: TierItem): { width: number; height: number } {
+		if (item.size) {
+			return item.size;
+		}
+		
+		// Default sizes based on content type
+		if (item.image && item.naturalSize) {
+			// Use natural image size, scaled to reasonable default
+			const scale = Math.min(200 / item.naturalSize.width, 200 / item.naturalSize.height, 1);
+			return {
+				width: item.naturalSize.width * scale,
+				height: item.naturalSize.height * scale
+			};
+		} else if (item.image) {
+			// Default square for images without natural size
+			return { width: 128, height: 128 };
+		} else {
+			// Text items - calculate based on content length
+			const textLength = item.text.length;
+			const minWidth = 80;
+			const charWidth = 8;
+			const padding = 24;
+			return {
+				width: Math.max(minWidth, Math.min(textLength * charWidth + padding, 300)),
+				height: 40
+			};
+		}
+	}
+
+	function getTextStyle(item: TierItem): string {
+		if (!item.size || item.image) return '';
+		
+		// Calculate font size based on container size for text items
+		const { width, height } = item.size;
+		const minFontSize = 10;
+		const maxFontSize = 32;
+		
+		// More responsive font size calculation
+		// Base size on the smaller dimension to ensure text fits well
+		const textLength = item.text.length;
+		const avgCharWidth = 0.6; // Average character width ratio to font size
+		
+		// Calculate font size that would fit the text width-wise
+		const maxFontForWidth = (width * 0.9) / (textLength * avgCharWidth);
+		// Calculate font size that would fit height-wise (allow for some padding)
+		const maxFontForHeight = height * 0.4;
+		
+		// Use the smaller of the two, bounded by min/max
+		const optimalFontSize = Math.min(maxFontForWidth, maxFontForHeight);
+		const fontSize = Math.max(minFontSize, Math.min(maxFontSize, optimalFontSize));
+		
+		return `font-size: ${Math.round(fontSize)}px; line-height: ${Math.round(fontSize * 1.2)}px;`;
+	}
+
+	function loadImageNaturalSize(item: TierItem) {
+		if (!item.image) return;
+		
+		const img = new Image();
+		img.onload = () => {
+			updateItemEverywhere(item.id, {
+				naturalSize: { width: img.naturalWidth, height: img.naturalHeight }
+			});
+		};
+		img.src = item.image;
+	}
+	
+	// Lifecycle
+	
 	onMount(() => {
 		// Prevent page scrolling when editing
 		document.body.style.overflow = 'hidden';
+
+		// Add window resize listener for responsive layout
+		const handleResize = () => {
+			if (typeof window !== 'undefined') {
+				windowWidth = window.innerWidth;
+				windowHeight = window.innerHeight;
+			}
+		};
+		
+		if (typeof window !== 'undefined') {
+			window.addEventListener('resize', handleResize);
+		}
+
 		return () => {
 			document.body.style.overflow = 'auto';
+			if (typeof window !== 'undefined') {
+				window.removeEventListener('resize', handleResize);
+			}
 		};
 	});
 </script>
@@ -713,46 +1006,66 @@
 							</div>
 
 							{#if tier.items.length > 0}
-								<div class="grid grid-cols-10 gap-4 pr-80">
-									{#each tier.items as item, itemIndex (item.id)}						<!-- svelte-ignore a11y-no-static-element-interactions -->
-						<div 
-							class="group/item bg-black bg-opacity-20 rounded-lg p-3 shadow-sm flex flex-col items-center space-y-2 hover:bg-opacity-30 transition-colors relative cursor-pointer {isDragging && draggedItem?.id === item.id ? 'opacity-50' : ''}"
-							draggable="true"
-							on:dragstart={(e) => handleDragStart(e, item)}
-							on:dragend={handleDragEnd}
-							on:dragover={(e) => handleDragOver(e, tier.id, itemIndex)}
-							on:drop={(e) => handleDrop(e, tier.id, itemIndex)}
-							on:click|stopPropagation={() => startInlineEdit(item)}
-							on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && startInlineEdit(item)}
-							on:contextmenu={(e) => showItemContextMenu(item, e)}
-							role="button"
-							tabindex="0"
-							aria-label="Edit item {item.text}"
-						>
+								{@const itemsStyle = getTierItemsStyle(tier.items.length)}
+								<div 
+									class="grid gap-4 pr-80 items-center"
+									style="{itemsStyle.gridStyle}"
+								>
+									{#each tier.items as item, itemIndex (item.id)}
+										<!-- svelte-ignore a11y-no-static-element-interactions -->
+										<div 
+											class="group/item rounded-lg shadow-sm hover:shadow-lg transition-shadow relative cursor-pointer overflow-hidden {isDragging && draggedItem?.id === item.id ? 'opacity-50' : ''}"
+											style="{item.image ? `background-image: url('${item.image}'); background-size: cover; background-position: center;` : 'background: linear-gradient(135deg, #1f2937, #374151);'} height: {itemsStyle.itemHeight}; width: {itemsStyle.itemWidth}; margin: {itemsStyle.margin};"
+											draggable="true"
+											on:dragstart={(e) => handleDragStart(e, item)}
+											on:dragend={handleDragEnd}
+											on:dragover={(e) => handleDragOver(e, tier.id, itemIndex)}
+											on:drop={(e) => handleDrop(e, tier.id, itemIndex)}
+											on:click|stopPropagation={() => startInlineEdit(item)}
+											on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && startInlineEdit(item)}
+											on:contextmenu={(e) => showItemContextMenu(item, e)}
+											role="button"
+											tabindex="0"
+											aria-label="Edit item {item.text}"
+										>
+											<!-- Gradient overlay -->
+											{#if item.image}
+												<div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"></div>
+											{/if}
+											
 											<!-- Delete button -->
 											<button
-												class="absolute -top-2 -left-2 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover/item:opacity-100 transition-opacity z-10"
+												class="absolute top-1 right-1 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover/item:opacity-100 transition-opacity z-20"
 												on:click|stopPropagation={() => deleteItem(item.id)}
 												title="Delete item"
 											>
 												<span class="material-symbols-outlined text-sm">close</span>
 											</button>
+											
 											{#if editingItemId === item.id}
-												<input
-													id="inline-edit-{item.id}"
-													class="w-full bg-transparent border-none outline-none text-center text-sm font-medium text-white"
-													bind:value={inlineEditText}
-													on:blur={finishInlineEdit}
-													on:keydown={(e) => {
-														if (e.key === 'Enter') finishInlineEdit();
-														if (e.key === 'Escape') cancelInlineEdit();
-													}}
-												/>
+												<div class="absolute inset-0 flex items-center justify-center p-2 z-10">
+													<input
+														id="inline-edit-{item.id}"
+														class="w-full bg-black/50 border border-white/30 rounded px-2 py-1 outline-none text-center text-sm font-medium text-white"
+														bind:value={inlineEditText}
+														on:blur={finishInlineEdit}
+														on:keydown={(e) => {
+															if (e.key === 'Enter') finishInlineEdit();
+															if (e.key === 'Escape') cancelInlineEdit();
+														}}
+													/>
+												</div>
 											{:else}
-												{#if item.image}
-													<img src={item.image} alt={item.text} class="w-16 h-16 object-cover rounded" />
+												<!-- Text positioning - center for text-only items, bottom-left for image items -->
+												{#if item.type === 'text' && !item.image}
+													<div class="absolute inset-0 flex items-center justify-center p-2 z-10">
+														<span class="text-sm font-medium text-white text-center leading-tight">{item.text}</span>
+													</div>
+												{:else}
+													<div class="absolute bottom-2 left-2 z-10">
+														<span class="text-sm font-medium text-white drop-shadow-lg">{item.text}</span>
+													</div>
 												{/if}
-												<span class="text-sm text-center font-medium text-white">{item.text}</span>
 											{/if}
 											
 											<!-- Drop zone indicator -->
@@ -883,11 +1196,12 @@
 						{@const y = item.position?.y ?? (item as any)._defaultY ?? 0.5}
 						{@const isEditing = editingItemId === item.id}
 						{@const isDragged = isDragging && draggedItem?.id === item.id}
+						{@const itemSize = getItemSize(item)}
 						
 						<!-- svelte-ignore a11y-no-static-element-interactions -->
 						<div 
-							class="absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer rounded-lg bg-black bg-opacity-30 p-3 shadow-lg transition-all hover:bg-opacity-50 hover:shadow-xl group/item {isDragged ? 'opacity-50' : ''}"
-							style="left: {x * 100}%; top: {y * 100}%;"
+							class="absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer rounded-lg shadow-lg transition-all hover:shadow-xl group/item overflow-hidden {isDragged ? 'opacity-50' : ''}"
+							style="left: {x * 100}%; top: {y * 100}%; width: {itemSize.width}px; height: {itemSize.height}px; {item.image ? `background-image: url('${item.image}'); background-size: cover; background-position: center;` : item.type === 'text' ? 'background: linear-gradient(135deg, #374151, #4b5563); display: flex; align-items: center; justify-content: center;' : 'background: linear-gradient(135deg, #1f2937, #374151);'}"
 							draggable="true"
 							on:dragstart={(e) => handleDragStart(e, item)}
 							on:dragend={handleDragEnd}
@@ -898,31 +1212,51 @@
 							tabindex="0"
 							aria-label="Edit item {item.text}"
 						>
+							<!-- Gradient overlay for images -->
+							{#if item.image}
+								<div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"></div>
+							{/if}
+							
 							<!-- Delete button -->
 							<button
-								class="absolute -top-2 -left-2 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover/item:opacity-100 transition-opacity z-10"
+								class="absolute top-1 right-1 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover/item:opacity-100 transition-opacity z-20"
 								on:click|stopPropagation={() => deleteItem(item.id)}
 								title="Delete item"
 							>
 								<span class="material-symbols-outlined text-sm">close</span>
 							</button>
 							
+							<!-- Resize handle -->
+							<div
+								class="absolute bottom-0 right-0 w-4 h-4 bg-white/20 hover:bg-white/40 cursor-se-resize opacity-0 group-hover/item:opacity-100 transition-opacity z-20"
+								style="clip-path: polygon(100% 0%, 0% 100%, 100% 100%);"
+								on:mousedown={(e) => startResize(e, item.id, itemSize.width, itemSize.height)}
+								title="Resize"
+							></div>
+							
 							{#if isEditing}
-								<input
-									id="inline-edit-{item.id}"
-									class="w-full bg-transparent border-none outline-none text-center text-sm font-medium text-white"
-									bind:value={inlineEditText}
-									on:blur={finishInlineEdit}
-									on:keydown={(e) => {
-										if (e.key === 'Enter') finishInlineEdit();
-										if (e.key === 'Escape') cancelInlineEdit();
-									}}
-								/>
+								<div class="absolute inset-0 flex items-center justify-center p-2 z-10">
+									<input
+										id="inline-edit-{item.id}"
+										class="w-full bg-black/50 border border-white/30 rounded px-2 py-1 outline-none text-center text-sm font-medium text-white"
+										bind:value={inlineEditText}
+										on:blur={finishInlineEdit}
+										on:keydown={(e) => {
+											if (e.key === 'Enter') finishInlineEdit();
+											if (e.key === 'Escape') cancelInlineEdit();
+										}}
+									/>
+								</div>
+							{:else if item.type === 'text' && !item.image}
+								<!-- Text items - centered text with responsive sizing -->
+								<div class="absolute inset-0 flex items-center justify-center p-2 z-10">
+									<div class="text-sm font-medium text-white text-center leading-tight" style="{getTextStyle(item)}">{item.text}</div>
+								</div>
 							{:else}
-								{#if item.image}
-									<img src={item.image} alt={item.text} class="w-16 h-16 object-cover rounded mb-1" />
-								{/if}
-								<div class="text-center text-sm font-medium text-white">{item.text}</div>
+								<!-- Image items - text in bottom right -->
+								<div class="absolute bottom-1 right-1 z-10">
+									<div class="text-xs font-medium text-white drop-shadow-lg text-right leading-tight">{item.text}</div>
+								</div>
 							{/if}
 						</div>
 					{/each}
@@ -1033,13 +1367,14 @@
 				{#if addItemType === 'search'}
 					<input
 						id="quick-add-input"
-						class="w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 pr-12 text-white placeholder-gray-400 focus:ring-2 focus:ring-orange-500 focus:outline-none"
+						class="w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 pr-12 text-white placeholder-gray-400 focus:ring-2 focus:ring-orange-500 focus:outline-none {searching ? 'bg-blue-900/20 border-blue-500/50' : ''}"
 						type="text"
 						bind:value={searchQuery}
-						placeholder="Search images..."
+						placeholder="{searching ? 'Searching...' : 'Search images...'}"
+						disabled={searching}
 						on:keydown={(e) => {
 							if (e.key === 'Enter') {
-								searchImages();
+								searchImages(true);
 							}
 						}}
 						on:input={() => {
@@ -1048,8 +1383,14 @@
 								// Debounce search
 								clearTimeout(searchTimeout);
 								searchTimeout = setTimeout(() => {
-									searchImages();
-								}, 500);
+									console.log('Auto-searching for:', searchQuery); // Debug log
+									searchImages(true);
+								}, 300); // Reduced delay for better responsiveness
+							} else if (searchQuery.trim().length === 0) {
+								// Clear results when search is cleared
+								searchResults = [];
+								hasMoreResults = true;
+								searchPage = 1;
 							}
 						}}
 					/>
@@ -1073,16 +1414,21 @@
 					class="absolute right-2 top-1/2 transform -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-md transition-colors {addItemType === 'search' ? 'text-blue-400 hover:bg-blue-500 hover:bg-opacity-20' : 'text-orange-400 hover:bg-orange-500 hover:bg-opacity-20'}"
 					on:click={() => {
 						if (addItemType === 'search') {
-							searchImages();
+							searchImages(true);
 						} else {
 							addTextItem();
 						}
 					}}
 					title={addItemType === 'search' ? 'Search' : 'Add Item'}
+					disabled={searching}
 				>
-					<span class="material-symbols-outlined text-lg">
-						{addItemType === 'search' ? 'search' : 'add'}
-					</span>
+					{#if searching && addItemType === 'search'}
+						<div class="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+					{:else}
+						<span class="material-symbols-outlined text-lg">
+							{addItemType === 'search' ? 'search' : 'add'}
+						</span>
+					{/if}
 				</button>
 			</div>
 			
@@ -1098,25 +1444,110 @@
 		</div>
 
 		<!-- Search Results -->
-		{#if addItemType === 'search' && searchResults.length > 0}
-			<div class="border-t border-gray-600 p-4 max-h-64 overflow-y-auto">
-				<div class="text-sm text-gray-400 mb-3">Search Results</div>
-				<div class="grid grid-cols-3 gap-2">
-					{#each searchResults as result}
-						<button
-							class="rounded-lg border border-gray-600 p-2 transition-colors hover:bg-gray-700 hover:border-orange-400"
-							on:click={() => addSearchResult(result)}
-							title={result.title}
-						>
-							<img
-								src={result.url}
-								alt={result.title}
-								class="w-full h-16 rounded object-cover mb-1"
-								loading="lazy"
-							/>
-							<div class="text-xs text-gray-300 truncate">{result.title}</div>
-						</button>
-					{/each}
+		{#if addItemType === 'search' && (searchResults.length > 0 || searching)}
+			<div class="border-t border-gray-600 p-4">
+				<div class="flex items-center justify-between mb-3">
+					<div class="text-sm text-gray-400">Search Results</div>
+					{#if searching}
+						<div class="flex items-center space-x-2 text-blue-400">
+							<div class="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+							<span class="text-xs">Searching...</span>
+						</div>
+					{:else if loadingMore}
+						<div class="flex items-center space-x-2 text-blue-400">
+							<div class="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+							<span class="text-xs">Loading more...</span>
+						</div>
+					{:else if searchResults.length > 0}
+						<div class="text-xs text-gray-500">{searchResults.length} results</div>
+					{/if}
+				</div>
+				<div 
+					class="max-h-80 overflow-y-auto"
+					on:scroll={(e) => {
+						const target = e.currentTarget as HTMLElement;
+						if (target && !loadingMore && hasMoreResults && searchResults.length > 0 && searchQuery.trim()) {
+							// More sensitive scroll detection - trigger when 100px from bottom
+							const scrollThreshold = 100;
+							const isNearBottom = target.scrollTop + target.clientHeight >= target.scrollHeight - scrollThreshold;
+							
+							console.log('Scroll event:', {
+								scrollTop: target.scrollTop,
+								clientHeight: target.clientHeight,
+								scrollHeight: target.scrollHeight,
+								isNearBottom,
+								loadingMore,
+								hasMoreResults,
+								searchResultsLength: searchResults.length
+							});
+							
+							if (isNearBottom) {
+								console.log('Triggering load more images...');
+								loadMoreImages();
+							}
+						}
+					}}
+				>
+					<div class="grid gap-2" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
+						{#each searchResults as result}
+							<button
+								class="rounded-lg border border-gray-600 transition-colors hover:bg-gray-700 hover:border-orange-400 overflow-hidden group"
+								on:click={() => addSearchResult(result)}
+								title={result.title}
+							>
+								<div class="aspect-square relative">
+									<img
+										src={result.url}
+										alt={result.title}
+										class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+										loading="lazy"
+									/>
+									<div class="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+								</div>
+								<div class="p-2">
+									<div class="text-xs text-gray-300 truncate leading-tight">{result.title}</div>
+								</div>
+							</button>
+						{/each}
+						
+						<!-- Skeleton loading for initial search -->
+						{#if searching && searchResults.length === 0}
+							{#each Array(10) as _, i}
+								<div class="rounded-lg border border-gray-600 overflow-hidden animate-pulse" style="animation-delay: {i * 0.1}s">
+									<div class="aspect-square bg-gray-700"></div>
+									<div class="p-2">
+										<div class="h-3 bg-gray-700 rounded mb-1" style="width: {60 + Math.random() * 30}%"></div>
+										<div class="h-2 bg-gray-600 rounded" style="width: {40 + Math.random() * 40}%"></div>
+									</div>
+								</div>
+							{/each}
+						{/if}
+						
+						<!-- Load more skeleton loading -->
+						{#if loadingMore && searchResults.length > 0}
+							{#each Array(6) as _, i}
+								<div class="rounded-lg border border-gray-600 overflow-hidden animate-pulse" style="animation-delay: {i * 0.1}s">
+									<div class="aspect-square bg-gray-700"></div>
+									<div class="p-2">
+										<div class="h-3 bg-gray-700 rounded mb-1" style="width: {60 + Math.random() * 30}%"></div>
+										<div class="h-2 bg-gray-600 rounded" style="width: {40 + Math.random() * 40}%"></div>
+									</div>
+								</div>
+							{/each}
+						{/if}
+					</div>
+					
+					<!-- Load more button (fallback) -->
+					{#if searchResults.length > 0 && hasMoreResults && !loadingMore}
+						<div class="mt-4 text-center">
+							<button
+								class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-colors text-sm"
+								on:click={loadMoreImages}
+							>
+								Load More Images
+							</button>
+						</div>
+					{/if}
 				</div>
 			</div>
 		{/if}
