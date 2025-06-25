@@ -43,16 +43,20 @@
 
 	function getTierListTypeName(type: string) {
 		const names: Record<string, string> = {
-			'classic': 'Classic Grid',
-			'dynamic': 'Dynamic Canvas'
+			classic: 'Classic Grid',
+			dynamic: 'Dynamic Canvas'
 		};
 		return names[type] || 'Classic Grid';
 	}
 
 	function getTotalItems(): number {
 		if (!tierListData?.tiers) return 0;
-		return tierListData.tiers.reduce((total: number, tier: any) => total + (tier.items?.length || 0), 0) + 
-			   (tierListData.unassignedItems?.length || 0);
+		return (
+			tierListData.tiers.reduce(
+				(total: number, tier: any) => total + (tier.items?.length || 0),
+				0
+			) + (tierListData.unassignedItems?.length || 0)
+		);
 	}
 
 	function getItemsInTier(tierName: string): number {
@@ -65,7 +69,7 @@
 		if (!tierListData?.tiers) return 'None';
 		let maxItems = 0;
 		let mostPopulated = 'None';
-		
+
 		tierListData.tiers.forEach((tier: any) => {
 			const itemCount = tier.items?.length || 0;
 			if (itemCount > maxItems) {
@@ -73,16 +77,16 @@
 				mostPopulated = tier.name;
 			}
 		});
-		
+
 		return maxItems > 0 ? mostPopulated : 'None';
 	}
 
 	function getItemTypeBreakdown(): { text: number; image: number } {
 		if (!tierListData?.tiers) return { text: 0, image: 0 };
-		
+
 		let textCount = 0;
 		let imageCount = 0;
-		
+
 		// Count items in tiers
 		tierListData.tiers.forEach((tier: any) => {
 			tier.items?.forEach((item: any) => {
@@ -90,13 +94,13 @@
 				else textCount++;
 			});
 		});
-		
+
 		// Count unassigned items
 		tierListData.unassignedItems?.forEach((item: any) => {
 			if (item.image) imageCount++;
 			else textCount++;
 		});
-		
+
 		return { text: textCount, image: imageCount };
 	}
 
@@ -153,36 +157,42 @@
 					</div>
 				</div>
 
-				<!-- Tier Breakdown -->
-				<div class="mb-4">
-					<div class="mb-2 text-sm text-orange-200">Tier Breakdown</div>
-					<div class="space-y-2">
-						{#if tierListData.tiers}
-							{#each tierListData.tiers as tier}
+				<!-- Tier Breakdown (hide for dynamic tierlists) -->
+				{#if tierListData.type !== 'dynamic'}
+					<div class="mb-4">
+						<div class="mb-2 text-sm text-orange-200">Tier Breakdown</div>
+						<div class="space-y-2">
+							{#if tierListData.tiers}
+								{#each tierListData.tiers as tier}
+									<div class="flex items-center justify-between rounded bg-orange-800/30 p-2">
+										<div class="flex items-center space-x-2">
+											<div
+												class="h-3 w-3 flex-shrink-0 rounded border border-orange-300"
+												style="background-color: {tier.color || '#ff7f7f'}"
+											></div>
+											<span class="text-sm text-orange-100">{tier.name}</span>
+										</div>
+										<span class="text-sm font-bold text-white">{getItemsInTier(tier.name)}</span>
+									</div>
+								{/each}
+							{/if}
+
+							{#if tierListData.unassignedItems?.length > 0}
 								<div class="flex items-center justify-between rounded bg-orange-800/30 p-2">
 									<div class="flex items-center space-x-2">
 										<div
-											class="h-3 w-3 flex-shrink-0 rounded border border-orange-300"
-											style="background-color: {tier.color || '#ff7f7f'}"
+											class="h-3 w-3 flex-shrink-0 rounded border border-orange-300 bg-gray-500"
 										></div>
-										<span class="text-sm text-orange-100">{tier.name}</span>
+										<span class="text-sm text-orange-100">Unranked</span>
 									</div>
-									<span class="text-sm font-bold text-white">{getItemsInTier(tier.name)}</span>
+									<span class="text-sm font-bold text-white"
+										>{tierListData.unassignedItems.length}</span
+									>
 								</div>
-							{/each}
-						{/if}
-						
-						{#if tierListData.unassignedItems?.length > 0}
-							<div class="flex items-center justify-between rounded bg-orange-800/30 p-2">
-								<div class="flex items-center space-x-2">
-									<div class="h-3 w-3 flex-shrink-0 rounded border border-orange-300 bg-gray-500"></div>
-									<span class="text-sm text-orange-100">Unranked</span>
-								</div>
-								<span class="text-sm font-bold text-white">{tierListData.unassignedItems.length}</span>
-							</div>
-						{/if}
+							{/if}
+						</div>
 					</div>
-				</div>
+				{/if}
 
 				<!-- Most Populated Tier -->
 				<div class="mb-4">
@@ -201,14 +211,14 @@
 								{#each tierListData.tiers as tier}
 									{@const percentage = ((getItemsInTier(tier.name) / totalItems) * 100).toFixed(1)}
 									<div class="flex items-center space-x-2">
-										<span class="text-xs text-orange-300 w-8">{tier.name}:</span>
-										<div class="flex-1 h-2 bg-orange-900 rounded-full overflow-hidden">
-											<div 
+										<span class="w-8 text-xs text-orange-300">{tier.name}:</span>
+										<div class="h-2 flex-1 overflow-hidden rounded-full bg-orange-900">
+											<div
 												class="h-full bg-orange-300 transition-all duration-300"
 												style="width: {percentage}%"
 											></div>
 										</div>
-										<span class="text-xs text-orange-300 w-10">{percentage}%</span>
+										<span class="w-10 text-xs text-orange-300">{percentage}%</span>
 									</div>
 								{/each}
 							{/if}

@@ -34,3 +34,29 @@ Standpoint is a platform built for the New Internet centered around sharing opin
 - revised backend to work with posting tierlists
 - revised google images fetching to work with this project
 - seperated sidebars for tierlist and polls
+
+### v0.1.2
+- fixed tierlist creations
+  - converting dynamic to classic tierlists
+  - scrolling for more images in image search
+  - resizable items
+
+
+## todo
+- need to replace my server
+- make a mobile version
+- add auth
+- connect to supabase
+- add pro plan with customisation options
+  - ability to customise accent
+  - backgrounds?
+  - change fonts
+  - animations on profile pictures and names
+  - special voting animations (super reactions)
+  - profile badges
+- suggest polls, limit creation
+- ai features
+- create onboarding
+- create mainpage
+- add blockchain
+- tierlist nfts
