@@ -8,9 +8,23 @@
 	let error = '';
 	let heroSlides: any[] = [];
 
+	// Store for like counts by tierlist id
+	let likeCounts: Record<number, number> = {};
+
 	onMount(async () => {
 		await loadTierLists();
 	});
+
+	async function fetchLikeCount(tierlistId: number) {
+		try {
+			const res = await fetch(`/api/interactions/tierlist/${tierlistId}/likes`);
+			if (!res.ok) return 0;
+			const data = await res.json();
+			return data.likes || 0;
+		} catch {
+			return 0;
+		}
+	}
 
 	async function loadTierLists() {
 		try {
@@ -18,16 +32,24 @@
 			error = '';
 			tierLists = await apiClient.getTierLists();
 
-			// Create hero slides from random tierlists
+			// Fetch like counts for all tierlists
+			const likePromises = tierLists.map(async (tl) => {
+				const likes = await fetchLikeCount(tl.id);
+				likeCounts[tl.id] = likes;
+				return likes;
+			});
+			await Promise.all(likePromises);
+
+			// Create hero slides from random tierlists, using real like counts
 			if (tierLists.length > 0) {
 				heroSlides = tierLists.slice(0, 5).map((tierList, index) => ({
 					header: tierList.title,
 					author: tierList.author || 'Community',
 					date: new Date(tierList.created_at).toISOString().split('T')[0],
 					revision: 1,
-					likes: Math.floor(Math.random() * 100),
-					comments: Math.floor(Math.random() * 50),
-					forks: Math.floor(Math.random() * 20),
+					likes: likeCounts[tierList.id] || 0,
+					comments: 0,
+					forks: 0,
 					backgroundColor: ['#FFD6E0', '#FFEFB5', '#C1E7E3', '#DCEBDD', '#E2D0F9'][index % 5],
 					tierlist: tierList
 				}));
@@ -55,7 +77,7 @@
 		<Hero slides={heroSlides} />
 	{/if}
 
-	<!-- Main Content Area with proper safezone -->
+	<!-- Main Content Area -->
 	<div>
 		{#if error}
 			<div class="container mx-auto mb-4 px-6">
@@ -79,7 +101,7 @@
 				<p class="mb-6 text-gray-500">Be the first to create a tier list!</p>
 			</div>
 		{:else}
-			<!-- Full-width Sharp Grid without gaps -->
+			<!-- Full width Sharp Grid -->
 			<div
 				class="grid grid-cols-1 gap-0 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6"
 			>
@@ -111,9 +133,20 @@
 									<span>{tierList.author || 'Community'}</span>
 									<span>{new Date(tierList.created_at).toLocaleDateString()}</span>
 								</div>
-								<div class="flex gap-2 opacity-80">
-									<span>{Math.floor(Math.random() * 100)} ♥</span>
-									<span>{Math.floor(Math.random() * 20)} ✎</span>
+								<div class="flex items-center gap-2 opacity-80">
+									<span class="flex items-center gap-1">
+										<span class="material-symbols-outlined align-middle text-base">favorite</span>
+										{likeCounts[tierList.id] || 0}
+									</span>
+									<span class="flex items-center gap-1">
+										<span class="material-symbols-outlined align-middle text-base">chat_bubble</span
+										>
+										0
+									</span>
+									<span class="flex items-center gap-1">
+										<span class="material-symbols-outlined align-middle text-base">fork_right</span>
+										0
+									</span>
 								</div>
 							</div>
 
@@ -129,7 +162,12 @@
 							<div class="flex items-center justify-between text-xs opacity-80">
 								<span>{tierList.tiers?.length || 4} tiers</span>
 								<span>{tierList.items?.length || 0} items</span>
-								<span class="bg-opacity-20 bg-white px-2 py-1">
+								<span
+									class="px-2 py-1 text-white"
+									style="
+										background-color: {tierList.list_type === 'dynamic' ? '#ff570599' : '#05FFAC99'};
+									"
+								>
 									{tierList.list_type || 'Classic'}
 								</span>
 							</div>
@@ -140,7 +178,7 @@
 		{/if}
 	</div>
 
-	<!-- Sticky Create Button -->
+	<!-- Create Button -->
 	<a
 		href="/tierlists/create"
 		class="fixed right-6 bottom-6 z-50 flex h-16 w-16 items-center justify-center bg-[#ff5705] text-white shadow-lg transition-colors duration-300 hover:bg-white hover:text-[#ff5705]"

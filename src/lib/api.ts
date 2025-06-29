@@ -11,7 +11,7 @@ export interface PollCreate {
 
 export interface VoteCreate {
 	poll_id: number;
-	position: number; 
+	position: number;
 }
 
 export interface PollStats {

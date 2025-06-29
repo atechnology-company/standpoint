@@ -1,7 +1,7 @@
 {
 	"name": "standpoint",
 	"private": true,
-	"version": "0.1.2-dev",
+	"version": "0.1.3-dev",
 	"author": {
 		"name": "atechnology company",
 		"email": "imhere@atechnology.company"
@@ -53,8 +53,9 @@
 	},
 	"dependencies": {
 		"@tailwindcss/cli": "^4.1.8",
+		"canvas-confetti": "^1.9.3",
 		"dotenv": "^16.5.0",
 		"shadcn-svelte": "^0.14.2"
 	},
-	"packageManager": "npm@11.4.0"
+	"packageManager": "pnpm@10.12.3"
 }

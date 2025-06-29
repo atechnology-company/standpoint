@@ -1,5 +1,24 @@
 @import 'tailwindcss';
 
+@keyframes fadein-stagger {
+	from {
+		opacity: 0;
+		transform: translateY(16px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+.animate-fadein-suggestion {
+	animation: fadein-stagger 0.4s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.animate-fadein-image {
+	animation: fadein-stagger 0.5s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
 /* Custom shapes for poll types */
 .pentagon {
 	clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
@@ -13,3 +32,11 @@
 	border-bottom: 20px solid currentColor;
 	background: transparent !important;
 }
+
+/*.material-symbols-outlined {
+	font-variation-settings:
+		'FILL' 0,
+		'wght' 400,
+		'GRAD' 0,
+		'opsz' 24;
+		}*/

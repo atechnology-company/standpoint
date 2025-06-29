@@ -6,10 +6,36 @@
 	let tierLists: any[] = [];
 	let polls: any[] = [];
 	let randomTierLists: any[] = [];
+	let tierlistLikes: Record<number, number> = {};
+
+	async function fetchTierlistLikes(lists: any[]): Promise<Record<number, number>> {
+		const results: Record<number, number> = {};
+		await Promise.all(
+			lists.map(async (tl) => {
+				try {
+					const res = await fetch(`/api/interactions/tierlist/${tl.id}/likes`);
+					if (res.ok) {
+						const data = await res.json();
+						results[tl.id] = data.likes;
+					} else {
+						results[tl.id] = 0;
+					}
+				} catch {
+					results[tl.id] = 0;
+				}
+			})
+		);
+		return results;
+	}
 
 	onMount(async () => {
 		try {
 			await apiClient.healthCheck();
+			// Fetch tierlists and their like counts
+			tierLists = (await apiClient.getTierLists?.()) ?? [];
+			tierlistLikes = await fetchTierlistLikes(tierLists);
+
+			// Optionally, fetch polls and their likes if needed
 		} catch (err) {
 			console.error('Backend health check failed:', err);
 		}
@@ -35,7 +61,7 @@
 						class="flex h-40 flex-col items-center justify-center border-2 border-transparent bg-black p-4 transition-colors duration-100 hover:border-[#ff5705] hover:bg-[#191919]"
 					>
 						<a
-							href={`/polls/${tierlist.id}`}
+							href={`/tierlists/${tierlist.id}`}
 							class="text-center text-lg font-semibold text-white hover:underline"
 						>
 							{tierlist.title}
@@ -48,11 +74,27 @@
 								{new Date(tierlist.created_at).toLocaleDateString()}
 							</div>
 						{/if}
-						{#if tierlist.votes !== undefined}
-							<div class="mt-1 text-xs text-gray-400">
-								{tierlist.votes} votes
-							</div>
-						{/if}
+						<!-- Like/Comment/Fork row -->
+						<div class="mt-2 flex items-center gap-4">
+							<span class="flex items-center gap-1">
+								<span class="material-symbols-outlined align-middle text-base text-pink-400"
+									>favorite</span
+								>
+								<span class="text-xs text-gray-200">{tierlistLikes[tierlist.id] ?? 0}</span>
+							</span>
+							<span class="flex items-center gap-1">
+								<span class="material-symbols-outlined align-middle text-base text-orange-200"
+									>chat_bubble</span
+								>
+								<span class="text-xs text-gray-200">0</span>
+							</span>
+							<span class="flex items-center gap-1">
+								<span class="material-symbols-outlined align-middle text-base text-blue-200"
+									>fork_right</span
+								>
+								<span class="text-xs text-gray-200">0</span>
+							</span>
+						</div>
 					</div>
 				{/each}
 			</div>

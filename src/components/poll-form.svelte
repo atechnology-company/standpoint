@@ -30,7 +30,12 @@
 	<legend class="mb-4 block text-sm font-medium text-white/90">Response Type *</legend>
 	<div class="space-y-3">
 		{#each responseTypes as type}
-			<label class="flex cursor-pointer items-center rounded-lg border p-4 transition-colors hover:bg-gray-700 {poll.responseType === type.value ? 'border-[#ff5705] bg-[#ff5705]/20' : 'border-gray-600 bg-gray-700/50'}">
+			<label
+				class="flex cursor-pointer items-center rounded-lg border p-4 transition-colors hover:bg-gray-700 {poll.responseType ===
+				type.value
+					? 'border-[#ff5705] bg-[#ff5705]/20'
+					: 'border-gray-600 bg-gray-700/50'}"
+			>
 				<input type="radio" bind:group={poll.responseType} value={type.value} class="sr-only" />
 				<div class="flex items-center space-x-4">
 					<div class="text-2xl text-white/70">{type.icon}</div>
@@ -84,8 +89,15 @@
 	<div class="mb-4 flex items-center justify-between">
 		<span class="block text-sm font-medium text-white/90">Background Gradient</span>
 		<label class="relative inline-flex cursor-pointer items-center">
-			<input type="checkbox" bind:checked={poll.gradients.enabled} on:change={() => onUpdate(poll)} class="peer sr-only" />
-			<div class="peer h-6 w-11 rounded-full bg-gray-600 peer-checked:bg-[#ff5705] peer-focus:ring-4 peer-focus:ring-[#ff5705]/20 peer-focus:outline-none after:absolute after:top-[2px] after:left-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"></div>
+			<input
+				type="checkbox"
+				bind:checked={poll.gradients.enabled}
+				on:change={() => onUpdate(poll)}
+				class="peer sr-only"
+			/>
+			<div
+				class="peer h-6 w-11 rounded-full bg-gray-600 peer-checked:bg-[#ff5705] peer-focus:ring-4 peer-focus:ring-[#ff5705]/20 peer-focus:outline-none after:absolute after:top-[2px] after:left-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"
+			></div>
 		</label>
 	</div>
 
@@ -97,7 +109,12 @@
 
 			<!-- Gradient Preview -->
 			<div class="h-12 overflow-hidden rounded-lg border border-gray-600">
-				<div class="h-full w-full" style="background: linear-gradient(to right, {poll.gradients.colors.slice(0, poll.customOptions.length).join(', ')})"></div>
+				<div
+					class="h-full w-full"
+					style="background: linear-gradient(to right, {poll.gradients.colors
+						.slice(0, poll.customOptions.length)
+						.join(', ')})"
+				></div>
 			</div>
 
 			<!-- Preset Color Schemes -->
@@ -108,7 +125,9 @@
 						<button
 							type="button"
 							class="h-8 rounded border border-gray-600 text-xs text-white/70 transition-colors hover:border-white/50"
-							style="background: linear-gradient(to right, {scheme.colors.slice(0, Math.min(3, scheme.colors.length)).join(', ')})"
+							style="background: linear-gradient(to right, {scheme.colors
+								.slice(0, Math.min(3, scheme.colors.length))
+								.join(', ')})"
 							on:click={() => applyColorScheme(scheme.colors)}
 						>
 							{scheme.name}

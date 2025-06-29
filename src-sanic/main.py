@@ -12,6 +12,8 @@ except ImportError:
 # Import blueprints
 from modules.polls import polls_bp
 from modules.tierlists import tierlists_bp
+from modules.interactions import interactions_bp
+from modules.gemini.routes import gemini_bp
 
 # Initialize Sanic app
 app = Sanic("StandpointAPI")
@@ -30,26 +32,33 @@ app.extend(
 # Register blueprints
 app.blueprint(polls_bp)
 app.blueprint(tierlists_bp)
+app.blueprint(interactions_bp)
+app.blueprint(gemini_bp)
 
 # Pydantic models
+
+
 class HealthResponse(BaseModel):
     status: str
     message: str
     endpoints: list
 
+
 class ErrorResponse(BaseModel):
     error: str
-    details: str = None
+    details: str
 
 # Health check endpoint
+
+
 @app.get("/health")
 async def health_check(request):
     response = HealthResponse(
-        status="ok", 
+        status="ok",
         message="Standpoint API is running",
         endpoints=[
             "/health",
-            "/api/hello", 
+            "/api/hello",
             "/api/polls",
             "/api/tierlists"
         ]
@@ -57,11 +66,15 @@ async def health_check(request):
     return json(response.model_dump())
 
 # Example endpoint
+
+
 @app.get("/api/hello")
 async def hello(request):
     return json({"message": "Hello from Sanic backend!"})
 
 # Error handler for validation errors
+
+
 @app.exception(ValidationError)
 async def validation_error_handler(request, exception):
     error_response = ErrorResponse(
@@ -71,13 +84,16 @@ async def validation_error_handler(request, exception):
     return json(error_response.model_dump(), status=400)
 
 # Global error handler
+
+
 @app.exception(Exception)
 async def global_error_handler(request, exception):
     import traceback
     print(f"Error occurred: {exception}")
     print(f"Traceback: {traceback.format_exc()}")
-    
-    error_response = ErrorResponse(error="Internal Server Error", details=str(exception))
+
+    error_response = ErrorResponse(
+        error="Internal Server Error", details=str(exception))
     return json(error_response.model_dump(), status=500)
 
 if __name__ == "__main__":

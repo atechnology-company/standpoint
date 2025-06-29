@@ -26,6 +26,7 @@ Standpoint is a platform built for the New Internet centered around sharing opin
 - pydantic
 
 # run dev server
+
 - pnpm dev
 - source src-sanic/bin/activate && python3 src-sanic/main.py
 
@@ -36,15 +37,23 @@ Standpoint is a platform built for the New Internet centered around sharing opin
 - seperated sidebars for tierlist and polls
 
 ### v0.1.2
+
 - fixed tierlist creations
   - converting dynamic to classic tierlists
   - scrolling for more images in image search
   - resizable items
 
+### v0.1.3
+- redesigned add modal with animations
+- ai suggestions for tierlists with images
+- simplified drag and drop logic
 
 ## todo
+- pentagon polls are bugged (can't vote on edges)
+- draft autosaving functionality
 - need to replace my server
 - make a mobile version
+- add animations
 - add auth
 - connect to supabase
 - add pro plan with customisation options

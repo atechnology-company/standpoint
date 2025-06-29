@@ -49,6 +49,37 @@
 	let error = '';
 	let creating = false;
 	let editingTitle = false;
+	let lastFetchedTitle = '';
+
+	// Gemini suggestion system state
+	let suggestedItems: any[] = [];
+	let usedSuggestedItems: string[] = [];
+	let lastGeminiTitle: string = '';
+	let fetchingSuggestions = false;
+	let prefetchedImages: Record<string, string> = {};
+
+	// Track highlighted suggestion/image for keyboard nav
+	let highlightedAISuggestionIdx = -1;
+	let highlightedImageIdx = -1;
+	$: if (highlightedAISuggestionIdx >= filteredAISuggestions.length)
+		highlightedAISuggestionIdx = filteredAISuggestions.length - 1;
+	$: if (highlightedAISuggestionIdx < -1) highlightedAISuggestionIdx = -1;
+	$: if (highlightedImageIdx >= searchResults.length)
+		highlightedImageIdx = searchResults.length - 1;
+	$: if (highlightedImageIdx < -1) highlightedImageIdx = -1;
+
+	// Filtered AI suggestions based on input
+	$: filteredAISuggestions =
+		newItemText.trim().length > 0
+			? suggestedItems.filter((s) =>
+					s.name.toLowerCase().includes(newItemText.trim().toLowerCase())
+				)
+			: suggestedItems;
+
+	// Gemini debug modal state
+	let showGeminiDebugModal = false;
+	let lastGeminiPrompt = '';
+	let lastGeminiRawResponse = '';
 
 	// Item management state
 	let targetTierId: string | null = null;
@@ -217,7 +248,7 @@
 		}
 	}
 
-	/** Sets focus on input element after DOM update */
+	// Sets focus on input element after DOM update
 	function focusInput(selector: string, delay: number = 10) {
 		setTimeout(() => {
 			const input = document.querySelector(selector) as HTMLInputElement;
@@ -228,7 +259,7 @@
 		}, delay);
 	}
 
-	/** Finds item in tier list and returns its location */
+	// Finds item in tier list and returns its location
 	function findItem(itemId: string): { item: TierItem; tier: Tier | null } | null {
 		// Check unassigned items first
 		const unassignedItem = tierList.unassignedItems.find((i) => i.id === itemId);
@@ -253,6 +284,120 @@
 		tierList.unassignedItems = tierList.unassignedItems.map((item) =>
 			item.id === itemId ? { ...item, ...updates } : item
 		);
+	}
+
+	// Gemini suggestion fetcher
+	async function fetchGeminiSuggestions(title: string, usedItems: string[] = []) {
+		fetchingSuggestions = true;
+		try {
+			const prompt = buildGeminiPrompt(title, usedItems, 30);
+			lastGeminiPrompt = prompt;
+			const res = await fetch('/api/gemini/tierlist-suggest', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					title,
+					used_items: usedItems,
+					n: 30
+				})
+			});
+			const data = await res.json();
+			lastGeminiRawResponse = data.raw ?? data.raw_response ?? data.error ?? JSON.stringify(data);
+			if (data.items) {
+				// Filter out any items already used (shouldn't be needed, but just in case)
+				const usedSet = new Set(usedItems.map((i) => i.toLowerCase()));
+				suggestedItems = data.items.filter((item: any) => !usedSet.has(item.name.toLowerCase()));
+				await prefetchImagesForSuggestions(suggestedItems);
+			} else {
+				suggestedItems = [];
+			}
+			lastGeminiTitle = title;
+			lastFetchedTitle = title;
+		} catch (err) {
+			console.error('Failed to fetch Gemini suggestions:', err);
+			lastGeminiRawResponse = String(err);
+			suggestedItems = [];
+		} finally {
+			fetchingSuggestions = false;
+		}
+	}
+
+	// Helper to build the Gemini prompt (should match backend logic)
+	function buildGeminiPrompt(title: string, usedItems: string[], n: number) {
+		const used =
+			usedItems && usedItems.length > 0
+				? `\nAlready suggested/used items (do not repeat): ${usedItems.join(', ')}`
+				: '';
+		return (
+			`I'm creating a tier list titled "${title}".${used}\n` +
+			`1. Suggest ${n} items that would be appropriate for this tier list.\n` +
+			'2. For each item, indicate if an image would be appropriate (true/false).\n' +
+			'3. If images are appropriate, suggest a short search query for finding a representative image.\n' +
+			'Respond ONLY in JSON:\n' +
+			'{\n' +
+			'  "items": [\n' +
+			'    { "name": "...", "image": true/false, "image_query": "..." }\n' +
+			'  ]\n' +
+			'}\n' +
+			'You MUST respond with only the JSON object and nothing else. Do not add any explanation, code block, or extra text.'
+		);
+	}
+
+	// Prefetch images for suggestions with image_query
+	async function prefetchImagesForSuggestions(suggestions: any[]) {
+		const promises = suggestions
+			.filter((s) => s.image && s.image_query && !prefetchedImages[s.name])
+			.map(async (s) => {
+				try {
+					const results = await searchGoogleImages(s.image_query, 1, 1);
+					if (results && results.length > 0) {
+						prefetchedImages[s.name] = results[0].image?.thumbnailLink || results[0].link;
+					}
+				} catch (e) {
+					console.warn('Image prefetch failed for', s.name, e);
+				}
+			});
+		await Promise.all(promises);
+	}
+
+	function addSuggestedItem(suggestion: any) {
+		const newItem: TierItem = {
+			id: `item_${Date.now()}`,
+			text: suggestion.name,
+			type: suggestion.image ? 'search' : 'text',
+			image: prefetchedImages[suggestion.name],
+			position: createItemPosition(targetTierId || undefined)
+		};
+		addItemToLocation(newItem);
+		usedSuggestedItems = [...usedSuggestedItems, suggestion.name];
+		suggestedItems = suggestedItems.filter((item) => item.name !== suggestion.name);
+
+		// If suggestions are running low, fetch more
+		if (suggestedItems.length < 10) {
+			const allUsed = [
+				...usedSuggestedItems,
+				...tierList.tiers.flatMap((t) => t.items.map((i) => i.text)),
+				...tierList.unassignedItems.map((i) => i.text)
+			];
+			fetchGeminiSuggestions(tierList.title, allUsed);
+		}
+		closeAddItemModal();
+	}
+
+	// Call Gemini when title is set (on blur/enter)
+	function handleTitleSet() {
+		if (
+			tierList.title &&
+			tierList.title !== lastGeminiTitle &&
+			tierList.title !== 'Untitled Tier List'
+		) {
+			const allUsed = [
+				...usedSuggestedItems,
+				...tierList.tiers.flatMap((t) => t.items.map((i) => i.text)),
+				...tierList.unassignedItems.map((i) => i.text)
+			];
+			fetchGeminiSuggestions(tierList.title, allUsed);
+		}
 	}
 
 	// Removes item from all locations
@@ -346,10 +491,17 @@
 		}
 
 		showAddItemModal = true;
-		newItemText = '';
-		searchQuery = '';
-		searchResults = [];
 		addItemType = 'text';
+
+		// Gemini suggestion logic
+		const allUsed = [
+			...usedSuggestedItems,
+			...tierList.tiers.flatMap((t) => t.items.map((i) => i.text)),
+			...tierList.unassignedItems.map((i) => i.text)
+		];
+		if (tierList.title !== lastGeminiTitle && tierList.title !== 'Untitled Tier List') {
+			fetchGeminiSuggestions(tierList.title, allUsed);
+		}
 
 		focusInput('#quick-add-input');
 	}
@@ -468,6 +620,7 @@
 	// Drag and Drop
 
 	function handleDragStart(event: DragEvent, item: TierItem) {
+		console.log('hds');
 		if (!event.dataTransfer) return;
 
 		draggedItem = item;
@@ -485,6 +638,7 @@
 	}
 
 	function handleDragEnd(event: DragEvent) {
+		console.log('hde');
 		isDragging = false;
 		draggedItem = null;
 		draggedFromTier = null;
@@ -519,12 +673,14 @@
 	}
 
 	function handleDrop(event: DragEvent, tierId: string | null, position?: number) {
+		console.log('hd');
 		event.preventDefault();
 		if (!draggedItem) return;
 
-		if (position !== undefined) {
+		// Always use moveItemToPosition for classic mode
+		if (tierList.type === 'classic' && tierId !== null && position !== undefined) {
 			moveItemToPosition(draggedItem.id, tierId, position);
-		} else {
+		} else if (tierId !== null) {
 			moveItemToTier(draggedItem.id, tierId);
 		}
 
@@ -558,7 +714,7 @@
 		};
 	}
 
-	// Adds item to appropriate location (tier or unassigned)
+	// Adds item to appropriate location
 	function addItemToLocation(item: TierItem) {
 		if (targetTierId) {
 			tierList.tiers = tierList.tiers.map((tier) =>
@@ -669,7 +825,6 @@
 				searchPage++;
 			}
 
-			// With proper API pagination, we have more results if we got the full amount requested
 			hasMoreResults = newResults.length === 10;
 			console.log(
 				'hasMoreResults:',
@@ -699,13 +854,14 @@
 				searchPage++;
 			}
 
-			hasMoreResults = true; // Keep fallback working
+			hasMoreResults = true;
 		} finally {
 			searching = false;
 			loadingMore = false;
 		}
 	}
 
+	// Once scrolled, load more images
 	async function loadMoreImages() {
 		console.log('loadMoreImages called', {
 			loadingMore,
@@ -793,7 +949,7 @@
 		}
 	}
 
-	/** Generates dynamic gradient background based on tier colors */
+	// Generates dynamic gradient background based on tier colors
 	function getDynamicGradient(): string {
 		if (tierList.tiers.length <= 1)
 			return 'background: linear-gradient(to bottom, #2d7a2d, #7a2d2d);';
@@ -828,6 +984,7 @@
 		document.addEventListener('mouseup', stopResize);
 	}
 
+	// Resizing items in Dynamic mode
 	function handleResize(event: MouseEvent) {
 		if (!isResizing || !resizingItemId) return;
 
@@ -958,8 +1115,16 @@
 					<input
 						class="border-b-2 border-orange-500 bg-transparent px-2 py-1 text-2xl font-bold text-white outline-none"
 						bind:value={tierList.title}
-						on:blur={toggleTitleEdit}
-						on:keydown={(e) => e.key === 'Enter' && toggleTitleEdit()}
+						on:blur={() => {
+							toggleTitleEdit();
+							handleTitleSet();
+						}}
+						on:keydown={(e) => {
+							if (e.key === 'Enter') {
+								toggleTitleEdit();
+								handleTitleSet();
+							}
+						}}
 					/>
 				{:else}
 					<button
@@ -975,7 +1140,25 @@
 		</div>
 
 		<div class="flex items-center space-x-4">
-			<!-- Mode Toggle with Animation -->
+			<!-- Gemini suggestion state indicator -->
+			{#if fetchingSuggestions}
+				<span class="ml-4 animate-pulse text-xs text-blue-400">Fetching suggestions...</span>
+			{:else if suggestedItems.length === 0 && tierList.title}
+				{#if tierList.title === 'Untitled Tier List'}
+					<span class="ml-4 cursor-pointer text-xs text-white"
+						>Change the title to view AI suggestions</span
+					>
+				{:else}
+					<span
+						class="ml-4 cursor-pointer text-xs text-orange-400"
+						on:click={() => (showGeminiDebugModal = true)}>No suggestions found</span
+					>
+				{/if}
+			{:else if suggestedItems.length > 0}
+				<span class="ml-4 text-xs text-green-400">Suggestions ready</span>
+			{/if}
+
+			<!-- Mode Toggle -->
 			<div class="relative flex bg-[#191919] p-1">
 				<div
 					class="absolute top-1 bottom-1 bg-orange-500 transition-all duration-300 ease-in-out"
@@ -1086,113 +1269,130 @@
 								</div>
 							</div>
 
-							{#if tier.items.length > 0}
+							<!-- Drop zones -->
+							{#if true}
 								{@const itemsStyle = getTierItemsStyle(tier.items.length)}
-								<div class="grid items-center gap-4 pr-80" style={itemsStyle.gridStyle}>
-									{#each tier.items as item, itemIndex (item.id)}
-										<!-- svelte-ignore a11y-no-static-element-interactions -->
-										<div
-											class="group/item relative cursor-pointer overflow-hidden rounded-lg shadow-sm transition-shadow hover:shadow-lg {isDragging &&
-											draggedItem?.id === item.id
-												? 'opacity-50'
-												: ''}"
-											style="{item.image
-												? `background-image: url('${item.image}'); background-size: cover; background-position: center;`
-												: 'background: linear-gradient(135deg, #1f2937, #374151);'} height: {itemsStyle.itemHeight}; width: {itemsStyle.itemWidth}; margin: {itemsStyle.margin};"
-											draggable="true"
-											on:dragstart={(e) => handleDragStart(e, item)}
-											on:dragend={handleDragEnd}
-											on:dragover={(e) => handleDragOver(e, tier.id, itemIndex)}
-											on:drop={(e) => handleDrop(e, tier.id, itemIndex)}
-											on:click|stopPropagation={() => startInlineEdit(item)}
-											on:keydown={(e) =>
-												(e.key === 'Enter' || e.key === ' ') && startInlineEdit(item)}
-											on:contextmenu={(e) => showItemContextMenu(item, e)}
-											role="button"
-											tabindex="0"
-											aria-label="Edit item {item.text}"
-										>
-											<!-- Gradient overlay -->
-											{#if item.image}
-												<div
-													class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"
-												></div>
-											{/if}
-
-											<!-- Delete button -->
-											<button
-												class="absolute top-1 right-1 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white opacity-0 transition-opacity group-hover/item:opacity-100 hover:bg-red-600"
-												on:click|stopPropagation={() => deleteItem(item.id)}
-												title="Delete item"
-											>
-												<span class="material-symbols-outlined text-sm">close</span>
-											</button>
-
-											{#if editingItemId === item.id}
-												<div class="absolute inset-0 z-10 flex items-center justify-center p-2">
-													<input
-														id="inline-edit-{item.id}"
-														class="w-full rounded border border-white/30 bg-black/50 px-2 py-1 text-center text-sm font-medium text-white outline-none"
-														bind:value={inlineEditText}
-														on:blur={finishInlineEdit}
-														on:keydown={(e) => {
-															if (e.key === 'Enter') finishInlineEdit();
-															if (e.key === 'Escape') cancelInlineEdit();
-														}}
-													/>
-												</div>
-											{:else}
-												<!-- Text positioning - center for text-only items, bottom-left for image items -->
-												{#if item.type === 'text' && !item.image}
-													<div class="absolute inset-0 z-10 flex items-center justify-center p-2">
-														<span class="text-center text-sm leading-tight font-medium text-white"
-															>{item.text}</span
-														>
-													</div>
-												{:else}
-													<div class="absolute bottom-2 left-2 z-10">
-														<span class="text-sm font-medium text-white drop-shadow-lg"
-															>{item.text}</span
-														>
-													</div>
-												{/if}
-											{/if}
-
-											<!-- Drop zone indicator -->
-											{#if isDragging && dragOverTier === tier.id && dragOverPosition === itemIndex}
-												<div
-													class="absolute top-0 bottom-0 -left-1 w-1 rounded bg-orange-500"
-												></div>
-											{/if}
-										</div>
-									{/each}
-
-									<!-- Drop zone at end of tier -->
-									{#if isDragging}
-										<!-- svelte-ignore a11y-no-static-element-interactions -->
-										<div
-											class="flex min-h-20 items-center justify-center rounded-lg border-2 border-dashed border-gray-400 opacity-50 transition-colors hover:border-orange-400"
-											on:dragover={(e) => handleDragOver(e, tier.id, tier.items.length)}
-											on:drop={(e) => handleDrop(e, tier.id, tier.items.length)}
-										>
-											<span class="text-sm text-gray-400">Drop here</span>
-										</div>
-									{/if}
-								</div>
-							{:else}
-								<!-- svelte-ignore a11y-no-static-element-interactions -->
 								<div
-									class="flex h-full items-center justify-center pr-80 text-center {isDragging
-										? 'rounded-lg border-2 border-dashed border-gray-400'
-										: ''}"
-									on:dragover={(e) => handleDragOver(e, tier.id, 0)}
-									on:drop={(e) => handleDrop(e, tier.id, 0)}
+									class="relative"
+									style="height: {itemsStyle.itemHeight}; min-height: {itemsStyle.itemHeight};"
 								>
-									<div class="text-white">
-										<div class="mb-2 text-3xl opacity-40">+</div>
-										<div class="text-lg opacity-60">
-											{isDragging ? 'Drop item here' : 'Click to add items'}
-										</div>
+									<div
+										class="flex items-center gap-4 pr-80"
+										style="height: {itemsStyle.itemHeight}; min-height: {itemsStyle.itemHeight};"
+									>
+										{#if tier.items.length === 0}
+											{#if isDragging}
+												<!-- Empty tier drop zone -->
+												<div
+													class="flex flex-1 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-gray-400 bg-gray-800/40 transition-colors hover:border-orange-400 hover:bg-orange-900/10"
+													style="height: {itemsStyle.itemHeight}; min-width: 120px;"
+													on:dragover={(e) => handleDragOver(e, tier.id, 0)}
+													on:drop={(e) => handleDrop(e, tier.id, 0)}
+													aria-label="Drop here"
+													tabIndex="0"
+												>
+													<span class="text-sm text-gray-400">Drop here</span>
+												</div>
+											{/if}
+										{:else}
+											{#each tier.items as item, idx (item.id)}
+												<div
+													class="group/item relative cursor-pointer overflow-hidden rounded-lg shadow-sm transition-shadow hover:shadow-lg"
+													style="
+														{item.image
+														? `background-image: url('${item.image}'); background-size: cover; background-position: center;`
+														: 'background: linear-gradient(135deg, #1f2937, #374151);'}
+														height: {itemsStyle.itemHeight};
+														width: {itemsStyle.itemWidth};
+														opacity: {isDragging && draggedItem?.id === item.id ? 0.5 : 1};
+														border-left: {isDragging && dragOverTier === tier.id && dragOverPosition === idx
+														? '4px solid orange'
+														: 'none'};
+													"
+													draggable="true"
+													on:dragstart={(e) => handleDragStart(e, item)}
+													on:dragend={handleDragEnd}
+													on:dragover={(e) => {
+														if (isDragging) handleDragOver(e, tier.id, idx);
+													}}
+													on:drop={(e) => {
+														if (isDragging) handleDrop(e, tier.id, idx);
+													}}
+													on:click|stopPropagation={() => startInlineEdit(item)}
+													on:keydown={(e) =>
+														(e.key === 'Enter' || e.key === ' ') && startInlineEdit(item)}
+													on:contextmenu={(e) => showItemContextMenu(item, e)}
+													role="button"
+													tabindex="0"
+													aria-label="Edit item {item.text}"
+												>
+													<!-- Gradient overlay -->
+													{#if item.image}
+														<div
+															class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"
+														></div>
+													{/if}
+													<!-- Delete button -->
+													<button
+														class="absolute top-1 right-1 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white opacity-0 transition-opacity group-hover/item:opacity-100 hover:bg-red-600"
+														on:click|stopPropagation={() => deleteItem(item.id)}
+														title="Delete item"
+													>
+														<span class="material-symbols-outlined text-sm">close</span>
+													</button>
+													{#if editingItemId === item.id}
+														<div class="absolute inset-0 z-10 flex items-center justify-center p-2">
+															<input
+																id="inline-edit-{item.id}"
+																class="w-full rounded border border-white/30 bg-black/50 px-2 py-1 text-center text-sm font-medium text-white outline-none"
+																bind:value={inlineEditText}
+																on:blur={finishInlineEdit}
+																on:keydown={(e) => {
+																	if (e.key === 'Enter') finishInlineEdit();
+																	if (e.key === 'Escape') cancelInlineEdit();
+																}}
+															/>
+														</div>
+													{:else if item.type === 'text' && !item.image}
+														<div class="absolute inset-0 z-10 flex items-center justify-center p-2">
+															<span class="text-center text-sm leading-tight font-medium text-white"
+																>{item.text}</span
+															>
+														</div>
+													{:else}
+														<div class="absolute bottom-2 left-2 z-10">
+															<span class="text-sm font-medium text-white drop-shadow-lg"
+																>{item.text}</span
+															>
+														</div>
+													{/if}
+												</div>
+											{/each}
+											{#if isDragging}
+												<!-- End drop zone -->
+												<div
+													class="flex min-h-20 flex-1 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-gray-400 bg-gray-800/40 transition-colors hover:border-orange-400 hover:bg-orange-900/10"
+													style="
+														height: {itemsStyle.itemHeight};
+														min-width: 120px;
+														border-left: {isDragging && dragOverTier === tier.id && dragOverPosition === tier.items.length
+														? '4px solid orange'
+														: '2px dashed #888'};
+														background: transparent;
+													"
+													on:dragover={(e) => {
+														if (isDragging) handleDragOver(e, tier.id, tier.items.length);
+													}}
+													on:drop={(e) => {
+														if (isDragging) handleDrop(e, tier.id, tier.items.length);
+													}}
+													aria-label="Drop here"
+													tabIndex="0"
+												>
+													<span class="text-sm text-gray-400">Drop here</span>
+												</div>
+											{/if}
+										{/if}
 									</div>
 								</div>
 							{/if}
@@ -1463,165 +1663,156 @@
 
 <!-- Add Item Modal -->
 {#if showAddItemModal}
-	<!-- Modal positioned at cursor -->
 	<div
-		class="fixed z-50 w-80 rounded-lg border border-gray-600 bg-gray-800 shadow-2xl"
-		style="left: {addItemModalX}px; top: {addItemModalY}px;"
+		class="fixed z-50 rounded-lg border border-gray-800 bg-black shadow-2xl"
+		style="left: {addItemModalX}px; top: {addItemModalY}px; min-width: 320px; max-width: 95vw; width: auto;"
+		tabindex="0"
+		on:keydown={(e) => {
+			if (e.key === 'Escape') closeAddItemModal();
+			if (e.key === 'ArrowDown' && filteredAISuggestions.length > 0) {
+				highlightedAISuggestionIdx = Math.min(
+					highlightedAISuggestionIdx + 1,
+					filteredAISuggestions.length - 1
+				);
+				e.preventDefault();
+			}
+			if (e.key === 'ArrowUp' && filteredAISuggestions.length > 0) {
+				highlightedAISuggestionIdx = Math.max(highlightedAISuggestionIdx - 1, 0);
+				e.preventDefault();
+			}
+			if (e.key === 'Enter' && newItemText.trim()) {
+				if (highlightedAISuggestionIdx >= 0 && filteredAISuggestions.length > 0) {
+					addSuggestedItem(filteredAISuggestions[highlightedAISuggestionIdx]);
+				} else if (highlightedImageIdx >= 0 && searchResults.length > 0) {
+					addSearchResult(searchResults[highlightedImageIdx]);
+				} else {
+					addTextItem();
+				}
+			}
+		}}
 	>
-		<!-- Main search/text input area -->
-		<div class="p-4">
-			<div class="relative">
-				{#if addItemType === 'search'}
-					<input
-						id="quick-add-input"
-						class="w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 pr-12 text-white placeholder-gray-400 focus:ring-2 focus:ring-orange-500 focus:outline-none {searching
-							? 'border-blue-500/50 bg-blue-900/20'
-							: ''}"
-						type="text"
-						bind:value={searchQuery}
-						placeholder={searching ? 'Searching...' : 'Search images...'}
-						disabled={searching}
-						on:keydown={(e) => {
-							if (e.key === 'Enter') {
+		<div class="flex w-auto max-w-[95vw] min-w-[320px] flex-col items-stretch p-4">
+			<!-- AI Suggestions -->
+			{#if filteredAISuggestions.length > 0}
+				<div class="mb-3">
+					<div class="mb-1 text-xs text-gray-400">Suggestions</div>
+					<div
+						class="flex max-h-32 max-w-[420px] flex-wrap gap-2 overflow-x-hidden overflow-y-auto pr-2"
+					>
+						{#each filteredAISuggestions as suggestion, idx (suggestion.name)}
+							<button
+								class="animate-fadein-suggestion translate-y-2 rounded bg-gray-800 px-3 py-1 text-sm text-white opacity-0 transition-colors hover:bg-orange-500 focus:outline-none {highlightedAISuggestionIdx ===
+								idx
+									? 'ring-2 ring-orange-500'
+									: ''}"
+								style="animation-delay: {idx * 60}ms"
+								on:click={() => addSuggestedItem(suggestion)}
+								on:mouseenter={() => (highlightedAISuggestionIdx = idx)}
+								on:mouseleave={() => (highlightedAISuggestionIdx = -1)}
+								tabindex="0"
+							>
+								{suggestion.name}
+								{#if suggestion.image && prefetchedImages[suggestion.name]}
+									<img
+										src={prefetchedImages[suggestion.name]}
+										alt={suggestion.name}
+										class="ml-2 inline-block h-5 w-5 rounded object-cover"
+									/>
+								{/if}
+							</button>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
+			<!-- Input row with upload button -->
+			<div class="flex items-center gap-2">
+				<input
+					id="quick-add-input"
+					class="flex-1 rounded-lg border border-gray-600 bg-[#191919] px-4 py-3 text-white placeholder-gray-400 focus:ring-2 focus:ring-orange-500 focus:outline-none"
+					type="text"
+					bind:value={newItemText}
+					placeholder="Type to add item or search images..."
+					autocomplete="off"
+					autofocus
+					on:input={() => {
+						if (newItemText.trim().length > 2) {
+							clearTimeout(searchTimeout);
+							searchTimeout = setTimeout(() => {
+								searchQuery = newItemText;
 								searchImages(true);
-							}
-						}}
-						on:input={() => {
-							// Auto-search as user types when in search mode
-							if (searchQuery.trim().length > 2) {
-								// Debounce search
-								clearTimeout(searchTimeout);
-								searchTimeout = setTimeout(() => {
-									console.log('Auto-searching for:', searchQuery); // Debug log
-									searchImages(true);
-								}, 300); // Reduced delay for better responsiveness
-							} else if (searchQuery.trim().length === 0) {
-								// Clear results when search is cleared
-								searchResults = [];
-								hasMoreResults = true;
-								searchPage = 1;
-							}
-						}}
-					/>
-				{:else}
-					<input
-						id="quick-add-input"
-						class="w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 pr-12 text-white placeholder-gray-400 focus:ring-2 focus:ring-orange-500 focus:outline-none"
-						type="text"
-						bind:value={newItemText}
-						placeholder="Type to add item..."
-						on:keydown={(e) => {
-							if (e.key === 'Enter') {
+							}, 300);
+						} else {
+							searchResults = [];
+							hasMoreResults = true;
+							searchPage = 1;
+							highlightedImageIdx = -1;
+						}
+						highlightedAISuggestionIdx = -1;
+					}}
+					on:keydown={(e) => {
+						if (e.key === 'Enter' && newItemText.trim()) {
+							if (highlightedAISuggestionIdx >= 0 && filteredAISuggestions.length > 0) {
+								addSuggestedItem(filteredAISuggestions[highlightedAISuggestionIdx]);
+							} else if (highlightedImageIdx >= 0 && searchResults.length > 0) {
+								addSearchResult(searchResults[highlightedImageIdx]);
+							} else {
 								addTextItem();
 							}
-						}}
-					/>
-				{/if}
-
-				<!-- Search/Add button in the input -->
-				<button
-					class="absolute top-1/2 right-2 flex h-8 w-8 -translate-y-1/2 transform items-center justify-center rounded-md transition-colors {addItemType ===
-					'search'
-						? 'hover:bg-opacity-20 text-blue-400 hover:bg-blue-500'
-						: 'hover:bg-opacity-20 text-orange-400 hover:bg-orange-500'}"
-					on:click={() => {
-						if (addItemType === 'search') {
-							searchImages(true);
-						} else {
-							addTextItem();
+						}
+						if (e.key === 'Escape') {
+							closeAddItemModal();
+						}
+						if (e.key === 'ArrowDown' && filteredAISuggestions.length > 0) {
+							highlightedAISuggestionIdx = Math.min(
+								highlightedAISuggestionIdx + 1,
+								filteredAISuggestions.length - 1
+							);
+							e.preventDefault();
+						}
+						if (e.key === 'ArrowUp' && filteredAISuggestions.length > 0) {
+							highlightedAISuggestionIdx = Math.max(highlightedAISuggestionIdx - 1, 0);
+							e.preventDefault();
 						}
 					}}
-					title={addItemType === 'search' ? 'Search' : 'Add Item'}
-					disabled={searching}
+					aria-label="Add item or search images"
+				/>
+				<label
+					class="flex h-10 w-10 cursor-pointer items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
+					title="Upload Image"
+					tabindex="0"
 				>
-					{#if searching && addItemType === 'search'}
-						<div
-							class="h-4 w-4 animate-spin rounded-full border-2 border-blue-400 border-t-transparent"
-						></div>
-					{:else}
-						<span class="material-symbols-outlined text-lg">
-							{addItemType === 'search' ? 'search' : 'add'}
-						</span>
-					{/if}
+					<span class="material-symbols-outlined text-lg">upload</span>
+					<input type="file" accept="image/*" class="hidden" on:change={handleFileUpload} />
+				</label>
+				<button
+					class="flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
+					on:click={closeAddItemModal}
+					title="Close"
+					tabindex="0"
+				>
+					<span class="material-symbols-outlined text-sm">close</span>
 				</button>
 			</div>
 
-			<!-- Quick add button for text -->
-			{#if addItemType === 'text' && newItemText.trim()}
-				<button
-					class="mt-3 w-full rounded-lg bg-orange-500 px-4 py-2 font-medium text-white transition-colors hover:bg-orange-600"
-					on:click={addTextItem}
-				>
-					Add "{newItemText.trim()}"
-				</button>
-			{/if}
-		</div>
-
-		<!-- Search Results -->
-		{#if addItemType === 'search' && (searchResults.length > 0 || searching)}
-			<div class="border-t border-gray-600 p-4">
-				<div class="mb-3 flex items-center justify-between">
-					<div class="text-sm text-gray-400">Search Results</div>
-					{#if searching}
-						<div class="flex items-center space-x-2 text-blue-400">
-							<div
-								class="h-3 w-3 animate-spin rounded-full border-2 border-blue-400 border-t-transparent"
-							></div>
-							<span class="text-xs">Searching...</span>
-						</div>
-					{:else if loadingMore}
-						<div class="flex items-center space-x-2 text-blue-400">
-							<div
-								class="h-3 w-3 animate-spin rounded-full border-2 border-blue-400 border-t-transparent"
-							></div>
-							<span class="text-xs">Loading more...</span>
-						</div>
-					{:else if searchResults.length > 0}
-						<div class="text-xs text-gray-500">{searchResults.length} results</div>
-					{/if}
-				</div>
-				<div
-					class="max-h-80 overflow-y-auto"
-					on:scroll={(e) => {
-						const target = e.currentTarget as HTMLElement;
-						if (
-							target &&
-							!loadingMore &&
-							hasMoreResults &&
-							searchResults.length > 0 &&
-							searchQuery.trim()
-						) {
-							// More sensitive scroll detection - trigger when 100px from bottom
-							const scrollThreshold = 100;
-							const isNearBottom =
-								target.scrollTop + target.clientHeight >= target.scrollHeight - scrollThreshold;
-
-							console.log('Scroll event:', {
-								scrollTop: target.scrollTop,
-								clientHeight: target.clientHeight,
-								scrollHeight: target.scrollHeight,
-								isNearBottom,
-								loadingMore,
-								hasMoreResults,
-								searchResultsLength: searchResults.length
-							});
-
-							if (isNearBottom) {
-								console.log('Triggering load more images...');
-								loadMoreImages();
-							}
-						}
-					}}
-				>
+			<!-- Google Image Search Results -->
+			{#if newItemText.trim().length > 2 && (searchResults.length > 0 || searching)}
+				<div class="mt-4 max-h-64 overflow-y-auto">
 					<div
 						class="grid gap-2"
-						style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));"
+						style="grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));"
 					>
-						{#each searchResults as result}
+						{#each searchResults as result, idx}
 							<button
-								class="group overflow-hidden rounded-lg border border-gray-600 transition-colors hover:border-orange-400 hover:bg-gray-700"
+								class="group animate-fadein-image overflow-hidden rounded-lg border border-gray-600 opacity-0 transition-colors hover:border-orange-400 hover:bg-gray-700 focus:outline-none {highlightedImageIdx ===
+								idx
+									? 'ring-2 ring-orange-500'
+									: ''}"
+								style="animation-delay: {idx * 70}ms"
 								on:click={() => addSearchResult(result)}
-								title={result.title}
+								on:mouseenter={() => (highlightedImageIdx = idx)}
+								on:mouseleave={() => (highlightedImageIdx = -1)}
+								tabindex="0"
 							>
 								<div class="relative aspect-square">
 									<img
@@ -1639,31 +1830,7 @@
 								</div>
 							</button>
 						{/each}
-
-						<!-- Skeleton loading for initial search -->
 						{#if searching && searchResults.length === 0}
-							{#each Array(10) as _, i}
-								<div
-									class="animate-pulse overflow-hidden rounded-lg border border-gray-600"
-									style="animation-delay: {i * 0.1}s"
-								>
-									<div class="aspect-square bg-gray-700"></div>
-									<div class="p-2">
-										<div
-											class="mb-1 h-3 rounded bg-gray-700"
-											style="width: {60 + Math.random() * 30}%"
-										></div>
-										<div
-											class="h-2 rounded bg-gray-600"
-											style="width: {40 + Math.random() * 40}%"
-										></div>
-									</div>
-								</div>
-							{/each}
-						{/if}
-
-						<!-- Load more skeleton loading -->
-						{#if loadingMore && searchResults.length > 0}
 							{#each Array(6) as _, i}
 								<div
 									class="animate-pulse overflow-hidden rounded-lg border border-gray-600"
@@ -1684,75 +1851,228 @@
 							{/each}
 						{/if}
 					</div>
-
-					<!-- Load more button (fallback) -->
-					{#if searchResults.length > 0 && hasMoreResults && !loadingMore}
-						<div class="mt-4 text-center">
-							<button
-								class="rounded-lg bg-gray-700 px-4 py-2 text-sm text-gray-300 transition-colors hover:bg-gray-600"
-								on:click={loadMoreImages}
-							>
-								Load More Images
-							</button>
-						</div>
-					{/if}
 				</div>
-			</div>
-		{/if}
-
-		<!-- Loading indicator for search -->
-		{#if addItemType === 'search' && searching}
-			<div class="border-t border-gray-600 p-4 text-center">
-				<div class="inline-flex items-center space-x-2 text-gray-400">
+			{/if}
+			{#if searching}
+				<div class="mt-2 flex items-center space-x-2 text-gray-400">
 					<div
 						class="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-orange-500"
 					></div>
 					<span class="text-sm">Searching...</span>
 				</div>
-			</div>
-		{/if}
-
-		<!-- Footer with mode toggle and upload -->
-		<div class="flex items-center justify-between border-t border-gray-600 p-3">
-			<!-- Mode toggles -->
-			<div class="flex items-center space-x-2">
-				{#each [{ type: 'text' as const, icon: 'text_fields', title: 'Text Mode' }, { type: 'search' as const, icon: 'search', title: 'Search Mode' }] as mode}
-					<button
-						class="flex h-8 w-8 items-center justify-center rounded-md transition-colors {addItemType ===
-						mode.type
-							? 'bg-orange-500 text-white'
-							: 'text-gray-400 hover:bg-gray-700 hover:text-white'}"
-						on:click={() => {
-							addItemType = mode.type;
-							focusInput('#quick-add-input');
-						}}
-						title={mode.title}
-					>
-						<span class="material-symbols-outlined text-sm">{mode.icon}</span>
-					</button>
-				{/each}
-
-				<!-- Upload button -->
-				<label
-					class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
-					title="Upload Image"
-				>
-					<span class="material-symbols-outlined text-sm">upload</span>
-					<input type="file" accept="image/*" class="hidden" on:change={handleFileUpload} />
-				</label>
-			</div>
-
-			<!-- Close button -->
-			<button
-				class="flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
-				on:click={closeAddItemModal}
-				title="Close"
-			>
-				<span class="material-symbols-outlined text-sm">close</span>
-			</button>
+			{/if}
+			{#if newItemText.trim() && (!searchResults.length || highlightedImageIdx === -1)}
+				<div class="mt-2 text-xs text-gray-500">Press <kbd>Enter</kbd> to add as text item</div>
+			{/if}
 		</div>
 	</div>
 {/if}
+
+<!-- Search Results -->
+{#if addItemType === 'search' && (searchResults.length > 0 || searching)}
+	<div class="border-t border-gray-600 p-4">
+		<div class="mb-3 flex items-center justify-between">
+			<div class="text-sm text-gray-400">Search Results</div>
+			{#if searching}
+				<div class="flex items-center space-x-2 text-blue-400">
+					<div
+						class="h-3 w-3 animate-spin rounded-full border-2 border-blue-400 border-t-transparent"
+					></div>
+					<span class="text-xs">Searching...</span>
+				</div>
+			{:else if loadingMore}
+				<div class="flex items-center space-x-2 text-blue-400">
+					<div
+						class="h-3 w-3 animate-spin rounded-full border-2 border-blue-400 border-t-transparent"
+					></div>
+					<span class="text-xs">Loading more...</span>
+				</div>
+			{:else if searchResults.length > 0}
+				<div class="text-xs text-gray-500">{searchResults.length} results</div>
+			{/if}
+		</div>
+		<div
+			class="max-h-80 overflow-y-auto"
+			on:scroll={(e) => {
+				const target = e.currentTarget as HTMLElement;
+				if (
+					target &&
+					!loadingMore &&
+					hasMoreResults &&
+					searchResults.length > 0 &&
+					searchQuery.trim()
+				) {
+					const scrollThreshold = 100;
+					const isNearBottom =
+						target.scrollTop + target.clientHeight >= target.scrollHeight - scrollThreshold;
+
+					console.log('Scroll event:', {
+						scrollTop: target.scrollTop,
+						clientHeight: target.clientHeight,
+						scrollHeight: target.scrollHeight,
+						isNearBottom,
+						loadingMore,
+						hasMoreResults,
+						searchResultsLength: searchResults.length
+					});
+
+					if (isNearBottom) {
+						console.log('Triggering load more images...');
+						loadMoreImages();
+					}
+				}
+			}}
+		>
+			<div class="grid gap-2" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
+				{#each searchResults as result}
+					<button
+						class="group overflow-hidden rounded-lg border border-gray-600 transition-colors hover:border-orange-400 hover:bg-gray-700"
+						on:click={() => addSearchResult(result)}
+						title={result.title}
+					>
+						<div class="relative aspect-square">
+							<img
+								src={result.url}
+								alt={result.title}
+								class="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+								loading="lazy"
+							/>
+							<div
+								class="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 transition-opacity group-hover:opacity-100"
+							></div>
+						</div>
+						<div class="p-2">
+							<div class="truncate text-xs leading-tight text-gray-300">{result.title}</div>
+						</div>
+					</button>
+				{/each}
+
+				<!-- Skeleton loading for initial search -->
+				{#if searching && searchResults.length === 0}
+					{#each Array(10) as _, i}
+						<div
+							class="animate-pulse overflow-hidden rounded-lg border border-gray-600"
+							style="animation-delay: {i * 0.1}s"
+						>
+							<div class="aspect-square bg-gray-700"></div>
+							<div class="p-2">
+								<div
+									class="mb-1 h-3 rounded bg-gray-700"
+									style="width: {60 + Math.random() * 30}%"
+								></div>
+								<div
+									class="h-2 rounded bg-gray-600"
+									style="width: {40 + Math.random() * 40}%"
+								></div>
+							</div>
+						</div>
+					{/each}
+				{/if}
+
+				<!-- Load more skeleton loading -->
+				{#if loadingMore && searchResults.length > 0}
+					{#each Array(6) as _, i}
+						<div
+							class="animate-pulse overflow-hidden rounded-lg border border-gray-600"
+							style="animation-delay: {i * 0.1}s"
+						>
+							<div class="aspect-square bg-gray-700"></div>
+							<div class="p-2">
+								<div
+									class="mb-1 h-3 rounded bg-gray-700"
+									style="width: {60 + Math.random() * 30}%"
+								></div>
+								<div
+									class="h-2 rounded bg-gray-600"
+									style="width: {40 + Math.random() * 40}%"
+								></div>
+							</div>
+						</div>
+					{/each}
+				{/if}
+			</div>
+
+			<!-- Load more button (fallback) -->
+			{#if searchResults.length > 0 && hasMoreResults && !loadingMore}
+				<div class="mt-4 text-center">
+					<button
+						class="rounded-lg bg-gray-700 px-4 py-2 text-sm text-gray-300 transition-colors hover:bg-gray-600"
+						on:click={loadMoreImages}
+					>
+						Load More Images
+					</button>
+				</div>
+			{/if}
+		</div>
+	</div>
+{/if}
+
+<!-- Loading indicator for search -->
+{#if addItemType === 'search' && searching}
+	<div class="border-t border-gray-600 p-4 text-center">
+		<div class="inline-flex items-center space-x-2 text-gray-400">
+			<div
+				class="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-orange-500"
+			></div>
+			<span class="text-sm">Searching...</span>
+		</div>
+	</div>
+{/if}
+
+<!-- Footer -->
+<div class="flex items-center justify-between border-t border-gray-600 p-3">
+	<!-- Mode toggles -->
+	<div class="flex items-center space-x-2">
+		{#each [{ type: 'text' as const, icon: 'text_fields', title: 'Text Mode' }, { type: 'search' as const, icon: 'search', title: 'Image Search' }] as mode}
+			const icon = mode.icon; const title = mode.title;
+			<button
+				class="flex h-8 w-8 items-center justify-center rounded-md transition-colors {addItemType ===
+				mode.type
+					? 'bg-orange-500 text-white'
+					: 'text-gray-400 hover:bg-gray-700 hover:text-white'}"
+				on:click={() => {
+					// Sync quick add input when switching tabs
+					if (mode.type === 'search') {
+						if (newItemText && (!searchQuery || searchQuery !== newItemText)) {
+							searchQuery = newItemText;
+							// Immediately trigger a search if there's text
+							if (searchQuery.trim().length > 2) {
+								searchImages(true);
+							}
+						}
+					} else if (mode.type === 'text') {
+						if (searchQuery && (!newItemText || newItemText !== searchQuery)) {
+							newItemText = searchQuery;
+						}
+					}
+					addItemType = mode.type;
+					focusInput('#quick-add-input');
+				}}
+				title={mode.title}
+			>
+				<span class="material-symbols-outlined text-sm">{mode.icon}</span>
+			</button>
+		{/each}
+
+		<!-- Upload button -->
+		<label
+			class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
+			title="Upload Image"
+		>
+			<span class="material-symbols-outlined text-sm">upload</span>
+			<input type="file" accept="image/*" class="hidden" on:change={handleFileUpload} />
+		</label>
+	</div>
+
+	<!-- Close button -->
+	<button
+		class="flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
+		on:click={closeAddItemModal}
+		title="Close"
+	>
+		<span class="material-symbols-outlined text-sm">close</span>
+	</button>
+</div>
 
 <!-- Color Picker Modal -->
 {#if showColorPicker && colorPickerTierId}
@@ -1973,6 +2293,34 @@
 				>
 					Save Changes
 				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Gemini Debug Modal -->
+{#if showGeminiDebugModal}
+	<div class="bg-opacity-80 fixed inset-0 z-50 flex items-center justify-center bg-black">
+		<div class="relative mx-4 w-full max-w-2xl rounded-lg bg-gray-900 p-8 shadow-2xl">
+			<button
+				class="absolute top-4 right-4 text-2xl text-gray-400 hover:text-white"
+				on:click={() => (showGeminiDebugModal = false)}
+				aria-label="Close debug modal"
+			>
+				&times;
+			</button>
+			<h2 class="mb-4 text-2xl font-bold text-orange-400">Gemini Debug Info</h2>
+			<div class="mb-6">
+				<div class="mb-2 text-sm font-semibold text-gray-300">Prompt Sent to Gemini:</div>
+				<pre
+					class="overflow-x-auto rounded bg-gray-800 p-4 text-xs whitespace-pre-wrap text-gray-200"
+					style="max-height: 200px;">{lastGeminiPrompt}</pre>
+			</div>
+			<div>
+				<div class="mb-2 text-sm font-semibold text-gray-300">Raw Gemini Response:</div>
+				<pre
+					class="overflow-x-auto rounded bg-gray-800 p-4 text-xs whitespace-pre-wrap text-gray-200"
+					style="max-height: 300px;">{lastGeminiRawResponse}</pre>
 			</div>
 		</div>
 	</div>

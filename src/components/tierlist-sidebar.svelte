@@ -1,5 +1,8 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
+	import { createEventDispatcher, tick } from 'svelte';
+	import { scale } from 'svelte/transition';
+	import confetti from 'canvas-confetti';
+	let likeBtn: HTMLButtonElement | null = null;
 
 	export let title: string = '';
 	export let date: string = '';
@@ -8,6 +11,85 @@
 	export let shareUrl: string = '';
 	export let id: string | number = '';
 	export let tierListData: any = null;
+	export let likes: number = 0;
+	export let liked: boolean = false;
+
+	let isLiking = false;
+	let likeAnim = false;
+	let likeHover = false;
+	let likeActive = false;
+
+	// Fetch initial like count and liked state on mount
+	import { onMount } from 'svelte';
+
+	onMount(async () => {
+		try {
+			const res = await fetch(`/api/interactions/tierlist/${id}/likes`);
+			if (res.ok) {
+				const data = await res.json();
+				likes = data.likes ?? 0;
+				// Optionally, you could check if the user has liked before if you store that info
+				// liked = data.liked ?? false;
+			}
+		} catch {
+			likes = 0;
+		}
+	});
+
+	async function handleLike() {
+		if (isLiking) return;
+		isLiking = true;
+		try {
+			const endpoint = liked ? '/api/interactions/unlike' : '/api/interactions/like';
+			const res = await fetch(endpoint, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					item_id: id,
+					item_type: 'tierlist'
+				})
+			});
+			if (res.ok) {
+				const data = await res.json();
+				likes = data.likes;
+				// Only animate on like (not unlike)
+				if (!liked) {
+					likeAnim = false;
+					await tick();
+					likeAnim = true;
+					if (likeBtn) {
+						const rect = likeBtn.getBoundingClientRect();
+						const x = (rect.left + rect.width / 2) / window.innerWidth;
+						const y = (rect.top + rect.height / 2) / window.innerHeight;
+						confetti({
+							particleCount: 40,
+							spread: 360,
+							angle: Math.random() * 359,
+							origin: { x, y }
+						});
+					} else {
+						confetti({
+							particleCount: 40,
+							spread: 120,
+							angle: Math.random() * 359,
+							origin: { y: 0.7 }
+						});
+					}
+				}
+				liked = !liked;
+			}
+		} catch (e) {
+			// Optionally handle error
+		} finally {
+			isLiking = false;
+		}
+	}
+
+	$: if (likeAnim) {
+		setTimeout(() => {
+			likeAnim = false;
+		}, 350);
+	}
 
 	const dispatch = createEventDispatcher();
 
@@ -109,15 +191,80 @@
 	$: mostPopulated = getMostPopulatedTier();
 </script>
 
-<div class="flex h-full flex-col overflow-y-auto bg-orange-900 p-6 text-white">
+<div class="flex h-full min-h-0 flex-col overflow-y-auto bg-orange-900 p-6 text-white">
 	<!-- Header section -->
 	<div class="mb-6">
 		<div class="mb-4 flex items-center justify-between">
 			<span class="text-sm text-orange-300">{author}</span>
 			<div class="flex items-center space-x-2 text-sm text-orange-300">
-				<span>🏆</span>
-				<span>📊</span>
-				<span>🔗</span>
+				<!-- Like Button -->
+				<button
+					class="group flex items-center space-x-1 focus:outline-none"
+					aria-label="Like"
+					on:click={handleLike}
+					disabled={isLiking}
+					type="button"
+					bind:this={likeBtn}
+					on:mouseenter={() => (likeHover = true)}
+					on:mouseleave={() => {
+						likeHover = false;
+						likeActive = false;
+					}}
+					on:mousedown={() => (likeActive = true)}
+					on:mouseup={() => (likeActive = false)}
+				>
+					{#if likeAnim}
+						<span
+							class="material-symbols-outlined text-lg transition-colors select-none"
+							style="
+								color: #ff5705;
+								font-family: 'Material Symbols Outlined' !important;
+								font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24 !important;
+								transition: transform 0.12s cubic-bezier(.4,2,.6,1);
+								transform: scale({likeActive ? 0.96 : likeHover ? 1.08 : 1});
+							"
+							in:scale={{ duration: 200, start: 0.7 }}
+						>
+							favorite
+						</span>
+					{:else}
+						<span
+							class="material-symbols-outlined text-lg transition-colors select-none"
+							style="
+								color: {liked ? '#ff5705' : ''};
+								font-family: 'Material Symbols Outlined' !important;
+								font-variation-settings: 'FILL' {liked ? 1 : 0}, 'wght' 400, 'GRAD' 0, 'opsz' 24 !important;
+								transition: transform 0.12s cubic-bezier(.4,2,.6,1);
+								transform: scale({likeActive ? 0.96 : likeHover ? 1.08 : 1});
+							"
+						>
+							favorite
+						</span>
+					{/if}
+					<span class="text-xs">{likes}</span>
+					<style>
+						.material-symbols-outlined:hover,
+						.group:hover .material-symbols-outlined {
+							color: #ff5705 !important;
+						}
+					</style>
+				</button>
+				<!-- Comments Icon -->
+				<button class="group flex items-center" aria-label="Comments" disabled>
+					<span
+						class="material-symbols-outlined text-lg transition-colors select-none group-hover:text-orange-200"
+					>
+						chat_bubble
+					</span>
+				</button>
+				<!-- Forks Icon -->
+				<button class="group flex items-center" aria-label="Forks" disabled>
+					<span
+						class="material-symbols-outlined text-lg transition-colors select-none group-hover:text-orange-200"
+					>
+						fork_right
+					</span>
+				</button>
 			</div>
 		</div>
 		<h1 class="mb-4 text-2xl font-bold break-words">{title || 'UNTITLED TIER LIST'}</h1>
@@ -228,48 +375,35 @@
 			</div>
 		{/if}
 
-		<!-- Share Button -->
-		<button
-			class="mb-3 flex w-full items-center justify-center space-x-2 rounded-lg bg-orange-600 px-4 py-2 font-bold text-white transition-colors hover:bg-orange-700"
-			on:click={handleShare}
-		>
-			<svg
-				class="h-4 w-4"
-				fill="none"
-				stroke="currentColor"
-				viewBox="0 0 24 24"
-				xmlns="http://www.w3.org/2000/svg"
-			>
-				<path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					stroke-width="2"
-					d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"
-				></path>
-			</svg>
-			<span>Share Tier List</span>
-		</button>
+		<!-- Bottom Bar: Share Link (left) and Delete Icon (right) -->
+		<div class="mt-auto flex items-center justify-between pt-4">
+			<!-- Share Link (copies to clipboard on click) -->
+			{#if shareUrl}
+				<div
+					class="flex cursor-pointer items-center space-x-2 text-orange-200 transition-colors hover:text-orange-100"
+					title="Click to copy link"
+					on:click={() => {
+						navigator.clipboard.writeText(shareUrl);
+						// Optionally, trigger a toast here
+					}}
+				>
+					<span class="material-symbols-outlined align-middle text-base">link</span>
+					<span class="text-xs break-all">{shareUrl}</span>
+				</div>
+			{/if}
 
-		<!-- Delete Button -->
-		<button
-			class="flex w-full items-center justify-center space-x-2 rounded-lg bg-red-600 px-4 py-2 font-bold text-white transition-colors hover:bg-red-700"
-			on:click={handleDelete}
-		>
-			<svg
-				class="h-4 w-4"
-				fill="none"
-				stroke="currentColor"
-				viewBox="0 0 24 24"
-				xmlns="http://www.w3.org/2000/svg"
+			<!-- Delete Icon (right) -->
+			<div
+				class="group flex cursor-pointer items-center"
+				title="Delete Tier List"
+				on:click={handleDelete}
 			>
-				<path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					stroke-width="2"
-					d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-				></path>
-			</svg>
-			<span>Delete Tier List</span>
-		</button>
+				<span
+					class="material-symbols-outlined text-2xl text-orange-300 transition-colors select-none group-hover:text-red-600"
+				>
+					delete
+				</span>
+			</div>
+		</div>
 	</div>
 </div>

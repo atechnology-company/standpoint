@@ -5,7 +5,7 @@
 
 	const navHoverStore = getContext<Writable<boolean>>('navHover');
 
-	let isLoggedIn = false; 
+	let isLoggedIn = false;
 	let profileHovering = false;
 
 	function handleMouseEnter() {

@@ -91,7 +91,7 @@
 
 <div class="flex min-h-screen bg-black">
 	<!-- Main Chart Area -->
-	<div class="flex-1 h-screen bg-black">
+	<div class="h-screen flex-1 bg-black">
 		{#if error}
 			<div class="m-6 border border-red-500/40 bg-red-500/20 px-4 py-3 text-red-200">
 				{error}

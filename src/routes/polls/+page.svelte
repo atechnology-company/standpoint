@@ -26,10 +26,30 @@
 	};
 
 	const responseTypes = [
-		{ value: 'line', label: 'Line Scale (2 options)', icon: '─', description: 'It\'s a line, it has an option on each side.' },
-		{ value: 'triangle', label: 'Triangle (3 options)', icon: '△', description: 'It\'s a triangle, great for three-way comparisons.' },
-		{ value: 'square', label: 'Square (4 options)', icon: '□', description: 'It\'s a square, cool right?' },
-		{ value: 'pentagon', label: 'Pentagon (5 options)', icon: '⬟', description: 'It\'s a pentagon, so many options to choose from!' }
+		{
+			value: 'line',
+			label: 'Line Scale (2 options)',
+			icon: '─',
+			description: "It's a line, it has an option on each side."
+		},
+		{
+			value: 'triangle',
+			label: 'Triangle (3 options)',
+			icon: '△',
+			description: "It's a triangle, great for three-way comparisons."
+		},
+		{
+			value: 'square',
+			label: 'Square (4 options)',
+			icon: '□',
+			description: "It's a square, cool right?"
+		},
+		{
+			value: 'pentagon',
+			label: 'Pentagon (5 options)',
+			icon: '⬟',
+			description: "It's a pentagon, so many options to choose from!"
+		}
 	];
 
 	const responseTypeMap = { line: 2, triangle: 3, square: 4, pentagon: 5 };
@@ -109,7 +129,7 @@
 	function updateOption(index: number, value: string) {
 		const newCustomOptions = [...poll.customOptions];
 		newCustomOptions[index] = value;
-		
+
 		poll = {
 			...poll,
 			customOptions: newCustomOptions
@@ -142,7 +162,7 @@
 			const numericPollId = typeof pollId === 'string' ? parseInt(pollId, 10) : pollId;
 			await apiClient.deletePoll(numericPollId);
 			await loadPolls();
-			
+
 			if (selectedPoll?.id === pollId) {
 				selectedPoll = null;
 				showSidebar = false;
@@ -179,7 +199,7 @@
 
 			const newPoll = await apiClient.createPoll(pollData);
 			await loadPolls();
-			
+
 			selectedPoll = polls.find((p) => p.id === newPoll.id);
 			showSidebar = true;
 			closeCreateModal();
@@ -255,9 +275,14 @@
 
 								<div class="flex flex-wrap gap-2 overflow-hidden text-xs">
 									{#each poll.options as option, i}
-										<span class="flex flex-shrink-0 items-center space-x-1 rounded bg-white/10 px-2 py-1 text-white/80">
+										<span
+											class="flex flex-shrink-0 items-center space-x-1 rounded bg-white/10 px-2 py-1 text-white/80"
+										>
 											{#if poll.gradients?.colors?.[i]}
-												<div class="h-2 w-2 rounded-full border border-white/30" style="background-color: {poll.gradients.colors[i]}"></div>
+												<div
+													class="h-2 w-2 rounded-full border border-white/30"
+													style="background-color: {poll.gradients.colors[i]}"
+												></div>
 											{/if}
 											<span class="font-normal text-white/50">{option}</span>
 										</span>
@@ -341,7 +366,9 @@
 
 				<!-- Title -->
 				<div class="mb-6">
-					<label for="poll-title" class="mb-2 block text-sm font-medium text-white/90">Poll Title *</label>
+					<label for="poll-title" class="mb-2 block text-sm font-medium text-white/90"
+						>Poll Title *</label
+					>
 					<input
 						id="poll-title"
 						class="w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-transparent focus:ring-2 focus:ring-[#ff5705] focus:outline-none"
@@ -352,13 +379,15 @@
 				</div>
 
 				<!-- Poll Form Component -->
-				<PollForm {poll} {responseTypes} onUpdate={(updatedPoll) => poll = updatedPoll} />
+				<PollForm {poll} {responseTypes} onUpdate={(updatedPoll) => (poll = updatedPoll)} />
 
 				<!-- Preview -->
 				<div class="mb-8 rounded-lg bg-gray-700/50 p-6">
 					<h3 class="mb-4 text-lg font-medium text-white">Preview</h3>
 					<div class="space-y-3">
-						<div class="text-xl font-bold text-white">{poll.title || 'Your poll title will appear here'}</div>
+						<div class="text-xl font-bold text-white">
+							{poll.title || 'Your poll title will appear here'}
+						</div>
 						<div class="text-sm text-white/50 italic">Click anywhere on the chart to vote</div>
 						<div class="flex items-center space-x-2 text-sm text-white/60">
 							<span>{responseTypes.find((t) => t.value === poll.responseType)?.icon}</span>
@@ -366,8 +395,13 @@
 						</div>
 						<div class="flex flex-wrap gap-2 text-xs">
 							{#each poll.customOptions as option, index}
-								<span class="flex items-center space-x-2 rounded bg-white/10 px-3 py-1 text-white/80">
-									<div class="h-3 w-3 rounded-full border border-white/30" style="background-color: {poll.gradients.colors[index]}"></div>
+								<span
+									class="flex items-center space-x-2 rounded bg-white/10 px-3 py-1 text-white/80"
+								>
+									<div
+										class="h-3 w-3 rounded-full border border-white/30"
+										style="background-color: {poll.gradients.colors[index]}"
+									></div>
 									<span>{option}</span>
 								</span>
 							{/each}
@@ -378,8 +412,15 @@
 				<!-- Actions -->
 				<div class="flex items-center justify-between">
 					<div class="flex space-x-3">
-						<button class="rounded-lg bg-gray-600 px-6 py-3 font-bold text-white transition-colors hover:bg-gray-700" on:click={closeCreateModal}>Cancel</button>
-						<button class="rounded-lg bg-[#ff5705] px-6 py-3 font-bold text-white transition-colors hover:bg-[#ff5705]/80 disabled:opacity-50" on:click={createPoll} disabled={creating || !poll.title.trim()}>
+						<button
+							class="rounded-lg bg-gray-600 px-6 py-3 font-bold text-white transition-colors hover:bg-gray-700"
+							on:click={closeCreateModal}>Cancel</button
+						>
+						<button
+							class="rounded-lg bg-[#ff5705] px-6 py-3 font-bold text-white transition-colors hover:bg-[#ff5705]/80 disabled:opacity-50"
+							on:click={createPoll}
+							disabled={creating || !poll.title.trim()}
+						>
 							{creating ? 'Creating...' : 'Create Poll'}
 						</button>
 					</div>

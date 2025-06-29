@@ -23,6 +23,28 @@
 	let autoplayInterval: ReturnType<typeof setInterval>;
 	let pauseAutoplay = false;
 
+	// Like counts for each slide
+	let slideLikes: number[] = [];
+
+	onMount(async () => {
+		// Only fetch likes if slides have tierlist with id
+		slideLikes = slides.map((slide) => slide.likes || 0);
+		await Promise.all(
+			slides.map(async (slide, i) => {
+				if (slide.tierlist && slide.tierlist.id) {
+					try {
+						const res = await fetch(`/api/interactions/tierlist/${slide.tierlist.id}/likes`);
+						if (res.ok) {
+							const data = await res.json();
+							slideLikes[i] = data.likes ?? 0;
+							slide.likes = data.likes ?? 0;
+						}
+					} catch {}
+				}
+			})
+		);
+	});
+
 	onMount(() => {
 		if (slides.length === 0) {
 			startAutoplay();
@@ -172,10 +194,46 @@
 						<span class="date">{slide.date || '1989-06-04'}</span>
 						<span class="revision">Rev.{slide.revision || '0'}</span>
 					</div>
-					<div class="flex gap-4">
-						<span class="likes">{slide.likes || 0} ♥</span>
-						<span class="comments">{slide.comments || 0} ✎</span>
-						<span class="forks">{slide.forks || 0} ⑂</span>
+					<div class="flex items-center gap-4">
+						<!-- Like Icon -->
+						<div
+							class="group flex items-center"
+							style="background: none; border: none; padding: 0;"
+							aria-label="Like"
+						>
+							<span
+								class="material-symbols-outlined text-2xl transition-colors select-none"
+								style="color: {slide.likes > 0
+									? '#ff5705'
+									: '#fff'}; font-family: 'Material Symbols Outlined'; font-variation-settings: 'FILL' {slide.likes >
+								0
+									? 1
+									: 0}, 'wght' 600, 'GRAD' 0, 'opsz' 24;"
+							>
+								favorite
+							</span>
+							<span class="ml-1">{slide.likes || 0}</span>
+						</div>
+						<!-- Comments Icon -->
+						<span class="flex items-center">
+							<span
+								class="material-symbols-outlined text-2xl"
+								style="color: #fff; font-family: 'Material Symbols Outlined'; font-variation-settings: 'FILL' 0, 'wght' 600, 'GRAD' 0, 'opsz' 24;"
+							>
+								chat_bubble
+							</span>
+							<span class="ml-1">{slide.comments || 0}</span>
+						</span>
+						<!-- Forks Icon -->
+						<span class="flex items-center">
+							<span
+								class="material-symbols-outlined text-2xl"
+								style="color: #fff; font-family: 'Material Symbols Outlined'; font-variation-settings: 'FILL' 0, 'wght' 600, 'GRAD' 0, 'opsz' 24;"
+							>
+								fork_right
+							</span>
+							<span class="ml-1">{slide.forks || 0}</span>
+						</span>
 					</div>
 				</div>
 
