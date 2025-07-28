@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-
+	import type { TierListResponse } from '../lib/api';
+	let pauseAutoplay = false;
 	type Slide = {
 		header: string;
 		author: string;
@@ -11,17 +12,18 @@
 		forks: number;
 		image?: string;
 		backgroundColor?: string;
-		tierlist?: any;
+		tierlist?: TierListResponse;
 	};
 
 	export let slides: Array<Slide> = [];
+
+	// TODO: Replace all 'any' types with more specific types throughout this file.
+	// TODO: Add 'key' to each {#each} block as required by Svelte.
 
 	let currentSlide = 0;
 	let startX = 0;
 	let isDragging = false;
 	let carouselElement: HTMLElement;
-	let autoplayInterval: ReturnType<typeof setInterval>;
-	let pauseAutoplay = false;
 
 	// Like counts for each slide
 	let slideLikes: number[] = [];
@@ -39,20 +41,12 @@
 							slideLikes[i] = data.likes ?? 0;
 							slide.likes = data.likes ?? 0;
 						}
-					} catch {}
+					} catch {
+						// ignore error
+					}
 				}
 			})
 		);
-	});
-
-	onMount(() => {
-		if (slides.length === 0) {
-			startAutoplay();
-
-			return () => {
-				if (autoplayInterval) clearInterval(autoplayInterval);
-			};
-		}
 	});
 
 	function goToSlide(index: number) {
@@ -71,15 +65,6 @@
 
 	function prevSlide() {
 		goToSlide(currentSlide - 1);
-	}
-
-	function startAutoplay() {
-		if (autoplayInterval) clearInterval(autoplayInterval);
-		autoplayInterval = setInterval(() => {
-			if (!pauseAutoplay) {
-				nextSlide();
-			}
-		}, 10000);
 	}
 
 	function handleTouchStart(e: TouchEvent) {
@@ -161,6 +146,7 @@
 	}
 </script>
 
+<!-- svelte-ignore a11y-no-static-element-interactions -->
 <div
 	class="relative h-[70vh] w-full cursor-grab touch-pan-y overflow-hidden active:cursor-grabbing"
 	bind:this={carouselElement}
@@ -172,7 +158,7 @@
 	on:mouseup={handleMouseUp}
 	on:mouseleave={handleMouseLeave}
 >
-	{#each slides as slide, i}
+	{#each slides as slide, i (slide.header)}
 		<div
 			class="pointer-events-none absolute top-0 left-0 h-full w-full bg-cover bg-center opacity-0 transition-opacity duration-500"
 			class:opacity-100={i === currentSlide}
@@ -181,60 +167,47 @@
 				? `background-image: url('${slide.image}');`
 				: ''}"
 		>
-			<div
-				class="bg-opacity-40 absolute top-0 left-0 z-10 h-full w-full bg-black backdrop-blur-sm"
-			></div>
-
-			<div
-				class="font-space-grotesk relative z-20 flex h-full w-full flex-col justify-between p-8 text-white"
-			>
-				<div class="flex w-full justify-between">
-					<div class="flex gap-4">
-						<span class="author">{slide.author || 'Sean Combs'}</span>
-						<span class="date">{slide.date || '1989-06-04'}</span>
-						<span class="revision">Rev.{slide.revision || '0'}</span>
-					</div>
-					<div class="flex items-center gap-4">
-						<!-- Like Icon -->
-						<div
-							class="group flex items-center"
-							style="background: none; border: none; padding: 0;"
-							aria-label="Like"
+			<div class="bg-opacity-40 absolute top-0 left-0 z-10 h-full w-full bg-black backdrop-blur-sm">
+				<div class="flex items-center gap-4">
+					<!-- Like Icon -->
+					<div
+						class="group flex items-center"
+						style="background: none; border: none; padding: 0;"
+						aria-label="Like"
+					>
+						<span
+							class="material-symbols-outlined text-2xl transition-colors select-none"
+							style="color: {slide.likes > 0
+								? '#ff5705'
+								: '#fff'}; font-family: 'Material Symbols Outlined'; font-variation-settings: 'FILL' {slide.likes >
+							0
+								? 1
+								: 0}, 'wght' 600, 'GRAD' 0, 'opsz' 24;"
 						>
-							<span
-								class="material-symbols-outlined text-2xl transition-colors select-none"
-								style="color: {slide.likes > 0
-									? '#ff5705'
-									: '#fff'}; font-family: 'Material Symbols Outlined'; font-variation-settings: 'FILL' {slide.likes >
-								0
-									? 1
-									: 0}, 'wght' 600, 'GRAD' 0, 'opsz' 24;"
-							>
-								favorite
-							</span>
-							<span class="ml-1">{slide.likes || 0}</span>
-						</div>
-						<!-- Comments Icon -->
-						<span class="flex items-center">
-							<span
-								class="material-symbols-outlined text-2xl"
-								style="color: #fff; font-family: 'Material Symbols Outlined'; font-variation-settings: 'FILL' 0, 'wght' 600, 'GRAD' 0, 'opsz' 24;"
-							>
-								chat_bubble
-							</span>
-							<span class="ml-1">{slide.comments || 0}</span>
+							favorite
 						</span>
-						<!-- Forks Icon -->
-						<span class="flex items-center">
-							<span
-								class="material-symbols-outlined text-2xl"
-								style="color: #fff; font-family: 'Material Symbols Outlined'; font-variation-settings: 'FILL' 0, 'wght' 600, 'GRAD' 0, 'opsz' 24;"
-							>
-								fork_right
-							</span>
-							<span class="ml-1">{slide.forks || 0}</span>
-						</span>
+						<span class="ml-1">{slide.likes || 0}</span>
 					</div>
+					<!-- Comments Icon -->
+					<span class="flex items-center">
+						<span
+							class="material-symbols-outlined text-2xl"
+							style="color: #fff; font-family: 'Material Symbols Outlined'; font-variation-settings: 'FILL' 0, 'wght' 600, 'GRAD' 0, 'opsz' 24;"
+						>
+							chat_bubble
+						</span>
+						<span class="ml-1">{slide.comments || 0}</span>
+					</span>
+					<!-- Forks Icon -->
+					<span class="flex items-center">
+						<span
+							class="material-symbols-outlined text-2xl"
+							style="color: #fff; font-family: 'Material Symbols Outlined'; font-variation-settings: 'FILL' 0, 'wght' 600, 'GRAD' 0, 'opsz' 24;"
+						>
+							fork_right
+						</span>
+						<span class="ml-1">{slide.forks || 0}</span>
+					</span>
 				</div>
 
 				<div class="mt-auto mb-8 self-start">
@@ -243,7 +216,7 @@
 				</div>
 
 				<div class="flex gap-2 self-end">
-					{#each slides as _, index}
+					{#each slides as _, index (index)}
 						<button
 							class="h-4 w-4 cursor-pointer border-none p-0 transition-all duration-300"
 							class:opacity-50={index !== currentSlide}

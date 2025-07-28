@@ -1,16 +1,16 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
 	import { apiClient } from '$lib/api';
-	import Sidebar from '$lib/../components/sidebar.svelte';
+	import Sidebar from '../../../components/sidebar.svelte';
 	import ChartRenderer from '$lib/../components/chart-renderer.svelte';
 
 	let poll: any = null;
 	let loading = true;
 	let error = '';
-	let pollId: string;
+	export let params: { id: string };
+	let pollId: string = params.id;
 
-	$: pollId = $page.params.id;
+	import { get } from 'svelte/store';
 
 	onMount(async () => {
 		await loadPoll();
@@ -21,7 +21,7 @@
 			loading = true;
 			error = '';
 			const numericPollId = parseInt(pollId, 10);
-			poll = await apiClient.getPoll(numericPollId);
+			poll = await apiClient.getPoll(String(numericPollId));
 		} catch (err) {
 			error = 'Failed to load poll. Make sure the backend server is running.';
 			console.error('Error loading poll:', err);
@@ -49,7 +49,7 @@
 	async function deletePoll(pollId: string | number) {
 		try {
 			const numericPollId = typeof pollId === 'string' ? parseInt(pollId, 10) : pollId;
-			await apiClient.deletePoll(numericPollId);
+			await apiClient.deletePoll(String(numericPollId));
 			window.location.href = '/polls';
 		} catch (err) {
 			console.error('Error deleting poll:', err);
@@ -126,16 +126,7 @@
 	<!-- Sidebar -->
 	{#if poll}
 		<div class="h-screen w-80 border-l border-white/20">
-			<Sidebar
-				title={poll.title}
-				date={poll.created_at}
-				author="Community"
-				revision={1}
-				shareUrl={`${window.location.origin}/polls/${poll.id}`}
-				id={poll.id}
-				type="poll"
-				on:delete={handleSidebarDelete}
-			/>
+			<Sidebar pollId={poll.id} on:delete={handleSidebarDelete} />
 		</div>
 	{/if}
 </div>

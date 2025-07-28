@@ -1,6 +1,41 @@
+<script context="module" lang="ts">
+	export type ChartData = {
+		poll: {
+			response_type: number;
+			gradients?: { enabled?: boolean; colors: string[] };
+			options: string[];
+			user_vote?: number | null;
+			user_vote_2d?: { x: number; y: number } | null;
+		};
+		positions: number[];
+		positions2D?: Array<{ x: number; y: number; id?: string }>;
+		average: number;
+		average2D?: [number, number];
+		stdDev: number;
+		lowerBound: number;
+		upperBound: number;
+	};
+</script>
+
 <script lang="ts">
-	export let chartData: any;
+	export let chartData: ChartData;
 	export let onVote: (position: number, position2D?: { x: number; y: number }) => void;
+	function handleClickFromKeyboard(responseType: number) {
+		const x = 0.5,
+			y = 0.5;
+		switch (responseType) {
+			case 2:
+				onVote(0.5);
+				break;
+			case 3:
+			case 4:
+			case 5:
+				onVote(0.5, { x, y });
+				break;
+			default:
+				break;
+		}
+	}
 
 	// Common chart styles and classes
 	const chartClasses = 'relative h-full w-full cursor-crosshair';
@@ -24,27 +59,35 @@
 		let position2D = { x, y };
 
 		switch (responseType) {
-			case 2: // Line
+			case 2: {
+				// Line
 				position = x <= 0.08 ? 0 : x >= 0.92 ? 1 : (x - 0.08) / 0.84;
 				onVote(position);
 				break;
-			case 3: // Triangle
+			}
+			case 3: {
+				// Triangle
 				if (isPointInTriangle(x, y)) {
 					const [a, b, c] = getBarycentricCoords(x, y);
 					position = a >= b && a >= c ? 0.1 : b >= c ? 0.3 : 0.7;
 					onVote(position, position2D);
 				}
 				break;
-			case 4: // Square
+			}
+			case 4: {
+				// Square
 				const clampedX = Math.max(0, Math.min(1, x));
 				const clampedY = Math.max(0, Math.min(1, y));
 				onVote(clampedX, { x: clampedX, y: clampedY });
 				break;
-			case 5: // Pentagon
+			}
+			case 5: {
+				// Pentagon
 				if (isPointInPentagon(x, y)) {
 					onVote(Math.max(0, Math.min(1, (x + y) / 2)), position2D);
 				}
 				break;
+			}
 		}
 	}
 
@@ -90,10 +133,34 @@
 				inside = !inside;
 			}
 		}
+		// Make voting more forgiving near the edges by allowing a small buffer outside the pentagon
+		if (!inside) {
+			const buffer = 0.03; // Allow a 3% buffer outside the pentagon
+			for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
+				const dist = pointToSegmentDistance({ x, y }, vertices[j], vertices[i]);
+				if (dist < buffer) {
+					return true;
+				}
+			}
+		}
 		return inside;
 	}
 
-	function renderGradients(responseType: number, colors: string[]) {
+	// Helper function to calculate distance from point to segment
+	function pointToSegmentDistance(
+		p: { x: number; y: number },
+		v: { x: number; y: number },
+		w: { x: number; y: number }
+	): number {
+		const l2 = (v.x - w.x) ** 2 + (v.y - w.y) ** 2;
+		if (l2 === 0) return Math.sqrt((p.x - v.x) ** 2 + (p.y - v.y) ** 2);
+		let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+		t = Math.max(0, Math.min(1, t));
+		const proj = { x: v.x + t * (w.x - v.x), y: v.y + t * (w.y - v.y) };
+		return Math.sqrt((p.x - proj.x) ** 2 + (p.y - proj.y) ** 2);
+	}
+
+	function renderGradients(responseType: number) {
 		if (!chartData.poll.gradients?.enabled) return '';
 
 		const gradientConfigs: Record<number, Array<{ cx: string; cy: string }>> = {
@@ -123,7 +190,15 @@
 
 {#if chartData.poll.response_type === 2}
 	<!-- Line Chart -->
-	<div class={chartClasses} on:click={(e) => handleClick(e, 2)} role="button" tabindex="0">
+	<div
+		class={chartClasses}
+		on:click={(e) => handleClick(e, 2)}
+		on:keydown={(e) => {
+			if (e.key === 'Enter') handleClickFromKeyboard(2);
+		}}
+		role="button"
+		tabindex="0"
+	>
 		<div
 			class="absolute top-1/2 right-8 left-8 h-32 -translate-y-1/2 transform rounded bg-white/10"
 		>
@@ -137,7 +212,7 @@
 		</div>
 
 		<!-- Grid lines -->
-		{#each Array(5) as _, i}
+		{#each Array(5) as i (i)}
 			<div
 				class="absolute top-1/2 h-32 w-px -translate-y-1/2 transform bg-white/20"
 				style="left: {8 + ((i + 1) * 84) / 6}%"
@@ -156,14 +231,14 @@
 			style="left: {8 + chartData.average * 84}%"
 		></div>
 
-		{#each chartData.positions as position}
+		{#each chartData.positions as position, i (i)}
 			<div
 				class="absolute top-1/2 h-24 w-2 -translate-x-1/2 -translate-y-1/2 transform rounded bg-[#05ffac]"
 				style="left: {8 + position * 84}%"
 			></div>
 		{/each}
 
-		{#if chartData.poll.user_vote !== null}
+		{#if chartData.poll.user_vote !== undefined && chartData.poll.user_vote !== null}
 			<div
 				class="absolute top-1/2 h-24 w-3 -translate-x-1/2 -translate-y-1/2 transform rounded bg-[#ff5705]"
 				style="left: {8 + chartData.poll.user_vote * 84}%"
@@ -180,6 +255,7 @@
 			{chartData.poll.options[0]}
 		</div>
 		<div class="absolute top-8 right-8 text-right text-sm font-normal text-white/50">
+			<!-- This block seems incorrect, likely a copy-paste error. Remove the {#each} and just render the option. -->
 			{chartData.poll.options[1]}
 		</div>
 	</div>
@@ -188,14 +264,22 @@
 	<div
 		class={chartClasses}
 		on:click={(e) => handleClick(e, chartData.poll.response_type)}
+		on:keydown={(e) => {
+			if (e.key === 'Enter') handleClickFromKeyboard(chartData.poll.response_type);
+		}}
 		role="button"
 		tabindex="0"
 	>
 		<svg viewBox="0 0 100 100" class="h-full w-full">
 			{#if chartData.poll.gradients?.enabled}
 				<defs>
-					{#each renderGradients(chartData.poll.response_type, chartData.poll.gradients.colors) as config, i}
-						<radialGradient id="corner{i + 1}" cx={config.cx} cy={config.cy} r="80%">
+					{#each renderGradients(chartData.poll.response_type) as config, i (i)}
+						<radialGradient
+							id="corner{i + 1}"
+							cx={typeof config === 'string' ? '' : config.cx}
+							cy={typeof config === 'string' ? '' : config.cy}
+							r="80%"
+						>
 							<stop
 								offset="0%"
 								style="stop-color:{chartData.poll.gradients.colors[i]};stop-opacity:0.6"
@@ -219,8 +303,8 @@
 					stroke-width="0.5"
 				/>
 				{#if chartData.poll.gradients?.enabled}
-					{#each renderGradients(3, chartData.poll.gradients.colors) as _, i}
-						<polygon points="50,2 2,95 98,95" fill="url(#corner{i + 1})" />
+					{#each renderGradients(3) as config, index (index)}
+						<polygon points="50,2 2,95 98,95" fill="url(#corner{index + 1})" />
 					{/each}
 				{/if}
 			{:else if chartData.poll.response_type === 4}
@@ -234,8 +318,8 @@
 					stroke-width="0.5"
 				/>
 				{#if chartData.poll.gradients?.enabled}
-					{#each renderGradients(4, chartData.poll.gradients.colors) as _, i}
-						<rect x="0" y="0" width="100" height="100" fill="url(#corner{i + 1})" />
+					{#each renderGradients(4) as config, index (index)}
+						<rect x="0" y="0" width="100" height="100" fill="url(#corner{index + 1})" />
 					{/each}
 				{/if}
 			{:else if chartData.poll.response_type === 5}
@@ -246,25 +330,29 @@
 					stroke-width="0.5"
 				/>
 				{#if chartData.poll.gradients?.enabled}
-					{#each renderGradients(5, chartData.poll.gradients.colors) as _, i}
-						<polygon points="50,2 95,30 80,90 20,90 5,30" fill="url(#corner{i + 1})" />
+					{#each renderGradients(5) as config, index (index)}
+						<polygon points="50,2 95,30 80,90 20,90 5,30" fill="url(#corner{index + 1})" />
 					{/each}
 				{/if}
 			{/if}
 
 			<!-- Vote dots -->
-			{#if chartData.positions2D?.length > 0}
-				{#each chartData.positions2D as pos}
+			{#if chartData.positions2D && chartData.positions2D.length > 0}
+				{#each chartData.positions2D as pos, i (pos.id !== undefined ? pos.id : i)}
 					<circle cx={pos.x * 100} cy={pos.y * 100} {...voteDotStyle} />
 				{/each}
 			{:else}
-				{#each chartData.positions as position}
-					<circle cx={50 + (position - 0.5) * 60} cy={50} {...voteDotStyle} />
+				{#each chartData.positions as position, index (index)}
+					<circle
+						cx={50 + ((typeof position === 'number' ? position : 0) - 0.5) * 60}
+						cy={50}
+						{...voteDotStyle}
+					/>
 				{/each}
 			{/if}
 
 			<!-- User vote -->
-			{#if chartData.poll.user_vote !== null}
+			{#if chartData.poll.user_vote !== undefined && chartData.poll.user_vote !== null}
 				{#if chartData.poll.user_vote_2d}
 					<circle
 						cx={chartData.poll.user_vote_2d.x * 100}
@@ -272,7 +360,14 @@
 						{...userVoteStyle}
 					/>
 				{:else}
-					<circle cx={50 + (chartData.poll.user_vote - 0.5) * 60} cy={50} {...userVoteStyle} />
+					<circle
+						cx={50 +
+							((typeof chartData.poll.user_vote === 'number' ? chartData.poll.user_vote : 0) -
+								0.5) *
+								60}
+						cy={50}
+						{...userVoteStyle}
+					/>
 				{/if}
 			{/if}
 

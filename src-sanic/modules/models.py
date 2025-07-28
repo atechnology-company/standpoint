@@ -61,6 +61,7 @@ class ItemPlacement(BaseModel):
 class TierListCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=1000)
+    banner_image: Optional[str] = Field(None, description="Banner image URL")
     list_type: Literal["classic", "dynamic"] = Field(..., description="Classic = discrete tiers, Dynamic = continuous positioning")
     tiers: List[TierCreate] = Field(..., min_items=2, max_items=10)
     items: List[TierItem] = Field(..., min_items=1, description="Available items to rank with full data")
@@ -72,6 +73,7 @@ class TierListResponse(BaseModel):
     id: int
     title: str
     description: Optional[str]
+    banner_image: Optional[str]
     list_type: str
     tiers: List[TierCreate]
     items: List[TierItem]

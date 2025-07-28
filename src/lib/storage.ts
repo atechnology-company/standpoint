@@ -6,7 +6,7 @@ interface CachedResult {
 }
 
 const CACHE_KEY_PREFIX = 'image_search_';
-const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+const CACHE_DURATION = 24 * 60 * 60 * 1000;
 
 export async function loadResultFromStorage(query: string): Promise<CachedResult | null> {
 	try {
@@ -19,7 +19,6 @@ export async function loadResultFromStorage(query: string): Promise<CachedResult
 
 		const result: CachedResult = JSON.parse(cached);
 
-		// Check if cache is expired
 		if (Date.now() - result.timestamp > CACHE_DURATION) {
 			localStorage.removeItem(cacheKey);
 			return null;

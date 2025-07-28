@@ -2,8 +2,8 @@ import { resultImages, type ImageResult } from './stores';
 import { loadResultFromStorage, saveResultToStorage } from './storage';
 
 // API Keys
-const GOOGLE_SEARCH_API_KEY = (import.meta as any).env?.VITE_GOOGLE_SEARCH_API_KEY;
-const GOOGLE_SEARCH_CX = (import.meta as any).env?.VITE_GOOGLE_SEARCH_CX;
+const GOOGLE_SEARCH_API_KEY = import.meta.env?.VITE_GOOGLE_SEARCH_API_KEY;
+const GOOGLE_SEARCH_CX = import.meta.env?.VITE_GOOGLE_SEARCH_CX;
 
 // Search for images related to the query using Google Custom Search API
 export async function searchForImages(query: string): Promise<void> {
@@ -78,7 +78,7 @@ export async function searchForImages(query: string): Promise<void> {
 				if (errorJson.error) {
 					console.error('API Error details:', errorJson.error);
 				}
-			} catch (parseError) {
+			} catch {
 				console.warn('Could not parse error response as JSON');
 			}
 
@@ -100,10 +100,11 @@ export async function searchForImages(query: string): Promise<void> {
 		const data = await response.json();
 
 		if (data.items && data.items.length > 0) {
-			const images: ImageResult[] = data.items.map((item: any) => ({
+			const images: ImageResult[] = data.items.map((item: Record<string, unknown>) => ({
 				url: item.link,
 				title: item.title,
-				thumbnailLink: item.image?.thumbnailLink || item.link
+				thumbnailLink:
+					(item.image && (item.image as { thumbnailLink?: string }).thumbnailLink) || item.link
 			}));
 
 			resultImages.set(images);
@@ -186,7 +187,7 @@ export async function searchGoogleImages(
 	query: string,
 	count: number = 10,
 	startIndex: number = 1
-): Promise<any[]> {
+): Promise<ImageResult[]> {
 	try {
 		// Check if API keys are configured
 		if (
@@ -195,13 +196,10 @@ export async function searchGoogleImages(
 		) {
 			console.warn('Google Search API keys not configured. Using fallback images.');
 			// Generate fallback images for pagination
-			const fallbackImages = Array.from({ length: count }, (_, i) => ({
+			const fallbackImages: ImageResult[] = Array.from({ length: count }, (_, i) => ({
+				url: `https://picsum.photos/seed/fallback-${query}-${startIndex + i}/300/200`,
 				title: `${query} ${startIndex + i}`,
-				link: `https://picsum.photos/seed/fallback-${query}-${startIndex + i}/300/200`,
-				image: {
-					thumbnailLink: `https://picsum.photos/seed/fallback-${query}-${startIndex + i}/150/100`
-				},
-				snippet: `Fallback result ${startIndex + i} for ${query}`
+				thumbnailLink: `https://picsum.photos/seed/fallback-${query}-${startIndex + i}/150/100`
 			}));
 			return fallbackImages;
 		}
@@ -209,26 +207,20 @@ export async function searchGoogleImages(
 		// Validate API key and CX format
 		if (!GOOGLE_SEARCH_API_KEY || GOOGLE_SEARCH_API_KEY.length < 20) {
 			console.warn('Invalid Google Search API key format. Using fallback images.');
-			const fallbackImages = Array.from({ length: count }, (_, i) => ({
+			const fallbackImages: ImageResult[] = Array.from({ length: count }, (_, i) => ({
+				url: `https://picsum.photos/seed/fallback-${query}-${startIndex + i}/300/200`,
 				title: `${query} ${startIndex + i}`,
-				link: `https://picsum.photos/seed/fallback-${query}-${startIndex + i}/300/200`,
-				image: {
-					thumbnailLink: `https://picsum.photos/seed/fallback-${query}-${startIndex + i}/150/100`
-				},
-				snippet: `Fallback result ${startIndex + i} for ${query}`
+				thumbnailLink: `https://picsum.photos/seed/fallback-${query}-${startIndex + i}/150/100`
 			}));
 			return fallbackImages;
 		}
 
 		if (!GOOGLE_SEARCH_CX || GOOGLE_SEARCH_CX.length < 10) {
 			console.warn('Invalid Google Search CX format. Using fallback images.');
-			const fallbackImages = Array.from({ length: count }, (_, i) => ({
+			const fallbackImages: ImageResult[] = Array.from({ length: count }, (_, i) => ({
+				url: `https://picsum.photos/seed/fallback-${query}-${startIndex + i}/300/200`,
 				title: `${query} ${startIndex + i}`,
-				link: `https://picsum.photos/seed/fallback-${query}-${startIndex + i}/300/200`,
-				image: {
-					thumbnailLink: `https://picsum.photos/seed/fallback-${query}-${startIndex + i}/150/100`
-				},
-				snippet: `Fallback result ${startIndex + i} for ${query}`
+				thumbnailLink: `https://picsum.photos/seed/fallback-${query}-${startIndex + i}/150/100`
 			}));
 			return fallbackImages;
 		}
@@ -258,13 +250,10 @@ export async function searchGoogleImages(
 			console.error(`Google Search API error ${response.status}:`, errorText);
 
 			// Return fallback images on error
-			const fallbackImages = Array.from({ length: Math.min(count, 6) }, (_, i) => ({
+			const fallbackImages: ImageResult[] = Array.from({ length: Math.min(count, 6) }, (_, i) => ({
+				url: `https://picsum.photos/seed/fallback-${query}-${startIndex + i}/300/200`,
 				title: `${query} ${startIndex + i}`,
-				link: `https://picsum.photos/seed/fallback-${query}-${startIndex + i}/300/200`,
-				image: {
-					thumbnailLink: `https://picsum.photos/seed/fallback-${query}-${startIndex + i}/150/100`
-				},
-				snippet: `Fallback result ${startIndex + i} for ${query}`
+				thumbnailLink: `https://picsum.photos/seed/fallback-${query}-${startIndex + i}/150/100`
 			}));
 			return fallbackImages;
 		}
@@ -274,13 +263,11 @@ export async function searchGoogleImages(
 
 		if (data.items && data.items.length > 0) {
 			// Convert to the expected format
-			const results = data.items.map((item: any) => ({
+			const results: ImageResult[] = data.items.map((item: Record<string, unknown>) => ({
+				url: item.link,
 				title: item.title,
-				link: item.link,
-				image: {
-					thumbnailLink: item.image?.thumbnailLink || item.link
-				},
-				snippet: item.snippet || `Image result for ${query}`
+				thumbnailLink:
+					(item.image && (item.image as { thumbnailLink?: string }).thumbnailLink) || item.link
 			}));
 
 			console.log(
@@ -295,13 +282,10 @@ export async function searchGoogleImages(
 		console.error('Error in searchGoogleImages:', error);
 
 		// Return fallback images on error
-		const fallbackImages = Array.from({ length: Math.min(count, 6) }, (_, i) => ({
+		const fallbackImages: ImageResult[] = Array.from({ length: Math.min(count, 6) }, (_, i) => ({
+			url: `https://picsum.photos/seed/fallback-${query}-${startIndex + i}/300/200`,
 			title: `${query} ${startIndex + i}`,
-			link: `https://picsum.photos/seed/fallback-${query}-${startIndex + i}/300/200`,
-			image: {
-				thumbnailLink: `https://picsum.photos/seed/fallback-${query}-${startIndex + i}/150/100`
-			},
-			snippet: `Fallback result ${startIndex + i} for ${query}`
+			thumbnailLink: `https://picsum.photos/seed/fallback-${query}-${startIndex + i}/150/100`
 		}));
 		return fallbackImages;
 	}

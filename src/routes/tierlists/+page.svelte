@@ -2,13 +2,13 @@
 	import { onMount } from 'svelte';
 	import { apiClient } from '$lib/api';
 	import Hero from '../../components/hero.svelte';
+	import { fade } from 'svelte/transition';
 
 	let tierLists: any[] = [];
 	let loading = true;
 	let error = '';
 	let heroSlides: any[] = [];
 
-	// Store for like counts by tierlist id
 	let likeCounts: Record<number, number> = {};
 
 	onMount(async () => {
@@ -32,7 +32,6 @@
 			error = '';
 			tierLists = await apiClient.getTierLists();
 
-			// Fetch like counts for all tierlists
 			const likePromises = tierLists.map(async (tl) => {
 				const likes = await fetchLikeCount(tl.id);
 				likeCounts[tl.id] = likes;
@@ -40,7 +39,6 @@
 			});
 			await Promise.all(likePromises);
 
-			// Create hero slides from random tierlists, using real like counts
 			if (tierLists.length > 0) {
 				heroSlides = tierLists.slice(0, 5).map((tierList, index) => ({
 					header: tierList.title,
@@ -108,19 +106,18 @@
 				{#each tierLists as tierList}
 					<div
 						class="relative h-64 cursor-pointer border-r border-b border-gray-800 transition-all duration-200 hover:brightness-110"
-						style="background-color: {[
-							'#FFD6E0',
-							'#FFEFB5',
-							'#C1E7E3',
-							'#DCEBDD',
-							'#E2D0F9',
-							'#FFB5B5',
-							'#B5E5FF'
-						][Math.floor(Math.random() * 7)]};"
+						style={tierList.banner_image
+							? `background-image: url('${tierList.banner_image}'); background-size: cover; background-position: center;`
+							: `background-color: ${
+									['#FFD6E0', '#FFEFB5', '#C1E7E3', '#DCEBDD', '#E2D0F9', '#FFB5B5', '#B5E5FF'][
+										Math.floor(Math.random() * 7)
+									]
+								};`}
 						on:click={() => navigateToTierList(tierList)}
 						on:keydown={(e) => e.key === 'Enter' && navigateToTierList(tierList)}
 						role="button"
 						tabindex="0"
+						in:fade={{ duration: 350 }}
 					>
 						<!-- Overlay -->
 						<div class="bg-opacity-40 absolute inset-0 bg-black"></div>

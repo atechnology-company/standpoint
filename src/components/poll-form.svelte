@@ -1,7 +1,25 @@
+<script context="module" lang="ts">
+	export type ResponseTypeOption = {
+		value: number;
+		icon: string;
+		label: string;
+		description: string;
+	};
+</script>
+
 <script lang="ts">
-	export let poll: any;
-	export let onUpdate: (updatedPoll: any) => void;
-	export let responseTypes: any[];
+	import type { PollResponse } from '../lib/api';
+
+	export let poll: PollResponse & {
+		customOptions: string[];
+		gradients: {
+			colors: string[];
+			enabled: boolean;
+		};
+		responseType: number;
+	};
+	export let onUpdate: (updatedPoll: typeof poll) => void;
+	export let responseTypes: ResponseTypeOption[];
 
 	const colorSchemes = [
 		{ name: 'Warm/Cool', colors: ['#ff5705', '#0066cc', '#00ff88', '#ff4488', '#ffaa00'] },
@@ -19,17 +37,13 @@
 		poll.gradients.colors = colors.slice(0, poll.customOptions.length);
 		onUpdate(poll);
 	}
-
-	$: if (poll.responseType) {
-		onUpdate(poll);
-	}
 </script>
 
 <!-- Response Type Selection -->
 <fieldset class="mb-8">
 	<legend class="mb-4 block text-sm font-medium text-white/90">Response Type *</legend>
 	<div class="space-y-3">
-		{#each responseTypes as type}
+		{#each responseTypes as type (type.value)}
 			<label
 				class="flex cursor-pointer items-center rounded-lg border p-4 transition-colors hover:bg-gray-700 {poll.responseType ===
 				type.value
@@ -60,7 +74,7 @@
 <fieldset class="mb-8">
 	<legend class="mb-4 block text-sm font-medium text-white/90">Option Labels *</legend>
 	<div class="space-y-3">
-		{#each poll.customOptions as option, index}
+		{#each poll.customOptions as option, index (index)}
 			<div class="flex items-center space-x-3">
 				<input
 					type="color"
@@ -121,7 +135,7 @@
 			<div>
 				<span class="mb-2 block text-xs font-medium text-white/70">Quick Color Schemes</span>
 				<div class="grid grid-cols-2 gap-2">
-					{#each colorSchemes as scheme}
+					{#each colorSchemes as scheme (scheme.name)}
 						<button
 							type="button"
 							class="h-8 rounded border border-gray-600 text-xs text-white/70 transition-colors hover:border-white/50"

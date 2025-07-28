@@ -3,7 +3,7 @@
 	import { apiClient } from '$lib/api';
 
 	let backendStatus = 'checking';
-	let healthData: any = null;
+	let healthData: unknown = null;
 
 	onMount(async () => {
 		try {
@@ -18,7 +18,7 @@
 
 <main class="grid min-h-screen grid-rows-2 gap-0">
 	<div class="grid grid-cols-1 gap-0 md:grid-cols-2">
-		<!-- about -->
+		<!-- About -->
 		<div
 			class="flex flex-col justify-center border-r border-white/20 bg-white/10 p-8 backdrop-blur"
 		>
@@ -30,7 +30,7 @@
 			</p>
 		</div>
 
-		<!-- status -->
+		<!-- Status -->
 		<div
 			class={`flex flex-col justify-center p-8 backdrop-blur ${
 				backendStatus === 'connected'
@@ -48,9 +48,9 @@
 						? 'Disconnected'
 						: 'Checking...'}
 			</div>
-			{#if healthData}
+			{#if healthData && typeof healthData === 'object' && healthData !== null && 'message' in healthData}
 				<div class="text-lg text-white/70">
-					{healthData.message}
+					{(healthData as { message: string }).message}
 				</div>
 			{/if}
 		</div>

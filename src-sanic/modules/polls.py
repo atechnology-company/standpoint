@@ -77,7 +77,7 @@ async def create_poll(request):
             "description": poll_data.description,
             "response_type": poll_data.response_type,
             "options": poll_data.options,
-            "gradients": poll_data.gradients.model_dump() if poll_data.gradients else None,
+            "gradients": poll_data.gradients.model_dump() if poll_data.gradients else {"colors": ["#ff5705", "#0066cc"], "enabled": False},
             "created_at": datetime.utcnow().isoformat()
         }
         

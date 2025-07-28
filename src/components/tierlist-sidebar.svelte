@@ -1,8 +1,6 @@
 <script lang="ts">
-	import { createEventDispatcher, tick } from 'svelte';
-	import { scale } from 'svelte/transition';
-	import confetti from 'canvas-confetti';
-	let likeBtn: HTMLButtonElement | null = null;
+	import { createEventDispatcher } from 'svelte';
+	import type { TierListResponse, TierCreate, TierItem } from '../lib/api';
 
 	export let title: string = '';
 	export let date: string = '';
@@ -10,86 +8,7 @@
 	export let revision: number = 1;
 	export let shareUrl: string = '';
 	export let id: string | number = '';
-	export let tierListData: any = null;
-	export let likes: number = 0;
-	export let liked: boolean = false;
-
-	let isLiking = false;
-	let likeAnim = false;
-	let likeHover = false;
-	let likeActive = false;
-
-	// Fetch initial like count and liked state on mount
-	import { onMount } from 'svelte';
-
-	onMount(async () => {
-		try {
-			const res = await fetch(`/api/interactions/tierlist/${id}/likes`);
-			if (res.ok) {
-				const data = await res.json();
-				likes = data.likes ?? 0;
-				// Optionally, you could check if the user has liked before if you store that info
-				// liked = data.liked ?? false;
-			}
-		} catch {
-			likes = 0;
-		}
-	});
-
-	async function handleLike() {
-		if (isLiking) return;
-		isLiking = true;
-		try {
-			const endpoint = liked ? '/api/interactions/unlike' : '/api/interactions/like';
-			const res = await fetch(endpoint, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					item_id: id,
-					item_type: 'tierlist'
-				})
-			});
-			if (res.ok) {
-				const data = await res.json();
-				likes = data.likes;
-				// Only animate on like (not unlike)
-				if (!liked) {
-					likeAnim = false;
-					await tick();
-					likeAnim = true;
-					if (likeBtn) {
-						const rect = likeBtn.getBoundingClientRect();
-						const x = (rect.left + rect.width / 2) / window.innerWidth;
-						const y = (rect.top + rect.height / 2) / window.innerHeight;
-						confetti({
-							particleCount: 40,
-							spread: 360,
-							angle: Math.random() * 359,
-							origin: { x, y }
-						});
-					} else {
-						confetti({
-							particleCount: 40,
-							spread: 120,
-							angle: Math.random() * 359,
-							origin: { y: 0.7 }
-						});
-					}
-				}
-				liked = !liked;
-			}
-		} catch (e) {
-			// Optionally handle error
-		} finally {
-			isLiking = false;
-		}
-	}
-
-	$: if (likeAnim) {
-		setTimeout(() => {
-			likeAnim = false;
-		}, 350);
-	}
+	export let tierListData: TierListResponse | null = null;
 
 	const dispatch = createEventDispatcher();
 
@@ -135,7 +54,8 @@
 		if (!tierListData?.tiers) return 0;
 		return (
 			tierListData.tiers.reduce(
-				(total: number, tier: any) => total + (tier.items?.length || 0),
+				(total: number, tier: TierCreate & { items?: TierItem[] }) =>
+					total + (tier.items?.length || 0),
 				0
 			) + (tierListData.unassignedItems?.length || 0)
 		);
@@ -143,7 +63,9 @@
 
 	function getItemsInTier(tierName: string): number {
 		if (!tierListData?.tiers) return 0;
-		const tier = tierListData.tiers.find((t: any) => t.name === tierName);
+		const tier = tierListData.tiers.find(
+			(t: TierCreate & { items?: TierItem[] }) => t.name === tierName
+		);
 		return tier?.items?.length || 0;
 	}
 
@@ -152,7 +74,7 @@
 		let maxItems = 0;
 		let mostPopulated = 'None';
 
-		tierListData.tiers.forEach((tier: any) => {
+		tierListData.tiers.forEach((tier: TierCreate & { items?: TierItem[] }) => {
 			const itemCount = tier.items?.length || 0;
 			if (itemCount > maxItems) {
 				maxItems = itemCount;
@@ -170,15 +92,15 @@
 		let imageCount = 0;
 
 		// Count items in tiers
-		tierListData.tiers.forEach((tier: any) => {
-			tier.items?.forEach((item: any) => {
+		tierListData.tiers.forEach((tier: TierCreate & { items?: TierItem[] }) => {
+			tier.items?.forEach((item: TierItem) => {
 				if (item.image) imageCount++;
 				else textCount++;
 			});
 		});
 
 		// Count unassigned items
-		tierListData.unassignedItems?.forEach((item: any) => {
+		tierListData.unassignedItems?.forEach((item: TierItem) => {
 			if (item.image) imageCount++;
 			else textCount++;
 		});
@@ -186,85 +108,20 @@
 		return { text: textCount, image: imageCount };
 	}
 
-	$: totalItems = getTotalItems();
-	$: itemBreakdown = getItemTypeBreakdown();
-	$: mostPopulated = getMostPopulatedTier();
+	const totalItems = getTotalItems();
+	const itemBreakdown = getItemTypeBreakdown();
+	const mostPopulated = getMostPopulatedTier();
 </script>
 
-<div class="flex h-full min-h-0 flex-col overflow-y-auto bg-orange-900 p-6 text-white">
+<div class="flex h-full flex-col overflow-y-auto bg-orange-900 p-6 text-white">
 	<!-- Header section -->
 	<div class="mb-6">
 		<div class="mb-4 flex items-center justify-between">
-			<span class="text-sm text-orange-300">{author}</span>
+			<span class="text-sm text-orange-300">{tierListData?.owner_displayName || author}</span>
 			<div class="flex items-center space-x-2 text-sm text-orange-300">
-				<!-- Like Button -->
-				<button
-					class="group flex items-center space-x-1 focus:outline-none"
-					aria-label="Like"
-					on:click={handleLike}
-					disabled={isLiking}
-					type="button"
-					bind:this={likeBtn}
-					on:mouseenter={() => (likeHover = true)}
-					on:mouseleave={() => {
-						likeHover = false;
-						likeActive = false;
-					}}
-					on:mousedown={() => (likeActive = true)}
-					on:mouseup={() => (likeActive = false)}
-				>
-					{#if likeAnim}
-						<span
-							class="material-symbols-outlined text-lg transition-colors select-none"
-							style="
-								color: #ff5705;
-								font-family: 'Material Symbols Outlined' !important;
-								font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24 !important;
-								transition: transform 0.12s cubic-bezier(.4,2,.6,1);
-								transform: scale({likeActive ? 0.96 : likeHover ? 1.08 : 1});
-							"
-							in:scale={{ duration: 200, start: 0.7 }}
-						>
-							favorite
-						</span>
-					{:else}
-						<span
-							class="material-symbols-outlined text-lg transition-colors select-none"
-							style="
-								color: {liked ? '#ff5705' : ''};
-								font-family: 'Material Symbols Outlined' !important;
-								font-variation-settings: 'FILL' {liked ? 1 : 0}, 'wght' 400, 'GRAD' 0, 'opsz' 24 !important;
-								transition: transform 0.12s cubic-bezier(.4,2,.6,1);
-								transform: scale({likeActive ? 0.96 : likeHover ? 1.08 : 1});
-							"
-						>
-							favorite
-						</span>
-					{/if}
-					<span class="text-xs">{likes}</span>
-					<style>
-						.material-symbols-outlined:hover,
-						.group:hover .material-symbols-outlined {
-							color: #ff5705 !important;
-						}
-					</style>
-				</button>
-				<!-- Comments Icon -->
-				<button class="group flex items-center" aria-label="Comments" disabled>
-					<span
-						class="material-symbols-outlined text-lg transition-colors select-none group-hover:text-orange-200"
-					>
-						chat_bubble
-					</span>
-				</button>
-				<!-- Forks Icon -->
-				<button class="group flex items-center" aria-label="Forks" disabled>
-					<span
-						class="material-symbols-outlined text-lg transition-colors select-none group-hover:text-orange-200"
-					>
-						fork_right
-					</span>
-				</button>
+				<span>🏆</span>
+				<span>📊</span>
+				<span>🔗</span>
 			</div>
 		</div>
 		<h1 class="mb-4 text-2xl font-bold break-words">{title || 'UNTITLED TIER LIST'}</h1>
@@ -304,42 +161,40 @@
 					</div>
 				</div>
 
-				<!-- Tier Breakdown (hide for dynamic tierlists) -->
-				{#if tierListData.type !== 'dynamic'}
-					<div class="mb-4">
-						<div class="mb-2 text-sm text-orange-200">Tier Breakdown</div>
-						<div class="space-y-2">
-							{#if tierListData.tiers}
-								{#each tierListData.tiers as tier}
-									<div class="flex items-center justify-between rounded bg-orange-800/30 p-2">
-										<div class="flex items-center space-x-2">
-											<div
-												class="h-3 w-3 flex-shrink-0 rounded border border-orange-300"
-												style="background-color: {tier.color || '#ff7f7f'}"
-											></div>
-											<span class="text-sm text-orange-100">{tier.name}</span>
-										</div>
-										<span class="text-sm font-bold text-white">{getItemsInTier(tier.name)}</span>
-									</div>
-								{/each}
-							{/if}
-
-							{#if tierListData.unassignedItems?.length > 0}
+				<!-- Tier Breakdown -->
+				<div class="mb-4">
+					<div class="mb-2 text-sm text-orange-200">Tier Breakdown</div>
+					<div class="space-y-2">
+						{#if tierListData.tiers}
+							{#each tierListData.tiers as tier (tier.name)}
 								<div class="flex items-center justify-between rounded bg-orange-800/30 p-2">
 									<div class="flex items-center space-x-2">
 										<div
-											class="h-3 w-3 flex-shrink-0 rounded border border-orange-300 bg-gray-500"
+											class="h-3 w-3 flex-shrink-0 rounded border border-orange-300"
+											style="background-color: {tier.color || '#ff7f7f'}"
 										></div>
-										<span class="text-sm text-orange-100">Unranked</span>
+										<span class="text-sm text-orange-100">{tier.name}</span>
 									</div>
-									<span class="text-sm font-bold text-white"
-										>{tierListData.unassignedItems.length}</span
-									>
+									<span class="text-sm font-bold text-white">{getItemsInTier(tier.name)}</span>
 								</div>
-							{/if}
-						</div>
+							{/each}
+						{/if}
+
+						{#if tierListData.unassignedItems && tierListData.unassignedItems.length > 0}
+							<div class="flex items-center justify-between rounded bg-orange-800/30 p-2">
+								<div class="flex items-center space-x-2">
+									<div
+										class="h-3 w-3 flex-shrink-0 rounded border border-orange-300 bg-gray-500"
+									></div>
+									<span class="text-sm text-orange-100">Unranked</span>
+								</div>
+								<span class="text-sm font-bold text-white"
+									>{tierListData.unassignedItems ? tierListData.unassignedItems.length : 0}</span
+								>
+							</div>
+						{/if}
 					</div>
-				{/if}
+				</div>
 
 				<!-- Most Populated Tier -->
 				<div class="mb-4">
@@ -355,7 +210,7 @@
 						<div class="mb-2 text-sm text-orange-200">Distribution</div>
 						<div class="space-y-1">
 							{#if tierListData.tiers}
-								{#each tierListData.tiers as tier}
+								{#each tierListData.tiers as tier (tier.name)}
 									{@const percentage = ((getItemsInTier(tier.name) / totalItems) * 100).toFixed(1)}
 									<div class="flex items-center space-x-2">
 										<span class="w-8 text-xs text-orange-300">{tier.name}:</span>
@@ -375,35 +230,48 @@
 			</div>
 		{/if}
 
-		<!-- Bottom Bar: Share Link (left) and Delete Icon (right) -->
-		<div class="mt-auto flex items-center justify-between pt-4">
-			<!-- Share Link (copies to clipboard on click) -->
-			{#if shareUrl}
-				<div
-					class="flex cursor-pointer items-center space-x-2 text-orange-200 transition-colors hover:text-orange-100"
-					title="Click to copy link"
-					on:click={() => {
-						navigator.clipboard.writeText(shareUrl);
-						// Optionally, trigger a toast here
-					}}
-				>
-					<span class="material-symbols-outlined align-middle text-base">link</span>
-					<span class="text-xs break-all">{shareUrl}</span>
-				</div>
-			{/if}
-
-			<!-- Delete Icon (right) -->
-			<div
-				class="group flex cursor-pointer items-center"
-				title="Delete Tier List"
-				on:click={handleDelete}
+		<!-- Share Button -->
+		<button
+			class="mb-3 flex w-full items-center justify-center space-x-2 rounded-lg bg-orange-600 px-4 py-2 font-bold text-white transition-colors hover:bg-orange-700"
+			on:click={handleShare}
+		>
+			<svg
+				class="h-4 w-4"
+				fill="none"
+				stroke="currentColor"
+				viewBox="0 0 24 24"
+				xmlns="http://www.w3.org/2000/svg"
 			>
-				<span
-					class="material-symbols-outlined text-2xl text-orange-300 transition-colors select-none group-hover:text-red-600"
-				>
-					delete
-				</span>
-			</div>
-		</div>
+				<path
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					stroke-width="2"
+					d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"
+				></path>
+			</svg>
+			<span>Share Tier List</span>
+		</button>
+
+		<!-- Delete Button -->
+		<button
+			class="flex w-full items-center justify-center space-x-2 rounded-lg bg-red-600 px-4 py-2 font-bold text-white transition-colors hover:bg-red-700"
+			on:click={handleDelete}
+		>
+			<svg
+				class="h-4 w-4"
+				fill="none"
+				stroke="currentColor"
+				viewBox="0 0 24 24"
+				xmlns="http://www.w3.org/2000/svg"
+			>
+				<path
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					stroke-width="2"
+					d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+				></path>
+			</svg>
+			<span>Delete Tier List</span>
+		</button>
 	</div>
 </div>

@@ -23,6 +23,7 @@ async def create_tierlist(request):
             "id": tierlist_id_counter,
             "title": tierlist_data.title,
             "description": tierlist_data.description,
+            "banner_image": getattr(tierlist_data, "banner_image", None),
             "list_type": tierlist_data.list_type,
             "tiers": [tier.model_dump() for tier in tierlist_data.tiers],
             "items": [item.model_dump() for item in tierlist_data.items],

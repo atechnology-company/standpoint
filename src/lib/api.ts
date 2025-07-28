@@ -5,12 +5,12 @@ const API_BASE_URL = 'http://localhost:8000';
 export interface PollCreate {
 	title: string;
 	description?: string;
-	response_type: number | string;
-	options?: string[];
+	response_type: number;
+	options: string[];
 }
 
 export interface VoteCreate {
-	poll_id: number;
+	poll_id: string;
 	position: number;
 }
 
@@ -19,10 +19,11 @@ export interface PollStats {
 	std_dev: number;
 	total_votes: number;
 	vote_positions: number[];
+	average_2d?: [number, number];
 }
 
 export interface PollResponse {
-	id: number;
+	id: string;
 	title: string;
 	description?: string;
 	response_type: number;
@@ -30,11 +31,17 @@ export interface PollResponse {
 	stats: PollStats;
 	user_vote?: number;
 	created_at: string;
+	gradients?: {
+		colors: string[];
+		enabled: boolean;
+	};
 }
 
 export interface TierCreate {
 	name: string;
 	position: number;
+	color?: string;
+	items?: TierItem[];
 }
 
 export interface TierItem {
@@ -67,7 +74,7 @@ export interface TierListUpdate {
 }
 
 export interface TierListResponse {
-	id: number;
+	id: string;
 	title: string;
 	description?: string;
 	list_type: string;
@@ -75,6 +82,9 @@ export interface TierListResponse {
 	items: TierItem[];
 	item_placements: ItemPlacement[];
 	created_at: string;
+	unassignedItems?: TierItem[];
+	owner_displayName?: string;
+	type?: string;
 }
 
 class ApiClient {
@@ -119,7 +129,7 @@ class ApiClient {
 		return this.request('/api/polls');
 	}
 
-	async getPoll(id: number): Promise<PollResponse> {
+	async getPoll(id: string): Promise<PollResponse> {
 		return this.request(`/api/polls/${id}`);
 	}
 
@@ -130,7 +140,11 @@ class ApiClient {
 		});
 	}
 
-	async vote(pollId: number, position: number, additionalData?: any): Promise<PollResponse> {
+	async vote(
+		pollId: string,
+		position: number,
+		additionalData?: VoteCreate | Record<string, unknown>
+	): Promise<PollResponse> {
 		const voteData = additionalData || { position };
 		return this.request(`/api/polls/${pollId}/vote`, {
 			method: 'POST',
@@ -138,7 +152,7 @@ class ApiClient {
 		});
 	}
 
-	async deletePoll(pollId: number): Promise<void> {
+	async deletePoll(pollId: string): Promise<void> {
 		return this.request(`/api/polls/${pollId}`, {
 			method: 'DELETE'
 		});
@@ -149,7 +163,7 @@ class ApiClient {
 		return this.request('/api/tierlists');
 	}
 
-	async getTierList(id: number): Promise<TierListResponse> {
+	async getTierList(id: string): Promise<TierListResponse> {
 		return this.request(`/api/tierlists/${id}`);
 	}
 
@@ -161,7 +175,7 @@ class ApiClient {
 	}
 
 	async updateTierListPlacements(
-		tierListId: number,
+		tierListId: string,
 		update: TierListUpdate
 	): Promise<TierListResponse> {
 		return this.request(`/api/tierlists/${tierListId}/placements`, {
@@ -170,7 +184,7 @@ class ApiClient {
 		});
 	}
 
-	async deleteTierList(tierListId: number): Promise<void> {
+	async deleteTierList(tierListId: string): Promise<void> {
 		return this.request(`/api/tierlists/${tierListId}`, {
 			method: 'DELETE'
 		});

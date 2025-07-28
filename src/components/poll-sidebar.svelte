@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { createEventDispatcher, tick } from 'svelte';
+	import type { PollResponse } from '../lib/api';
+	import { tick, createEventDispatcher } from 'svelte';
 	import { scale } from 'svelte/transition';
 	import confetti from 'canvas-confetti';
-	// @ts-ignore
 	let likeBtn: HTMLButtonElement | null = null;
 
 	export let title: string = '';
@@ -11,7 +11,7 @@
 	export let revision: number = 1;
 	export let shareUrl: string = '';
 	export let id: string | number = '';
-	export let pollData: any = null;
+	export let pollData: PollResponse | null = null;
 	export let likes: number = 0;
 	export let liked: boolean = false;
 
@@ -19,6 +19,7 @@
 	let likeAnim = false;
 	let likeHover = false;
 	let likeActive = false;
+	let copied = false;
 
 	// Fetch initial like count and liked state on mount
 	import { onMount } from 'svelte';
@@ -79,32 +80,16 @@
 				}
 				liked = !liked;
 			}
-		} catch (e) {
+		} catch {
 			// Optionally handle error
 		} finally {
 			likeLoading = false;
 		}
 	}
 
-	$: if (likeAnim) {
-		setTimeout(() => {
-			likeAnim = false;
-		}, 350);
-	}
+	// Remove infinite reactive loop: use a function instead
 
 	const dispatch = createEventDispatcher();
-
-	function handleShare() {
-		if (navigator.share && shareUrl) {
-			navigator.share({
-				title: title,
-				url: shareUrl
-			});
-		} else if (shareUrl) {
-			navigator.clipboard.writeText(shareUrl);
-			// Could add a toast notification here
-		}
-	}
 
 	function handleDelete() {
 		if (confirm(`Are you sure you want to delete this poll? This action cannot be undone.`)) {
@@ -232,7 +217,12 @@
 		return mode;
 	}
 
-	$: hasVotes = pollData?.stats?.total_votes > 0;
+	function copyLink() {
+		navigator.clipboard.writeText(shareUrl);
+		copied = true;
+	}
+
+	$: hasVotes = (pollData?.stats?.total_votes ?? 0) > 0;
 	$: votes = pollData?.stats?.vote_positions || [];
 	$: median = hasVotes ? calculateMedian(votes) : 0;
 	$: mode = hasVotes ? calculateMode(votes) : 0;
@@ -445,13 +435,19 @@
 							<div class="grid grid-cols-2 gap-2">
 								<div class="rounded bg-orange-800/30 p-2 text-center">
 									<div class="text-sm font-bold text-white">
-										{(pollData.stats.average_2d[0] * 100).toFixed(1)}%
+										{(pollData.stats.average_2d?.[0]
+											? pollData.stats.average_2d[0] * 100
+											: 0
+										).toFixed(1)}%
 									</div>
 									<div class="text-xs text-orange-300">X-Axis</div>
 								</div>
 								<div class="rounded bg-orange-800/30 p-2 text-center">
 									<div class="text-sm font-bold text-white">
-										{(pollData.stats.average_2d[1] * 100).toFixed(1)}%
+										{(pollData.stats.average_2d?.[1]
+											? pollData.stats.average_2d[1] * 100
+											: 0
+										).toFixed(1)}%
 									</div>
 									<div class="text-xs text-orange-300">Y-Axis</div>
 								</div>
@@ -464,9 +460,9 @@
 				<div class="mb-4">
 					<div class="mb-2 text-sm text-orange-200">Response Options</div>
 					<div class="space-y-2">
-						{#each pollData.options as option, i}
+						{#each pollData.options as option, i (option)}
 							<div class="flex items-center space-x-2 rounded bg-orange-800/30 p-2">
-								{#if pollData.gradients?.colors?.[i]}
+								{#if pollData.gradients && pollData.gradients.colors && pollData.gradients.colors[i]}
 									<div
 										class="h-4 w-4 flex-shrink-0 rounded border border-orange-300"
 										style="background-color: {pollData.gradients.colors[i]}"
@@ -489,18 +485,13 @@
 					class="flex cursor-pointer items-center space-x-2 border-0 bg-transparent p-0 text-orange-200 transition-colors hover:text-orange-100"
 					title="Click to copy link"
 					on:click={() => {
-						navigator.clipboard.writeText(shareUrl);
-						// Optionally, trigger a toast here
+						copyLink();
 					}}
-					role="button"
 					tabindex="0"
-					on:keydown={(e) => {
-						if (e.key === 'Enter' || e.key === ' ') {
-							navigator.clipboard.writeText(shareUrl);
-						}
-					}}
 				>
-					<span class="material-symbols-outlined align-middle text-base">link</span>
+					<span class="material-symbols-outlined align-middle text-base"
+						>{copied ? 'check' : 'link'}</span
+					>
 					<span class="text-xs break-all">{shareUrl}</span>
 				</button>
 			{/if}
@@ -511,7 +502,6 @@
 				class="group flex cursor-pointer items-center border-0 bg-transparent p-0"
 				title="Delete Poll"
 				on:click={handleDelete}
-				role="button"
 				tabindex="0"
 				on:keydown={(e) => {
 					if (e.key === 'Enter' || e.key === ' ') {

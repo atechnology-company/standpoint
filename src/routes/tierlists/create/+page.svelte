@@ -1,26 +1,35 @@
 <script lang="ts">
 	import { apiClient } from '$lib/api';
+	import {
+	saveTierlistToFirestore,
+	getTierlistsFromFirestore
+	} from '$lib/firestore-polls-tierlists';
+	import { getAuth } from 'firebase/auth';
 	import { searchGoogleImages } from '$lib/google-images';
 	import { onMount } from 'svelte';
+	import { fade, scale } from 'svelte/transition';
+	import { currentUser, signInWithGoogle } from '$lib/stores';
 
-	// Types
+	// Represents an item in the tier list, which can be text, image, or a search result
 	interface TierItem {
-		id: string;
-		text: string;
-		image?: string;
-		type: 'text' | 'image' | 'search';
-		position?: { x: number; y: number };
-		size?: { width: number; height: number };
-		naturalSize?: { width: number; height: number };
+	id: string; 
+	text: string; 
+	image?: string; 
+	type: 'text' | 'image' | 'search'; 
+	position?: { x: number; y: number }; 
+	size?: { width: number; height: number }; 
+	naturalSize?: { width: number; height: number };
 	}
 
+	// Represents a tier/category in the tier list
 	interface Tier {
 		id: string;
 		name: string;
 		color: string;
-		items: TierItem[];
+		items: TierItem[]; 
 	}
 
+	// Placement info for saving tier list state
 	interface itemPlacement {
 		item_id: string;
 		tier_position: number;
@@ -28,28 +37,37 @@
 		size?: { width: number; height: number };
 	}
 
-	// States
+	// Key for storing local tier lists in browser storage
+	const LOCAL_STORAGE_TIERLISTS_KEY = 'standpoint_local_tierlists';
+
+	// Main tier list state object
 	let tierList = {
-		title: 'Untitled Tier List',
-		type: 'classic' as 'classic' | 'dynamic',
-		tiers: [
-			{ id: 's', name: 'S', color: '#ff7f7f', items: [] },
-			{ id: 'a', name: 'A', color: '#ffbf7f', items: [] },
-			{ id: 'b', name: 'B', color: '#ffff7f', items: [] },
-			{ id: 'c', name: 'C', color: '#bfff7f', items: [] }
-		] as Tier[],
-		unassignedItems: [] as TierItem[]
+	title: 'Untitled Tier List',
+	type: 'classic' as 'classic' | 'dynamic', // Tier list mode
+	bannerImage: '' as string, // Banner image URL
+	tiers: [
+		{ id: 's', name: 'S', color: '#ff7f7f', items: [] },
+		{ id: 'a', name: 'A', color: '#ffbf7f', items: [] },
+		{ id: 'b', name: 'B', color: '#ffff7f', items: [] },
+		{ id: 'c', name: 'C', color: '#bfff7f', items: [] }
+	] as Tier[],
+	unassignedItems: [] as TierItem[]
 	};
 
 	// Modal and UI state
-	let showAddItemModal = false;
-	let addItemModalX = 0;
-	let addItemModalY = 0;
-	let addItemType: 'text' | 'upload' | 'search' = 'text';
-	let error = '';
-	let creating = false;
+	let showAddItemModal = false; 
+	let addItemModalX = 0; 
+	let addItemModalY = 0; 
+	let addItemType: 'text' | 'upload' | 'search' = 'text'; 
+	let error = ''; 
+	let creating = false; 
 	let editingTitle = false;
 	let lastFetchedTitle = '';
+
+	// Animation helpers
+	function randomDelay(i: number) {
+		return 80 + (i % 5) * 40;
+	}
 
 	// Gemini suggestion system state
 	let suggestedItems: any[] = [];
@@ -69,12 +87,12 @@
 	$: if (highlightedImageIdx < -1) highlightedImageIdx = -1;
 
 	// Filtered AI suggestions based on input
-	$: filteredAISuggestions =
-		newItemText.trim().length > 0
-			? suggestedItems.filter((s) =>
-					s.name.toLowerCase().includes(newItemText.trim().toLowerCase())
-				)
-			: suggestedItems;
+	$: filteredAISuggestions = (() => {
+		if (!newItemText.trim()) return suggestedItems;
+		return suggestedItems.filter((s) =>
+			s.name.toLowerCase().includes(newItemText.trim().toLowerCase())
+		);
+	})();
 
 	// Gemini debug modal state
 	let showGeminiDebugModal = false;
@@ -125,26 +143,21 @@
 	let isResizing = false;
 	let resizingItemId: string | null = null;
 
-	/** Converts a dynamic tier list to classic */
 	function convertDynamicToClassic() {
-		// Gather all items from unassigned and all tiers
 		const allItems: TierItem[] = [
 			...tierList.unassignedItems,
 			...tierList.tiers.flatMap((tier) => tier.items)
 		];
 
-		// Clear all items from tiers and unassigned
 		tierList.tiers = tierList.tiers.map((tier) => ({ ...tier, items: [] }));
 		tierList.unassignedItems = [];
 
-		// Assign items to tiers based on y position
 		const nTiers = tierList.tiers.length;
 		for (const item of allItems) {
 			let assigned = false;
 			if (item.position && typeof item.position.y === 'number' && nTiers > 0) {
 				const tierIndex = Math.floor(item.position.y * nTiers);
 				if (tierIndex >= 0 && tierIndex < nTiers) {
-					// Remove position/size for classic mode
 					const { position, size, ...rest } = item;
 					tierList.tiers[tierIndex].items.push(rest);
 					assigned = true;
@@ -179,7 +192,6 @@
 
 	// Utility Functions
 
-	// Dims a hex color by a given factor for better background contrast
 	function dimColor(color: string, factor: number = 0.7): string {
 		const hex = color.replace('#', '');
 		const r = Math.round(parseInt(hex.substr(0, 2), 16) * factor);
@@ -188,17 +200,16 @@
 		return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 	}
 
-	// Calculates optimal grid layout for tier items based on height and wrapping
 	function getTierItemsStyle(itemCount: number): {
 		gridStyle: string;
 		itemHeight: string;
 		itemWidth: string;
 		margin: string;
-	} {
+	} 
+	{
 		if (itemCount === 0)
 			return { gridStyle: '', itemHeight: '8rem', itemWidth: '8rem', margin: '0' };
 
-		// Calculate available height per tier dynamically
 		const totalTiers = tierList.tiers.length;
 		const topBarHeight = 80;
 		const availableScreenHeight = windowHeight;
@@ -210,17 +221,13 @@
 		const gap = 16;
 		const margin = 8;
 
-		// Available width
 		const availableWidth = windowWidth - 320 - 64;
 
-		// Try full height first
 		let itemHeight = Math.max(80, tierContainerHeight - gap * 2);
-		let itemWidth = itemHeight; // square □
+		let itemWidth = itemHeight; 
 
-		// Calculate how many full-height square items can fit in one row
 		const itemsPerRowFullHeight = Math.floor((availableWidth + gap) / (itemWidth + gap));
 
-		// Check if all items fit in one row at full height
 		if (itemCount <= itemsPerRowFullHeight) {
 			return {
 				gridStyle: `grid-template-columns: repeat(${itemCount}, ${itemWidth}px); height: ${tierContainerHeight}px;`,
@@ -236,7 +243,6 @@
 			);
 			const halfItemWidth = halfHeight;
 
-			// Calculate items per row at half height
 			const itemsPerRowHalfHeight = Math.floor((availableWidth + gap) / (halfItemWidth + gap));
 
 			return {
@@ -248,7 +254,6 @@
 		}
 	}
 
-	// Sets focus on input element after DOM update
 	function focusInput(selector: string, delay: number = 10) {
 		setTimeout(() => {
 			const input = document.querySelector(selector) as HTMLInputElement;
@@ -259,13 +264,10 @@
 		}, delay);
 	}
 
-	// Finds item in tier list and returns its location
 	function findItem(itemId: string): { item: TierItem; tier: Tier | null } | null {
-		// Check unassigned items first
 		const unassignedItem = tierList.unassignedItems.find((i) => i.id === itemId);
 		if (unassignedItem) return { item: unassignedItem, tier: null };
 
-		// Check in tiers
 		for (const tier of tierList.tiers) {
 			const item = tier.items.find((i) => i.id === itemId);
 			if (item) return { item, tier };
@@ -274,7 +276,6 @@
 		return null;
 	}
 
-	// Updates item properties across all tiers and unassigned items
 	function updateItemEverywhere(itemId: string, updates: Partial<TierItem>) {
 		tierList.tiers = tierList.tiers.map((tier) => ({
 			...tier,
@@ -286,7 +287,6 @@
 		);
 	}
 
-	// Gemini suggestion fetcher
 	async function fetchGeminiSuggestions(title: string, usedItems: string[] = []) {
 		fetchingSuggestions = true;
 		try {
@@ -303,9 +303,7 @@
 			});
 			const data = await res.json();
 			lastGeminiRawResponse = data.raw ?? data.raw_response ?? data.error ?? JSON.stringify(data);
-			if (data.items) {
-				// Filter out any items already used (shouldn't be needed, but just in case)
-				const usedSet = new Set(usedItems.map((i) => i.toLowerCase()));
+			if (data.items) {			const usedSet = new Set(usedItems.map((i) => i.toLowerCase()));
 				suggestedItems = data.items.filter((item: any) => !usedSet.has(item.name.toLowerCase()));
 				await prefetchImagesForSuggestions(suggestedItems);
 			} else {
@@ -322,7 +320,6 @@
 		}
 	}
 
-	// Helper to build the Gemini prompt (should match backend logic)
 	function buildGeminiPrompt(title: string, usedItems: string[], n: number) {
 		const used =
 			usedItems && usedItems.length > 0
@@ -343,7 +340,6 @@
 		);
 	}
 
-	// Prefetch images for suggestions with image_query
 	async function prefetchImagesForSuggestions(suggestions: any[]) {
 		const promises = suggestions
 			.filter((s) => s.image && s.image_query && !prefetchedImages[s.name])
@@ -351,7 +347,11 @@
 				try {
 					const results = await searchGoogleImages(s.image_query, 1, 1);
 					if (results && results.length > 0) {
-						prefetchedImages[s.name] = results[0].image?.thumbnailLink || results[0].link;
+						const imageObj =
+							typeof results[0].image === 'object'
+								? (results[0].image as { thumbnailLink?: string })
+								: {};
+						prefetchedImages[s.name] = imageObj.thumbnailLink ?? results[0].link ?? '';
 					}
 				} catch (e) {
 					console.warn('Image prefetch failed for', s.name, e);
@@ -361,8 +361,8 @@
 	}
 
 	function addSuggestedItem(suggestion: any) {
-		const newItem: TierItem = {
-			id: `item_${Date.now()}`,
+	   const newItem: TierItem = {
+		   id: `item_${crypto.randomUUID()}`,
 			text: suggestion.name,
 			type: suggestion.image ? 'search' : 'text',
 			image: prefetchedImages[suggestion.name],
@@ -372,7 +372,6 @@
 		usedSuggestedItems = [...usedSuggestedItems, suggestion.name];
 		suggestedItems = suggestedItems.filter((item) => item.name !== suggestion.name);
 
-		// If suggestions are running low, fetch more
 		if (suggestedItems.length < 10) {
 			const allUsed = [
 				...usedSuggestedItems,
@@ -384,7 +383,6 @@
 		closeAddItemModal();
 	}
 
-	// Call Gemini when title is set (on blur/enter)
 	function handleTitleSet() {
 		if (
 			tierList.title &&
@@ -400,7 +398,6 @@
 		}
 	}
 
-	// Removes item from all locations
 	function removeItemEverywhere(itemId: string) {
 		tierList.tiers = tierList.tiers.map((tier) => ({
 			...tier,
@@ -416,8 +413,8 @@
 	}
 
 	function addTier() {
-		const newTier: Tier = {
-			id: `tier_${Date.now()}`,
+	   const newTier: Tier = {
+		   id: `tier_${crypto.randomUUID()}`,
 			name: `Tier ${tierList.tiers.length + 1}`,
 			color: tierColors[tierList.tiers.length % tierColors.length],
 			items: []
@@ -426,8 +423,8 @@
 	}
 
 	function addTierAtPosition(position: number) {
-		const newTier: Tier = {
-			id: `tier_${Date.now()}`,
+	   const newTier: Tier = {
+		   id: `tier_${crypto.randomUUID()}`,
 			name: `Tier ${tierList.tiers.length + 1}`,
 			color: tierColors[tierList.tiers.length % tierColors.length],
 			items: []
@@ -481,19 +478,23 @@
 		targetTierId = tierId;
 		targetPosition = position;
 
-		// Position modal at cursor or center
+		const modalWidth = 350;
+		const margin = 16;
 		if (event) {
-			addItemModalX = Math.min(event.clientX + 10, window.innerWidth - 350);
-			addItemModalY = Math.max(event.clientY - 50, 10);
+			addItemModalX = Math.min(event.clientX + 10, window.innerWidth - modalWidth - margin);
+			addItemModalY = Math.max(event.clientY - 50, margin);
 		} else {
-			addItemModalX = window.innerWidth / 2 - 175;
-			addItemModalY = window.innerHeight / 2 - 100;
+			addItemModalX = Math.max(window.innerWidth / 2 - modalWidth / 2, margin);
+			addItemModalY = Math.max(window.innerHeight / 2 - 100, margin);
 		}
 
 		showAddItemModal = true;
 		addItemType = 'text';
+		searchQuery = '';
+		newItemText = '';
+		highlightedAISuggestionIdx = -1;
+		highlightedImageIdx = -1;
 
-		// Gemini suggestion logic
 		const allUsed = [
 			...usedSuggestedItems,
 			...tierList.tiers.flatMap((t) => t.items.map((i) => i.text)),
@@ -580,10 +581,8 @@
 		const found = findItem(itemId);
 		if (!found) return;
 
-		// Remove from current location
 		removeItemEverywhere(itemId);
 
-		// Add to new location
 		if (targetTierId) {
 			tierList.tiers = tierList.tiers.map((tier) =>
 				tier.id === targetTierId ? { ...tier, items: [...tier.items, found.item] } : tier
@@ -597,10 +596,8 @@
 		const found = findItem(itemId);
 		if (!found) return;
 
-		// Remove from current location
 		removeItemEverywhere(itemId);
 
-		// Add to new location at position
 		if (targetTierId) {
 			tierList.tiers = tierList.tiers.map((tier) => {
 				if (tier.id === targetTierId) {
@@ -677,14 +674,12 @@
 		event.preventDefault();
 		if (!draggedItem) return;
 
-		// Always use moveItemToPosition for classic mode
 		if (tierList.type === 'classic' && tierId !== null && position !== undefined) {
 			moveItemToPosition(draggedItem.id, tierId, position);
 		} else if (tierId !== null) {
 			moveItemToTier(draggedItem.id, tierId);
 		}
 
-		// Reset drag state
 		isDragging = false;
 		draggedItem = null;
 		draggedFromTier = null;
@@ -694,7 +689,6 @@
 
 	// Item Creation
 
-	// Creates initial position for dynamic mode items
 	function createItemPosition(tierId?: string): { x: number; y: number } | undefined {
 		if (tierList.type !== 'dynamic') return undefined;
 
@@ -714,7 +708,6 @@
 		};
 	}
 
-	// Adds item to appropriate location
 	function addItemToLocation(item: TierItem) {
 		if (targetTierId) {
 			tierList.tiers = tierList.tiers.map((tier) =>
@@ -728,8 +721,8 @@
 	function addTextItem() {
 		if (!newItemText.trim()) return;
 
-		const newItem: TierItem = {
-			id: `item_${Date.now()}`,
+	   const newItem: TierItem = {
+		   id: `item_${crypto.randomUUID()}`,
 			text: newItemText.trim(),
 			type: 'text',
 			position: createItemPosition(targetTierId || undefined)
@@ -744,8 +737,8 @@
 		const file = target.files?.[0];
 		if (!file || !file.type.startsWith('image/')) return;
 
-		const newItem: TierItem = {
-			id: `item_${Date.now()}`,
+	   const newItem: TierItem = {
+		   id: `item_${crypto.randomUUID()}`,
 			text: file.name,
 			image: URL.createObjectURL(file),
 			type: 'image',
@@ -757,8 +750,8 @@
 	}
 
 	function addSearchResult(result: any) {
-		const newItem: TierItem = {
-			id: `item_${Date.now()}`,
+	   const newItem: TierItem = {
+		   id: `item_${crypto.randomUUID()}`,
 			text: searchQuery.trim() || result.title,
 			image: result.fullUrl || result.url,
 			type: 'search',
@@ -800,43 +793,31 @@
 		try {
 			// Calculate proper start index for pagination
 			const startIndex = reset ? 1 : searchPage * 10 + 1;
-			console.log('Searching with startIndex:', startIndex);
-
 			const results = await searchGoogleImages(searchQuery, 10, startIndex);
-			console.log('Search results received:', results.length);
-
 			const newResults = results.map((result) => ({
-				url: result.image?.thumbnailLink || result.link,
+				url:
+					result.image && typeof result.image === 'object' && (result.image as any).thumbnailLink
+						? (result.image as any).thumbnailLink
+						: result.link,
 				fullUrl: result.link,
 				title: result.title,
 				snippet: result.snippet,
-				id: `${searchQuery}-${startIndex}-${result.title}` // Unique ID to prevent duplicates
+				id: `${searchQuery}-${startIndex}-${result.title}`
 			}));
 
 			if (reset) {
 				searchResults = newResults;
 				searchPage = 1;
 			} else {
-				// Filter out any potential duplicates based on URL
 				const existingUrls = new Set(searchResults.map((r) => r.url));
 				const uniqueNewResults = newResults.filter((r) => !existingUrls.has(r.url));
-				console.log('Adding unique results:', uniqueNewResults.length, 'out of', newResults.length);
 				searchResults = [...searchResults, ...uniqueNewResults];
 				searchPage++;
 			}
 
 			hasMoreResults = newResults.length === 10;
-			console.log(
-				'hasMoreResults:',
-				hasMoreResults,
-				'newResults.length:',
-				newResults.length,
-				'searchResults.length:',
-				searchResults.length
-			);
 		} catch (err) {
 			console.error('Search error:', err);
-			// Fallback results for development with pagination simulation
 			const fallbackStartIndex = reset ? 0 : searchResults.length;
 			const fallbackResults = Array.from({ length: 6 }, (_, i) => ({
 				url: `https://picsum.photos/seed/fallback-${searchQuery}-${fallbackStartIndex + i + 1}/150/100`,
@@ -861,7 +842,6 @@
 		}
 	}
 
-	// Once scrolled, load more images
 	async function loadMoreImages() {
 		console.log('loadMoreImages called', {
 			loadingMore,
@@ -876,6 +856,8 @@
 	}
 
 	// Save Functionality
+
+	import { get } from 'svelte/store';
 
 	async function saveTierList() {
 		try {
@@ -897,49 +879,50 @@
 				return;
 			}
 
+			const auth = getAuth();
+			const ownerId = auth.currentUser ? auth.currentUser.uid : null;
+			// Build placements array
+			const placements = tierList.tiers.flatMap((tier, tierIdx) =>
+				tier.items.map((item, itemIdx) => ({
+					item_id: item.id,
+					tier_position: tierIdx,
+					position: item.position,
+					size: item.size
+				}))
+			);
 			const tierListData = {
 				title: tierList.title,
-				list_type: tierList.type, // Use actual type instead of hardcoded 'classic'
+				list_type: tierList.type,
+				banner_image: tierList.bannerImage,
 				tiers: tierList.tiers.map((tier, index) => ({
 					name: tier.name,
-					position: index / tierList.tiers.length
+					position: index / tierList.tiers.length,
+					color: tier.color,
+					items: tier.items
 				})),
-				items: allItems // Send full item objects instead of just text
+				items: allItems,
+				owner: ownerId
 			};
-
-			const createdTierList = await apiClient.createTierList(tierListData);
-
-			// After creating the tier list, save item placements
-			const itemPlacements: itemPlacement[] = [];
-
-			tierList.tiers.forEach((tier, tierIndex) => {
-				tier.items.forEach((item) => {
-					const placement: any = {
-						item_id: item.id,
-						tier_position: tierIndex
-					};
-
-					// For dynamic mode, include position and size
-					if (tierList.type === 'dynamic') {
-						if (item.position) {
-							placement.position = item.position;
-						}
-						if (item.size) {
-							placement.size = item.size;
+			let newTierlistId;
+			if (auth.currentUser) {
+				newTierlistId = await saveTierlistToFirestore(tierListData);
+				const localTierlists = localStorage.getItem(LOCAL_STORAGE_TIERLISTS_KEY);
+				if (localTierlists) {
+					const tierlistsArr = JSON.parse(localTierlists);
+					for (const localTierlist of tierlistsArr) {
+						if (!localTierlist.owner) {
+							await saveTierlistToFirestore({ ...localTierlist, owner: ownerId });
 						}
 					}
-
-					itemPlacements.push(placement);
-				});
-			});
-
-			// Save placements if there are any
-			if (itemPlacements.length > 0) {
-				await apiClient.updateTierListPlacements(createdTierList.id, {
-					item_placements: itemPlacements
-				});
+					localStorage.removeItem(LOCAL_STORAGE_TIERLISTS_KEY);
+				}
+			} else {
+				const localTierlists = localStorage.getItem(LOCAL_STORAGE_TIERLISTS_KEY);
+				const tierlistsArr = localTierlists ? JSON.parse(localTierlists) : [];
+				newTierlistId = Date.now().toString();
+				tierlistsArr.push({ id: newTierlistId, ...tierListData });
+				localStorage.setItem(LOCAL_STORAGE_TIERLISTS_KEY, JSON.stringify(tierlistsArr));
 			}
-
 			window.location.href = '/tierlists';
 		} catch (err) {
 			error = 'Failed to create tier list';
@@ -949,7 +932,6 @@
 		}
 	}
 
-	// Generates dynamic gradient background based on tier colors
 	function getDynamicGradient(): string {
 		if (tierList.tiers.length <= 1)
 			return 'background: linear-gradient(to bottom, #2d7a2d, #7a2d2d);';
@@ -984,18 +966,15 @@
 		document.addEventListener('mouseup', stopResize);
 	}
 
-	// Resizing items in Dynamic mode
 	function handleResize(event: MouseEvent) {
 		if (!isResizing || !resizingItemId) return;
 
 		const deltaX = event.clientX - resizeStartX;
 		const deltaY = event.clientY - resizeStartY;
 
-		// Calculate new size (maintaining minimum size)
 		const newWidth = Math.max(50, resizeStartWidth + deltaX);
 		const newHeight = Math.max(50, resizeStartHeight + deltaY);
 
-		// Update item size
 		updateItemEverywhere(resizingItemId, {
 			size: { width: newWidth, height: newHeight }
 		});
@@ -1013,19 +992,15 @@
 			return item.size;
 		}
 
-		// Default sizes based on content type
 		if (item.image && item.naturalSize) {
-			// Use natural image size, scaled to reasonable default
 			const scale = Math.min(200 / item.naturalSize.width, 200 / item.naturalSize.height, 1);
 			return {
 				width: item.naturalSize.width * scale,
 				height: item.naturalSize.height * scale
 			};
 		} else if (item.image) {
-			// Default square for images without natural size
 			return { width: 128, height: 128 };
 		} else {
-			// Text items - calculate based on content length
 			const textLength = item.text.length;
 			const minWidth = 80;
 			const charWidth = 8;
@@ -1040,22 +1015,16 @@
 	function getTextStyle(item: TierItem): string {
 		if (!item.size || item.image) return '';
 
-		// Calculate font size based on container size for text items
 		const { width, height } = item.size;
 		const minFontSize = 10;
 		const maxFontSize = 32;
 
-		// More responsive font size calculation
-		// Base size on the smaller dimension to ensure text fits well
 		const textLength = item.text.length;
-		const avgCharWidth = 0.6; // Average character width ratio to font size
+		const avgCharWidth = 0.6; 
 
-		// Calculate font size that would fit the text width-wise
 		const maxFontForWidth = (width * 0.9) / (textLength * avgCharWidth);
-		// Calculate font size that would fit height-wise (allow for some padding)
 		const maxFontForHeight = height * 0.4;
 
-		// Use the smaller of the two, bounded by min/max
 		const optimalFontSize = Math.min(maxFontForWidth, maxFontForHeight);
 		const fontSize = Math.max(minFontSize, Math.min(maxFontSize, optimalFontSize));
 
@@ -1077,10 +1046,8 @@
 	// Lifecycle
 
 	onMount(() => {
-		// Prevent page scrolling when editing
 		document.body.style.overflow = 'hidden';
 
-		// Add window resize listener for responsive layout
 		const handleResize = () => {
 			if (typeof window !== 'undefined') {
 				windowWidth = window.innerWidth;
@@ -1102,15 +1069,27 @@
 </script>
 
 <svelte:head>
-	<title>Create Tier List - Standpoint</title>
+	<title
+		>{tierList.title ? `${tierList.title} - Standpoint` : 'Create Tier List - Standpoint'}</title
+	>
 </svelte:head>
-
-<!-- Fullscreen Tier List Creator -->
 <div class="fixed inset-0 flex flex-col bg-black text-white">
-	<!-- Top Bar with Title -->
-	<div class="flex items-center justify-between border-b border-gray-700 bg-black px-6 py-4">
-		<div class="flex items-center space-x-4">
-			<div class="items-center space-x-2 pl-10">
+	<!-- Banner background -->
+	{#if tierList.bannerImage}
+		<div
+			class="pointer-events-none absolute inset-0 z-0"
+			style="background: url('{tierList.bannerImage}') center/cover no-repeat; filter: blur(12px) brightness(0.5);"
+		></div>
+	{/if}
+	<!-- Header (single line) -->
+	<div
+		class="relative z-10 flex min-h-[56px] items-center justify-between border-b border-gray-700 bg-black/80 px-6 py-4"
+		in:fade={{ duration: 400 }}
+		out:fade={{ duration: 200 }}
+	>
+		<div class="flex w-full items-center gap-4">
+			<!-- Title, banner upload, sign-in -->
+			<div class="flex items-center gap-2 pl-10">
 				{#if editingTitle}
 					<input
 						class="border-b-2 border-orange-500 bg-transparent px-2 py-1 text-2xl font-bold text-white outline-none"
@@ -1135,81 +1114,135 @@
 						{tierList.title}
 					</button>
 				{/if}
-				<span class="text-sm text-gray-500">AUTOMATICALLY SAVED TO DRAFTS</span>
-			</div>
-		</div>
-
-		<div class="flex items-center space-x-4">
-			<!-- Gemini suggestion state indicator -->
-			{#if fetchingSuggestions}
-				<span class="ml-4 animate-pulse text-xs text-blue-400">Fetching suggestions...</span>
-			{:else if suggestedItems.length === 0 && tierList.title}
-				{#if tierList.title === 'Untitled Tier List'}
-					<span class="ml-4 cursor-pointer text-xs text-white"
-						>Change the title to view AI suggestions</span
-					>
-				{:else}
-					<span
-						class="ml-4 cursor-pointer text-xs text-orange-400"
-						on:click={() => (showGeminiDebugModal = true)}>No suggestions found</span
-					>
+				<!-- Banner upload button -->
+				<label
+					class="ml-4 flex cursor-pointer items-center gap-2 rounded bg-gray-800 px-2 py-1 transition-colors hover:bg-gray-700"
+					title="Upload banner image"
+				>
+					<span class="material-symbols-outlined text-lg text-orange-400">image</span>
+					<span class="text-xs text-gray-300">Banner</span>
+					<input
+						type="file"
+						accept="image/*"
+						class="hidden"
+						on:change={async (e) => {
+							const input = e.target as HTMLInputElement;
+							const file = input.files?.[0];
+							if (!file) return;
+							try {
+								const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
+								const storage = getStorage();
+								const storageRef = ref(storage, `tierlist-banners/${Date.now()}_${file.name}`);
+								await uploadBytes(storageRef, file);
+								const url = await getDownloadURL(storageRef);
+								tierList.bannerImage = url;
+							} catch (err) {
+								console.error('Banner upload failed:', err);
+								alert('Banner upload failed. Please try again.');
+							}
+						}}
+					/>
+				</label>
+				{#if tierList.bannerImage}
+					<div class="relative ml-2 h-12 w-24 overflow-hidden rounded shadow">
+						<img
+							src={tierList.bannerImage}
+							alt="Banner Preview"
+							class="absolute inset-0 h-full w-full object-cover"
+							style="filter: brightness(0.7) blur(2px);"
+						/>
+					</div>
 				{/if}
-			{:else if suggestedItems.length > 0}
-				<span class="ml-4 text-xs text-green-400">Suggestions ready</span>
-			{/if}
-
-			<!-- Mode Toggle -->
-			<div class="relative flex bg-[#191919] p-1">
-				<div
-					class="absolute top-1 bottom-1 bg-orange-500 transition-all duration-300 ease-in-out"
-					style="left: {tierList.type === 'classic'
-						? '4px'
-						: 'calc(50% + 2px)'}; width: calc(50% - 6px);"
-				></div>
-				<button
-					class="relative z-10 px-4 py-2 text-sm font-medium transition-colors duration-300 {tierList.type ===
-					'classic'
-						? 'text-white'
-						: 'text-gray-400 hover:text-white'}"
-					on:click={() => {
-						if (tierList.type === 'dynamic') {
-							convertDynamicToClassic();
-						} else {
-							tierList.type = 'classic';
-						}
-					}}
-				>
-					Classic
-				</button>
-				<button
-					class="relative z-10 px-4 py-2 text-sm font-medium transition-colors duration-300 {tierList.type ===
-					'dynamic'
-						? 'text-white'
-						: 'text-gray-400 hover:text-white'}"
-					on:click={() => (tierList.type = 'dynamic')}
-				>
-					Dynamic
-				</button>
+				{#if !$currentUser}
+					<button
+						class="ml-4 flex items-center gap-2 rounded border border-gray-300 bg-white px-4 py-2 shadow transition-colors hover:bg-gray-100"
+						on:click={signInWithGoogle}
+					>
+						<img
+							src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
+							alt="Google"
+							class="h-5 w-5"
+						/>
+						<span>Sign in with Google</span>
+					</button>
+				{/if}
 			</div>
-
-			<button
-				class="bg-orange-500 px-6 py-2 font-bold text-white transition-colors hover:bg-orange-600 disabled:opacity-50"
-				on:click={saveTierList}
-				disabled={creating}
-			>
-				{creating ? 'POSTING...' : 'POST'}
-			</button>
+			<!-- Suggestions, mode toggle, POST button -->
+			<div class="flex flex-1 items-center justify-end gap-4">
+				{#if fetchingSuggestions}
+					<span class="ml-4 animate-pulse text-xs text-blue-400" in:fade={{ duration: 300 }}>
+						Fetching suggestions...
+					</span>
+				{:else if suggestedItems.length === 0 && tierList.title}
+					{#if tierList.title === 'Untitled Tier List'}
+						<span class="ml-4 cursor-pointer text-xs text-white" in:fade={{ duration: 300 }}>
+							Change the title to view AI suggestions
+						</span>
+					{:else}
+						<button
+							type="button"
+							class="ml-4 cursor-pointer border-0 bg-transparent p-0 text-xs text-orange-400"
+							on:click={() => (showGeminiDebugModal = true)}
+							in:fade={{ duration: 300 }}>No suggestions found</button
+						>
+					{/if}
+				{:else if suggestedItems.length > 0}
+					<span class="ml-4 text-xs text-green-400" in:fade={{ duration: 300 }}>
+						Suggestions ready
+					</span>
+				{/if}
+				<!-- Mode Toggle -->
+				<div class="relative flex bg-[#191919] p-1">
+					<div
+						class="absolute top-1 bottom-1 bg-orange-500 transition-all duration-300 ease-in-out"
+						style="left: {tierList.type === 'classic'
+							? '4px'
+							: 'calc(50% + 2px)'}; width: calc(50% - 6px);"
+					></div>
+					<button
+						class="relative z-10 px-4 py-2 text-sm font-medium transition-colors duration-300 {tierList.type ===
+						'classic'
+							? 'text-white'
+							: 'text-gray-400 hover:text-white'}"
+						on:click={() => {
+							if (tierList.type === 'dynamic') {
+								convertDynamicToClassic();
+							} else {
+								tierList.type = 'classic';
+							}
+						}}
+					>
+						Classic
+					</button>
+					<button
+						class="relative z-10 px-4 py-2 text-sm font-medium transition-colors duration-300 {tierList.type ===
+						'dynamic'
+							? 'text-white'
+							: 'text-gray-400 hover:text-white'}"
+						on:click={() => (tierList.type = 'dynamic')}
+					>
+						Dynamic
+					</button>
+				</div>
+				{#if $currentUser}
+					<button
+						class="bg-orange-500 px-6 py-2 font-bold text-white transition-colors hover:bg-orange-600 disabled:opacity-50"
+						on:click={saveTierList}
+						disabled={creating}
+					>
+						{creating ? 'POSTING...' : 'POST'}
+					</button>
+				{/if}
+			</div>
 		</div>
 	</div>
-
 	{#if error}
 		<div class="mx-6 mt-4 rounded border border-red-700 bg-red-900 px-4 py-3 text-red-200">
 			{error}
 		</div>
 	{/if}
-
-	<!-- Main Tier List Display -->
-	<div class="flex flex-1 flex-col">
+	<!-- Main Tier List Display (fills remaining space) -->
+	<div class="flex min-h-0 w-full flex-1 flex-col">
 		{#if tierList.type === 'classic'}
 			<!-- Classic Mode -->
 			<div class="flex flex-1 flex-col">
@@ -1228,9 +1261,7 @@
 							tabindex="0"
 						>
 							<!-- Tier Controls -->
-							<div
-								class="group absolute top-0 right-0 flex h-full w-64 items-center justify-end pr-8"
-							>
+							<div class="group absolute top-0 right-4 flex h-full w-64 items-center justify-end">
 								<div class="flex flex-col items-end space-y-3" style="color: {tier.color};">
 									<!-- Tier Title -->
 									<input
@@ -1440,7 +1471,7 @@
 						>
 							<!-- Tier Controls -->
 							<div
-								class="group pointer-events-auto absolute top-0 right-0 flex h-full w-64 items-center justify-end pr-8"
+								class="group pointer-events-auto absolute top-0 right-4 flex h-full w-64 items-center justify-end"
 							>
 								<div class="flex flex-col items-end space-y-3" style="color: {tier.color};">
 									<input
@@ -1609,12 +1640,21 @@
 								const target = e.target as HTMLInputElement;
 								const file = target.files?.[0];
 								if (file && file.type.startsWith('image/')) {
-									updateItemEverywhere(currentItem.id, { image: URL.createObjectURL(file) });
+									updateItemEverywhere( currentItem.id, { image: URL.createObjectURL(file), type: 'image' } );
 								}
 							};
 							input.click();
 							closeContextMenu();
-						} }] as menuItem}
+						} }, { icon: 'swap_horiz', text: 'Change Type', action: () => {
+						if (!contextMenuItem) return;
+						// Cycle type: text -> image -> search -> text
+						let nextType: 'text' | 'image' | 'search';
+						if (contextMenuItem.type === 'text') nextType = 'image';
+						else if (contextMenuItem.type === 'image') nextType = 'search';
+						else nextType = 'text';
+						updateItemEverywhere(contextMenuItem.id, { type: nextType });
+						closeContextMenu();
+					} }] as menuItem}
 				<button
 					class="flex w-full items-center space-x-2 px-4 py-2 text-left text-white transition-colors hover:bg-gray-700"
 					on:click={menuItem.action}
@@ -1659,597 +1699,559 @@
 			</button>
 		</div>
 	{/if}
-</div>
 
-<!-- Add Item Modal -->
-{#if showAddItemModal}
-	<div
-		class="fixed z-50 rounded-lg border border-gray-800 bg-black shadow-2xl"
-		style="left: {addItemModalX}px; top: {addItemModalY}px; min-width: 320px; max-width: 95vw; width: auto;"
-		tabindex="0"
-		on:keydown={(e) => {
-			if (e.key === 'Escape') closeAddItemModal();
-			if (e.key === 'ArrowDown' && filteredAISuggestions.length > 0) {
-				highlightedAISuggestionIdx = Math.min(
-					highlightedAISuggestionIdx + 1,
-					filteredAISuggestions.length - 1
-				);
-				e.preventDefault();
-			}
-			if (e.key === 'ArrowUp' && filteredAISuggestions.length > 0) {
-				highlightedAISuggestionIdx = Math.max(highlightedAISuggestionIdx - 1, 0);
-				e.preventDefault();
-			}
-			if (e.key === 'Enter' && newItemText.trim()) {
-				if (highlightedAISuggestionIdx >= 0 && filteredAISuggestions.length > 0) {
-					addSuggestedItem(filteredAISuggestions[highlightedAISuggestionIdx]);
-				} else if (highlightedImageIdx >= 0 && searchResults.length > 0) {
-					addSearchResult(searchResults[highlightedImageIdx]);
-				} else {
-					addTextItem();
-				}
-			}
-		}}
-	>
-		<div class="flex w-auto max-w-[95vw] min-w-[320px] flex-col items-stretch p-4">
-			<!-- AI Suggestions -->
-			{#if filteredAISuggestions.length > 0}
-				<div class="mb-3">
-					<div class="mb-1 text-xs text-gray-400">Suggestions</div>
-					<div
-						class="flex max-h-32 max-w-[420px] flex-wrap gap-2 overflow-x-hidden overflow-y-auto pr-2"
-					>
-						{#each filteredAISuggestions as suggestion, idx (suggestion.name)}
-							<button
-								class="animate-fadein-suggestion translate-y-2 rounded bg-gray-800 px-3 py-1 text-sm text-white opacity-0 transition-colors hover:bg-orange-500 focus:outline-none {highlightedAISuggestionIdx ===
-								idx
-									? 'ring-2 ring-orange-500'
-									: ''}"
-								style="animation-delay: {idx * 60}ms"
-								on:click={() => addSuggestedItem(suggestion)}
-								on:mouseenter={() => (highlightedAISuggestionIdx = idx)}
-								on:mouseleave={() => (highlightedAISuggestionIdx = -1)}
-								tabindex="0"
-							>
-								{suggestion.name}
-								{#if suggestion.image && prefetchedImages[suggestion.name]}
-									<img
-										src={prefetchedImages[suggestion.name]}
-										alt={suggestion.name}
-										class="ml-2 inline-block h-5 w-5 rounded object-cover"
-									/>
-								{/if}
-							</button>
-						{/each}
-					</div>
-				</div>
-			{/if}
-
-			<!-- Input row with upload button -->
-			<div class="flex items-center gap-2">
-				<input
-					id="quick-add-input"
-					class="flex-1 rounded-lg border border-gray-600 bg-[#191919] px-4 py-3 text-white placeholder-gray-400 focus:ring-2 focus:ring-orange-500 focus:outline-none"
-					type="text"
-					bind:value={newItemText}
-					placeholder="Type to add item or search images..."
-					autocomplete="off"
-					autofocus
-					on:input={() => {
-						if (newItemText.trim().length > 2) {
-							clearTimeout(searchTimeout);
-							searchTimeout = setTimeout(() => {
-								searchQuery = newItemText;
-								searchImages(true);
-							}, 300);
-						} else {
-							searchResults = [];
-							hasMoreResults = true;
-							searchPage = 1;
-							highlightedImageIdx = -1;
-						}
-						highlightedAISuggestionIdx = -1;
-					}}
-					on:keydown={(e) => {
-						if (e.key === 'Enter' && newItemText.trim()) {
-							if (highlightedAISuggestionIdx >= 0 && filteredAISuggestions.length > 0) {
-								addSuggestedItem(filteredAISuggestions[highlightedAISuggestionIdx]);
-							} else if (highlightedImageIdx >= 0 && searchResults.length > 0) {
-								addSearchResult(searchResults[highlightedImageIdx]);
-							} else {
-								addTextItem();
-							}
-						}
-						if (e.key === 'Escape') {
-							closeAddItemModal();
-						}
-						if (e.key === 'ArrowDown' && filteredAISuggestions.length > 0) {
-							highlightedAISuggestionIdx = Math.min(
-								highlightedAISuggestionIdx + 1,
-								filteredAISuggestions.length - 1
-							);
-							e.preventDefault();
-						}
-						if (e.key === 'ArrowUp' && filteredAISuggestions.length > 0) {
-							highlightedAISuggestionIdx = Math.max(highlightedAISuggestionIdx - 1, 0);
-							e.preventDefault();
-						}
-					}}
-					aria-label="Add item or search images"
-				/>
-				<label
-					class="flex h-10 w-10 cursor-pointer items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
-					title="Upload Image"
-					tabindex="0"
-				>
-					<span class="material-symbols-outlined text-lg">upload</span>
-					<input type="file" accept="image/*" class="hidden" on:change={handleFileUpload} />
-				</label>
-				<button
-					class="flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
-					on:click={closeAddItemModal}
-					title="Close"
-					tabindex="0"
-				>
-					<span class="material-symbols-outlined text-sm">close</span>
-				</button>
-			</div>
-
-			<!-- Google Image Search Results -->
-			{#if newItemText.trim().length > 2 && (searchResults.length > 0 || searching)}
-				<div class="mt-4 max-h-64 overflow-y-auto">
-					<div
-						class="grid gap-2"
-						style="grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));"
-					>
-						{#each searchResults as result, idx}
-							<button
-								class="group animate-fadein-image overflow-hidden rounded-lg border border-gray-600 opacity-0 transition-colors hover:border-orange-400 hover:bg-gray-700 focus:outline-none {highlightedImageIdx ===
-								idx
-									? 'ring-2 ring-orange-500'
-									: ''}"
-								style="animation-delay: {idx * 70}ms"
-								on:click={() => addSearchResult(result)}
-								on:mouseenter={() => (highlightedImageIdx = idx)}
-								on:mouseleave={() => (highlightedImageIdx = -1)}
-								tabindex="0"
-							>
-								<div class="relative aspect-square">
-									<img
-										src={result.url}
-										alt={result.title}
-										class="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
-										loading="lazy"
-									/>
-									<div
-										class="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 transition-opacity group-hover:opacity-100"
-									></div>
-								</div>
-								<div class="p-2">
-									<div class="truncate text-xs leading-tight text-gray-300">{result.title}</div>
-								</div>
-							</button>
-						{/each}
-						{#if searching && searchResults.length === 0}
-							{#each Array(6) as _, i}
-								<div
-									class="animate-pulse overflow-hidden rounded-lg border border-gray-600"
-									style="animation-delay: {i * 0.1}s"
-								>
-									<div class="aspect-square bg-gray-700"></div>
-									<div class="p-2">
-										<div
-											class="mb-1 h-3 rounded bg-gray-700"
-											style="width: {60 + Math.random() * 30}%"
-										></div>
-										<div
-											class="h-2 rounded bg-gray-600"
-											style="width: {40 + Math.random() * 40}%"
-										></div>
-									</div>
-								</div>
-							{/each}
-						{/if}
-					</div>
-				</div>
-			{/if}
-			{#if searching}
-				<div class="mt-2 flex items-center space-x-2 text-gray-400">
-					<div
-						class="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-orange-500"
-					></div>
-					<span class="text-sm">Searching...</span>
-				</div>
-			{/if}
-			{#if newItemText.trim() && (!searchResults.length || highlightedImageIdx === -1)}
-				<div class="mt-2 text-xs text-gray-500">Press <kbd>Enter</kbd> to add as text item</div>
-			{/if}
-		</div>
-	</div>
-{/if}
-
-<!-- Search Results -->
-{#if addItemType === 'search' && (searchResults.length > 0 || searching)}
-	<div class="border-t border-gray-600 p-4">
-		<div class="mb-3 flex items-center justify-between">
-			<div class="text-sm text-gray-400">Search Results</div>
-			{#if searching}
-				<div class="flex items-center space-x-2 text-blue-400">
-					<div
-						class="h-3 w-3 animate-spin rounded-full border-2 border-blue-400 border-t-transparent"
-					></div>
-					<span class="text-xs">Searching...</span>
-				</div>
-			{:else if loadingMore}
-				<div class="flex items-center space-x-2 text-blue-400">
-					<div
-						class="h-3 w-3 animate-spin rounded-full border-2 border-blue-400 border-t-transparent"
-					></div>
-					<span class="text-xs">Loading more...</span>
-				</div>
-			{:else if searchResults.length > 0}
-				<div class="text-xs text-gray-500">{searchResults.length} results</div>
-			{/if}
-		</div>
+	<!-- Add Item Modal -->
+	{#if showAddItemModal}
 		<div
-			class="max-h-80 overflow-y-auto"
-			on:scroll={(e) => {
-				const target = e.currentTarget as HTMLElement;
-				if (
-					target &&
-					!loadingMore &&
-					hasMoreResults &&
-					searchResults.length > 0 &&
-					searchQuery.trim()
-				) {
-					const scrollThreshold = 100;
-					const isNearBottom =
-						target.scrollTop + target.clientHeight >= target.scrollHeight - scrollThreshold;
-
-					console.log('Scroll event:', {
-						scrollTop: target.scrollTop,
-						clientHeight: target.clientHeight,
-						scrollHeight: target.scrollHeight,
-						isNearBottom,
-						loadingMore,
-						hasMoreResults,
-						searchResultsLength: searchResults.length
-					});
-
-					if (isNearBottom) {
-						console.log('Triggering load more images...');
-						loadMoreImages();
+			class="fixed z-50 rounded-lg border border-gray-800 bg-black shadow-2xl"
+			style="left: {addItemModalX}px; top: {addItemModalY}px; min-width: 320px; max-width: 95vw; width: auto;"
+			role="dialog"
+			aria-modal="true"
+			tabindex="-1"
+			on:keydown={(e) => {
+				if (e.key === 'Escape') closeAddItemModal();
+				if (e.key === 'ArrowDown' && filteredAISuggestions.length > 0) {
+					highlightedAISuggestionIdx = Math.min(
+						highlightedAISuggestionIdx + 1,
+						filteredAISuggestions.length - 1
+					);
+					e.preventDefault();
+				}
+				if (e.key === 'ArrowUp' && filteredAISuggestions.length > 0) {
+					highlightedAISuggestionIdx = Math.max(highlightedAISuggestionIdx - 1, 0);
+					e.preventDefault();
+				}
+				if (e.key === 'Enter' && newItemText.trim()) {
+					if (e.repeat) return;
+					if (highlightedAISuggestionIdx >= 0 && filteredAISuggestions.length > 0) {
+						addSuggestedItem(filteredAISuggestions[highlightedAISuggestionIdx]);
+					} else if (highlightedImageIdx >= 0 && searchResults.length > 0) {
+						addSearchResult(searchResults[highlightedImageIdx]);
+					} else {
+						addTextItem();
 					}
 				}
 			}}
 		>
-			<div class="grid gap-2" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
-				{#each searchResults as result}
-					<button
-						class="group overflow-hidden rounded-lg border border-gray-600 transition-colors hover:border-orange-400 hover:bg-gray-700"
-						on:click={() => addSearchResult(result)}
-						title={result.title}
-					>
-						<div class="relative aspect-square">
-							<img
-								src={result.url}
-								alt={result.title}
-								class="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
-								loading="lazy"
-							/>
-							<div
-								class="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 transition-opacity group-hover:opacity-100"
-							></div>
-						</div>
-						<div class="p-2">
-							<div class="truncate text-xs leading-tight text-gray-300">{result.title}</div>
-						</div>
-					</button>
-				{/each}
-
-				<!-- Skeleton loading for initial search -->
-				{#if searching && searchResults.length === 0}
-					{#each Array(10) as _, i}
+			<div class="flex w-auto max-w-[95vw] min-w-[320px] flex-col items-stretch p-4">
+				<!-- AI Suggestions -->
+				{#if filteredAISuggestions.length > 0}
+					<div class="mb-3">
+						<div class="mb-1 text-xs text-gray-400">Suggestions</div>
 						<div
-							class="animate-pulse overflow-hidden rounded-lg border border-gray-600"
-							style="animation-delay: {i * 0.1}s"
+							class="flex max-h-32 max-w-[420px] flex-wrap gap-2 overflow-x-hidden overflow-y-auto pr-2"
 						>
-							<div class="aspect-square bg-gray-700"></div>
-							<div class="p-2">
-								<div
-									class="mb-1 h-3 rounded bg-gray-700"
-									style="width: {60 + Math.random() * 30}%"
-								></div>
-								<div
-									class="h-2 rounded bg-gray-600"
-									style="width: {40 + Math.random() * 40}%"
-								></div>
-							</div>
+							{#each filteredAISuggestions as suggestion, idx (suggestion.name)}
+								<button
+									class="animate-fadein-suggestion translate-y-2 rounded bg-gray-800 px-3 py-1 text-sm text-white opacity-0 transition-colors hover:bg-orange-500 focus:outline-none {highlightedAISuggestionIdx ===
+									idx
+										? 'ring-2 ring-orange-500'
+										: ''}"
+									style="animation-delay: {idx * 60}ms"
+									on:click={() => addSuggestedItem(suggestion)}
+									on:mouseenter={() => (highlightedAISuggestionIdx = idx)}
+									on:mouseleave={() => (highlightedAISuggestionIdx = -1)}
+									tabindex="0"
+								>
+									{suggestion.name}
+									{#if suggestion.image && prefetchedImages[suggestion.name]}
+										<img
+											src={prefetchedImages[suggestion.name]}
+											alt={suggestion.name}
+											class="ml-2 inline-block h-5 w-5 rounded object-cover"
+										/>
+									{/if}
+								</button>
+							{/each}
 						</div>
-					{/each}
+					</div>
 				{/if}
 
-				<!-- Load more skeleton loading -->
-				{#if loadingMore && searchResults.length > 0}
-					{#each Array(6) as _, i}
-						<div
-							class="animate-pulse overflow-hidden rounded-lg border border-gray-600"
-							style="animation-delay: {i * 0.1}s"
-						>
-							<div class="aspect-square bg-gray-700"></div>
-							<div class="p-2">
-								<div
-									class="mb-1 h-3 rounded bg-gray-700"
-									style="width: {60 + Math.random() * 30}%"
-								></div>
-								<div
-									class="h-2 rounded bg-gray-600"
-									style="width: {40 + Math.random() * 40}%"
-								></div>
-							</div>
-						</div>
-					{/each}
-				{/if}
-			</div>
-
-			<!-- Load more button (fallback) -->
-			{#if searchResults.length > 0 && hasMoreResults && !loadingMore}
-				<div class="mt-4 text-center">
-					<button
-						class="rounded-lg bg-gray-700 px-4 py-2 text-sm text-gray-300 transition-colors hover:bg-gray-600"
-						on:click={loadMoreImages}
-					>
-						Load More Images
-					</button>
-				</div>
-			{/if}
-		</div>
-	</div>
-{/if}
-
-<!-- Loading indicator for search -->
-{#if addItemType === 'search' && searching}
-	<div class="border-t border-gray-600 p-4 text-center">
-		<div class="inline-flex items-center space-x-2 text-gray-400">
-			<div
-				class="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-orange-500"
-			></div>
-			<span class="text-sm">Searching...</span>
-		</div>
-	</div>
-{/if}
-
-<!-- Footer -->
-<div class="flex items-center justify-between border-t border-gray-600 p-3">
-	<!-- Mode toggles -->
-	<div class="flex items-center space-x-2">
-		{#each [{ type: 'text' as const, icon: 'text_fields', title: 'Text Mode' }, { type: 'search' as const, icon: 'search', title: 'Image Search' }] as mode}
-			const icon = mode.icon; const title = mode.title;
-			<button
-				class="flex h-8 w-8 items-center justify-center rounded-md transition-colors {addItemType ===
-				mode.type
-					? 'bg-orange-500 text-white'
-					: 'text-gray-400 hover:bg-gray-700 hover:text-white'}"
-				on:click={() => {
-					// Sync quick add input when switching tabs
-					if (mode.type === 'search') {
-						if (newItemText && (!searchQuery || searchQuery !== newItemText)) {
-							searchQuery = newItemText;
-							// Immediately trigger a search if there's text
-							if (searchQuery.trim().length > 2) {
-								searchImages(true);
-							}
-						}
-					} else if (mode.type === 'text') {
-						if (searchQuery && (!newItemText || newItemText !== searchQuery)) {
-							newItemText = searchQuery;
-						}
-					}
-					addItemType = mode.type;
-					focusInput('#quick-add-input');
-				}}
-				title={mode.title}
-			>
-				<span class="material-symbols-outlined text-sm">{mode.icon}</span>
-			</button>
-		{/each}
-
-		<!-- Upload button -->
-		<label
-			class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
-			title="Upload Image"
-		>
-			<span class="material-symbols-outlined text-sm">upload</span>
-			<input type="file" accept="image/*" class="hidden" on:change={handleFileUpload} />
-		</label>
-	</div>
-
-	<!-- Close button -->
-	<button
-		class="flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
-		on:click={closeAddItemModal}
-		title="Close"
-	>
-		<span class="material-symbols-outlined text-sm">close</span>
-	</button>
-</div>
-
-<!-- Color Picker Modal -->
-{#if showColorPicker && colorPickerTierId}
-	{@const currentTier = tierList.tiers.find((t) => t.id === colorPickerTierId)}
-	{#if currentTier}
-		<div class="bg-opacity-75 fixed inset-0 z-50 flex items-center justify-center bg-black">
-			<div class="w-full max-w-md rounded-lg border border-gray-600 bg-gray-800 p-6">
-				<div class="mb-6 flex items-center justify-between">
-					<h2 class="text-xl font-bold text-white">Tier Settings</h2>
-					<button
-						class="text-2xl text-gray-400 hover:text-white"
-						on:click={closeColorPicker}
-						aria-label="Close settings"
-					>
-						×
-					</button>
-				</div>
-
-				<!-- Tier Name -->
-				<div class="mb-6">
-					<label for="tier-name-input" class="mb-2 block text-sm font-medium text-gray-300"
-						>Tier Name</label
-					>
+				<!-- Input row with upload button -->
+				<div class="flex items-center gap-2">
 					<input
-						id="tier-name-input"
-						class="w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 text-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-orange-500 focus:outline-none"
+						id="quick-add-input"
+						class="flex-1 rounded-lg border border-gray-600 bg-[#191919] px-4 py-3 text-white placeholder-gray-400 focus:ring-2 focus:ring-orange-500 focus:outline-none"
 						type="text"
-						bind:value={currentTier.name}
-						placeholder="Enter tier name..."
+						bind:value={newItemText}
+						placeholder="Type to add item or search images..."
+						autocomplete="off"
+						on:input={() => {
+							if (newItemText.trim().length > 2) {
+								clearTimeout(searchTimeout);
+								searchTimeout = setTimeout(() => {
+									searchQuery = newItemText;
+									searchImages(true);
+								}, 300);
+							} else {
+								searchResults = [];
+								hasMoreResults = true;
+								searchPage = 1;
+								highlightedImageIdx = -1;
+							}
+							highlightedAISuggestionIdx = -1;
+						}}
+						on:keydown={(e: KeyboardEvent) => {
+							if (e.key === 'Enter' && newItemText.trim()) {
+								if (highlightedAISuggestionIdx >= 0 && filteredAISuggestions.length > 0) {
+									addSuggestedItem(filteredAISuggestions[highlightedAISuggestionIdx]);
+								} else if (highlightedImageIdx >= 0 && searchResults.length > 0) {
+									addSearchResult(searchResults[highlightedImageIdx]);
+								} else {
+									addTextItem();
+								}
+							}
+							if (e.key === 'Escape') {
+								closeAddItemModal();
+							}
+							if (e.key === 'ArrowDown' && filteredAISuggestions.length > 0) {
+								highlightedAISuggestionIdx = Math.min(
+									highlightedAISuggestionIdx + 1,
+									filteredAISuggestions.length - 1
+								);
+								e.preventDefault();
+							}
+							if (e.key === 'ArrowUp' && filteredAISuggestions.length > 0) {
+								highlightedAISuggestionIdx = Math.max(highlightedAISuggestionIdx - 1, 0);
+								e.preventDefault();
+							}
+						}}
+						aria-label="Add item or search images"
 					/>
-				</div>
-
-				<!-- Color Grid -->
-				<div class="mb-6">
-					<div class="mb-3 block text-sm font-medium text-gray-300">Choose Color</div>
-					<div class="mb-4 grid grid-cols-5 gap-3">
-						{#each tierColors as color}
-							<button
-								class="h-12 w-12 rounded-lg border-2 transition-colors {currentTier.color === color
-									? 'border-white'
-									: 'border-gray-600 hover:border-white'}"
-								style="background-color: {color};"
-								on:click={() => colorPickerTierId && updateTierColor(colorPickerTierId, color)}
-								aria-label="Select color {color}"
-							></button>
-						{/each}
-					</div>
-
-					<!-- Custom Color Input -->
-					<div class="space-y-3">
-						<label for="custom-color-input" class="block text-sm font-medium text-gray-300"
-							>Custom Color</label
-						>
-						<input
-							id="custom-color-input"
-							type="color"
-							class="h-12 w-full rounded-lg border border-gray-600 bg-gray-700"
-							bind:value={currentTier.color}
-							on:change={(e) => {
-								const target = e.target as HTMLInputElement;
-								if (target && colorPickerTierId) {
-									updateTierColor(colorPickerTierId, target.value);
-								}
-							}}
-						/>
-					</div>
-				</div>
-
-				<!-- Action Buttons -->
-				<div class="space-y-3">
-					{#if tierList.tiers.length > 1}
-						<button
-							class="w-full rounded bg-red-600 px-4 py-2 font-bold text-white transition-colors hover:bg-red-700"
-							on:click={() => {
-								if (colorPickerTierId) {
-									removeTier(colorPickerTierId);
-									closeColorPicker();
-								}
-							}}
-						>
-							Delete Tier
-						</button>
-					{/if}
-					<button
-						class="w-full rounded bg-orange-500 px-4 py-2 font-bold text-white transition-colors hover:bg-orange-600"
-						on:click={closeColorPicker}
+					<label
+						class="flex h-10 w-10 cursor-pointer items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
+						title="Upload Image"
+						for="bannerImageInput"
 					>
-						Done
+						<span class="material-symbols-outlined text-lg">upload</span>
+						<input type="file" accept="image/*" class="hidden" on:change={handleFileUpload} />
+					</label>
+					<button
+						class="flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
+						on:click={closeAddItemModal}
+						title="Close"
+						tabindex="0"
+					>
+						<span class="material-symbols-outlined text-sm">close</span>
 					</button>
 				</div>
+
+				<!-- Google Image Search Results -->
+				{#if newItemText.trim().length > 2 && (searchResults.length > 0 || searching)}
+					<div class="mt-4 max-h-64 overflow-y-auto">
+						<div
+							class="grid gap-2"
+							style="grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));"
+						>
+							{#each searchResults as result, idx}
+								<button
+									class="group animate-fadein-image overflow-hidden rounded-lg border border-gray-600 opacity-0 transition-colors hover:border-orange-400 hover:bg-gray-700 focus:outline-none {highlightedImageIdx ===
+									idx
+										? 'ring-2 ring-orange-500'
+										: ''}"
+									style="animation-delay: {idx * 70}ms"
+									on:click={() => addSearchResult(result)}
+									on:mouseenter={() => (highlightedImageIdx = idx)}
+									on:mouseleave={() => (highlightedImageIdx = -1)}
+									tabindex="0"
+								>
+									<div class="relative aspect-square">
+										<img
+											src={result.url}
+											alt={result.title}
+											class="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+											loading="lazy"
+										/>
+										<div
+											class="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 transition-opacity group-hover:opacity-100"
+										></div>
+									</div>
+									<div class="p-2">
+										<div class="truncate text-xs leading-tight text-gray-300">{result.title}</div>
+									</div>
+								</button>
+							{/each}
+							{#if searching && searchResults.length === 0}
+								{#each Array(6) as _, i}
+									<div
+										class="animate-pulse overflow-hidden rounded-lg border border-gray-600"
+										style="animation-delay: {i * 0.1}s"
+									>
+										<div class="aspect-square bg-gray-700"></div>
+										<div class="p-2">
+											<div
+												class="mb-1 h-3 rounded bg-gray-700"
+												style="width: {60 + Math.random() * 30}%"
+											></div>
+											<div
+												class="h-2 rounded bg-gray-600"
+												style="width: {40 + Math.random() * 40}%"
+											></div>
+										</div>
+									</div>
+								{/each}
+							{/if}
+						</div>
+					</div>
+				{/if}
+				{#if searching}
+					<div class="mt-2 flex items-center space-x-2 text-gray-400">
+						<div
+							class="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-orange-500"
+						></div>
+						<span class="text-sm">Searching...</span>
+					</div>
+				{/if}
+				{#if newItemText.trim() && (!searchResults.length || highlightedImageIdx === -1)}
+					<div class="mt-2 text-xs text-gray-500">Press <kbd>Enter</kbd> to add as text item</div>
+				{/if}
 			</div>
 		</div>
 	{/if}
-{/if}
 
-<!-- Item Editor Modal -->
-{#if showItemEditor && editingItem}
-	<div class="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black">
-		<div class="mx-4 w-full max-w-md rounded-lg bg-gray-800 p-6 shadow-xl">
-			<!-- Header -->
-			<div class="mb-6 flex items-center justify-between">
-				<h3 class="text-xl font-bold text-white">Edit Item</h3>
-				<button
-					class="text-2xl text-gray-400 transition-colors hover:text-white"
-					on:click={closeItemEditor}
-					aria-label="Close item editor"
-				>
-					<span class="material-symbols-outlined">close</span>
-				</button>
+	<!-- Search Results -->
+	{#if addItemType === 'search' && (searchResults.length > 0 || searching)}
+		<div class="border-t border-gray-600 p-4">
+			<div class="mb-3 flex items-center justify-between">
+				<div class="text-sm text-gray-400">Search Results</div>
+				{#if searching}
+					<div class="flex items-center space-x-2 text-blue-400">
+						<div
+							class="h-3 w-3 animate-spin rounded-full border-2 border-blue-400 border-t-transparent"
+						></div>
+						<span class="text-xs">Searching...</span>
+					</div>
+				{:else if loadingMore}
+					<div class="flex items-center space-x-2 text-blue-400">
+						<div
+							class="h-3 w-3 animate-spin rounded-full border-2 border-blue-400 border-t-transparent"
+						></div>
+						<span class="text-xs">Loading more...</span>
+					</div>
+				{:else if searchResults.length > 0}
+					<div class="text-xs text-gray-500">{searchResults.length} results</div>
+				{/if}
 			</div>
+			<div
+				class="max-h-80 overflow-y-auto"
+				on:scroll={(e) => {
+					const target = e.currentTarget as HTMLElement;
+					if (
+						target &&
+						!loadingMore &&
+						hasMoreResults &&
+						searchResults.length > 0 &&
+						searchQuery.trim()
+					) {
+						const scrollThreshold = 100;
+						const isNearBottom =
+							target.scrollTop + target.clientHeight >= target.scrollHeight - scrollThreshold;
 
-			<!-- Item Content -->
-			<div class="space-y-4">
-				<!-- Text Input -->
-				<div>
-					<label for="item-text-input" class="mb-2 block text-sm font-medium text-gray-300"
-						>Item Text</label
-					>
-					<input
-						id="item-text-input"
-						class="w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:ring-2 focus:ring-orange-500 focus:outline-none"
-						type="text"
-						bind:value={editingItem.text}
-						placeholder="Enter item text..."
-					/>
+						console.log('Scroll event:', {
+							scrollTop: target.scrollTop,
+							clientHeight: target.clientHeight,
+							scrollHeight: target.scrollHeight,
+							isNearBottom,
+							loadingMore,
+							hasMoreResults,
+							searchResultsLength: searchResults.length
+						});
+
+						if (isNearBottom) {
+							console.log('Triggering load more images...');
+							loadMoreImages();
+						}
+					}
+				}}
+			>
+				<div
+					class="grid gap-2"
+					style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));"
+				>
+					{#each searchResults as result}
+						<button
+							class="group overflow-hidden rounded-lg border border-gray-600 transition-colors hover:border-orange-400 hover:bg-gray-700"
+							on:click={() => addSearchResult(result)}
+							title={result.title}
+						>
+							<div class="relative aspect-square">
+								<img
+									src={result.url}
+									alt={result.title}
+									class="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+									loading="lazy"
+								/>
+								<div
+									class="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 transition-opacity group-hover:opacity-100"
+								></div>
+							</div>
+							<div class="p-2">
+								<div class="truncate text-xs leading-tight text-gray-300">{result.title}</div>
+							</div>
+						</button>
+					{/each}
+
+					<!-- Skeleton loading for initial search -->
+					{#if searching && searchResults.length === 0}
+						{#each Array(10) as _, i}
+							<div
+								class="animate-pulse overflow-hidden rounded-lg border border-gray-600"
+								style="animation-delay: {i * 0.1}s"
+							>
+								<div class="aspect-square bg-gray-700"></div>
+								<div class="p-2">
+									<div
+										class="mb-1 h-3 rounded bg-gray-700"
+										style="width: {60 + Math.random() * 30}%"
+									></div>
+									<div
+										class="h-2 rounded bg-gray-600"
+										style="width: {40 + Math.random() * 40}%"
+									></div>
+								</div>
+							</div>
+						{/each}
+					{/if}
+
+					<!-- Load more skeleton loading -->
+					{#if loadingMore && searchResults.length > 0}
+						{#each Array(6) as _, i}
+							<div
+								class="animate-pulse overflow-hidden rounded-lg border border-gray-600"
+								style="animation-delay: {i * 0.1}s"
+							>
+								<div class="aspect-square bg-gray-700"></div>
+								<div class="p-2">
+									<div
+										class="mb-1 h-3 rounded bg-gray-700"
+										style="width: {60 + Math.random() * 30}%"
+									></div>
+									<div
+										class="h-2 rounded bg-gray-600"
+										style="width: {40 + Math.random() * 40}%"
+									></div>
+								</div>
+							</div>
+						{/each}
+					{/if}
 				</div>
 
-				<!-- Image Preview -->
-				{#if editingItem.image}
-					<div>
-						<div class="mb-2 block text-sm font-medium text-gray-300">Current Image</div>
-						<div class="flex items-center space-x-4">
-							<img
-								src={editingItem.image}
-								alt={editingItem.text}
-								class="h-16 w-16 rounded object-cover"
+				<!-- Load more button (fallback) -->
+				{#if searchResults.length > 0 && hasMoreResults && !loadingMore}
+					<div class="mt-4 text-center">
+						<button
+							class="rounded-lg bg-gray-700 px-4 py-2 text-sm text-gray-300 transition-colors hover:bg-gray-600"
+							on:click={loadMoreImages}
+						>
+							Load More Images
+						</button>
+					</div>
+				{/if}
+			</div>
+		</div>
+	{/if}
+
+	<!-- Loading indicator for search -->
+	{#if addItemType === 'search' && searching}
+		<div class="border-t border-gray-600 p-4 text-center">
+			<div class="inline-flex items-center space-x-2 text-gray-400">
+				<div
+					class="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-orange-500"
+				></div>
+				<span class="text-sm">Searching...</span>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Color Picker Modal -->
+	{#if showColorPicker && colorPickerTierId}
+		{@const currentTier = tierList.tiers.find((t) => t.id === colorPickerTierId)}
+		{#if currentTier}
+			<div class="bg-opacity-75 fixed inset-0 z-50 flex items-center justify-center bg-black">
+				<div class="w-full max-w-md rounded-lg border border-gray-600 bg-gray-800 p-6">
+					<div class="mb-6 flex items-center justify-between">
+						<h2 class="text-xl font-bold text-white">Tier Settings</h2>
+						<button
+							class="text-2xl text-gray-400 hover:text-white"
+							on:click={closeColorPicker}
+							aria-label="Close settings"
+						>
+							×
+						</button>
+					</div>
+
+					<!-- Tier Name -->
+					<div class="mb-6">
+						<label for="tier-name-input" class="mb-2 block text-sm font-medium text-gray-300"
+							>Tier Name</label
+						>
+						<input
+							id="tier-name-input"
+							class="w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 text-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-orange-500 focus:outline-none"
+							type="text"
+							bind:value={currentTier.name}
+							placeholder="Enter tier name..."
+						/>
+					</div>
+
+					<!-- Color Grid -->
+					<div class="mb-6">
+						<div class="mb-3 block text-sm font-medium text-gray-300">Choose Color</div>
+						<div class="mb-4 grid grid-cols-5 gap-3">
+							{#each tierColors as color}
+								<button
+									class="h-12 w-12 rounded-lg border-2 transition-colors {currentTier.color ===
+									color
+										? 'border-white'
+										: 'border-gray-600 hover:border-white'}"
+									style="background-color: {color};"
+									on:click={() => colorPickerTierId && updateTierColor(colorPickerTierId, color)}
+									aria-label="Select color {color}"
+								></button>
+							{/each}
+						</div>
+
+						<!-- Custom Color Input -->
+						<div class="space-y-3">
+							<label for="custom-color-input" class="block text-sm font-medium text-gray-300"
+								>Custom Color</label
+							>
+							<input
+								id="custom-color-input"
+								type="color"
+								class="h-12 w-full rounded-lg border border-gray-600 bg-gray-700"
+								bind:value={currentTier.color}
+								on:change={(e) => {
+									const target = e.target as HTMLInputElement;
+									if (target && colorPickerTierId) {
+										updateTierColor(colorPickerTierId, target.value);
+									}
+								}}
 							/>
+						</div>
+					</div>
+
+					<!-- Action Buttons -->
+					<div class="space-y-3">
+						{#if tierList.tiers.length > 1}
 							<button
-								class="rounded bg-red-600 px-3 py-1 text-sm text-white transition-colors hover:bg-red-700"
+								class="w-full rounded bg-red-600 px-4 py-2 font-bold text-white transition-colors hover:bg-red-700"
 								on:click={() => {
-									if (editingItem) {
-										editingItem.image = undefined;
-										editingItem = editingItem;
+									if (colorPickerTierId) {
+										removeTier(colorPickerTierId);
+										closeColorPicker();
 									}
 								}}
 							>
-								Remove Image
+								Delete Tier
 							</button>
-						</div>
+						{/if}
+						<button
+							class="w-full rounded bg-orange-500 px-4 py-2 font-bold text-white transition-colors hover:bg-orange-600"
+							on:click={closeColorPicker}
+						>
+							Done
+						</button>
 					</div>
-				{/if}
+				</div>
+			</div>
+		{/if}
+	{/if}
 
-				<!-- Image Upload -->
-				<div>
-					<div class="mb-2 block text-sm font-medium text-gray-300">
-						{editingItem.image ? 'Replace Image' : 'Add Image'}
-					</div>
-					<label
-						class="flex cursor-pointer flex-col items-center rounded-lg border-2 border-dashed border-gray-600 p-4 transition-colors hover:border-orange-400"
+	<!-- Item Editor Modal -->
+	{#if showItemEditor && editingItem}
+		<div class="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black">
+			<div class="mx-4 w-full max-w-md rounded-lg bg-gray-800 p-6 shadow-xl">
+				<!-- Header -->
+				<div class="mb-6 flex items-center justify-between">
+					<h3 class="text-xl font-bold text-white">Edit Item</h3>
+					<button
+						class="text-2xl text-gray-400 transition-colors hover:text-white"
+						on:click={closeItemEditor}
+						aria-label="Close item editor"
 					>
-						<span class="material-symbols-outlined mb-2 text-2xl text-gray-400">upload</span>
-						<div class="text-sm font-medium text-gray-300">Click to upload image</div>
+						<span class="material-symbols-outlined">close</span>
+					</button>
+				</div>
+
+				<!-- Item Content -->
+				<div class="space-y-4">
+					<!-- Text Input -->
+					<div>
+						<label for="item-text-input" class="mb-2 block text-sm font-medium text-gray-300"
+							>Item Text</label
+						>
 						<input
-							type="file"
-							accept="image/*"
-							class="hidden"
-							on:change={(e) => {
-								const target = e.target as HTMLInputElement;
-								const file = target.files?.[0];
-								if (file && file.type.startsWith('image/') && editingItem) {
-									const imageUrl = URL.createObjectURL(file);
-									editingItem.image = imageUrl;
-									editingItem = editingItem;
-								}
-							}}
+							id="item-text-input"
+							class="w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:ring-2 focus:ring-orange-500 focus:outline-none"
+							type="text"
+							bind:value={editingItem.text}
+							placeholder="Enter item text..."
 						/>
-					</label>
+					</div>
+					<!-- Type Selector -->
+					<div>
+						<label class="mb-2 block text-sm font-medium text-gray-300">Item Type</label>
+						<select
+							class="w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 text-white focus:ring-2 focus:ring-orange-500 focus:outline-none"
+							bind:value={editingItem.type}
+						>
+							<option value="text">Text</option>
+							<option value="image">Image</option>
+							<option value="search">Search</option>
+						</select>
+					</div>
+					<!-- Image Preview -->
+					{#if editingItem.image}
+						<div>
+							<div class="mb-2 block text-sm font-medium text-gray-300">Current Image</div>
+							<div class="flex items-center space-x-4">
+								<img
+									src={editingItem.image}
+									alt={editingItem.text}
+									class="h-16 w-16 rounded object-cover"
+								/>
+								<button
+									class="rounded bg-red-600 px-3 py-1 text-sm text-white transition-colors hover:bg-red-700"
+									on:click={() => {
+										if (editingItem) {
+											editingItem.image = undefined;
+											editingItem = editingItem;
+										}
+									}}
+								>
+									Remove Image
+								</button>
+							</div>
+						</div>
+					{/if}
+					<!-- Image Upload -->
+					<div>
+						<div class="mb-2 block text-sm font-medium text-gray-300">
+							{editingItem.image ? 'Replace Image' : 'Add Image'}
+						</div>
+						<label
+							class="flex cursor-pointer flex-col items-center rounded-lg border-2 border-dashed border-gray-600 p-4 transition-colors hover:border-orange-400"
+						>
+							<span class="material-symbols-outlined mb-2 text-2xl text-gray-400">upload</span>
+							<div class="text-sm font-medium text-gray-300">Click to upload image</div>
+							<input
+								type="file"
+								accept="image/*"
+								class="hidden"
+								on:change={(e) => {
+									const target = e.target as HTMLInputElement;
+									const file = target.files?.[0];
+									if (file && file.type.startsWith('image/') && editingItem) {
+										const imageUrl = URL.createObjectURL(file);
+										editingItem.image = imageUrl;
+										editingItem.type = 'image';
+										editingItem = editingItem;
+									}
+								}}
+							/>
+						</label>
+					</div>
 				</div>
 
 				<!-- Move to Tier -->
@@ -2295,8 +2297,8 @@
 				</button>
 			</div>
 		</div>
-	</div>
-{/if}
+	{/if}
+</div>
 
 <!-- Gemini Debug Modal -->
 {#if showGeminiDebugModal}

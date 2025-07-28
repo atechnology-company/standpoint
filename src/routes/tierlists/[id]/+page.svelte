@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
+	import { fade, scale } from 'svelte/transition';
 	import TierlistSidebar from '../../../components/tierlist-sidebar.svelte';
 	import { apiClient } from '$lib/api';
 
@@ -69,7 +70,7 @@
 		try {
 			loading = true;
 			error = '';
-			const response = await apiClient.getTierList(Number(tierListId));
+			const response = await apiClient.getTierList(String(tierListId));
 			console.log('Raw API response:', response);
 
 			// Transform the API response to match our expected structure
@@ -168,7 +169,7 @@
 			const unassignedItems = allItems.filter((item) => !assignedItemIds.has(item.id));
 
 			tierList = {
-				id: response.id,
+				id: Number(response.id),
 				title: response.title,
 				type: response.list_type === 'dynamic' ? 'dynamic' : 'classic',
 				tiers: transformedTiers,
@@ -190,7 +191,7 @@
 		selectedItem = selectedItem?.id === item.id ? null : item;
 	}
 
-	/** Dims a hex color by a given factor for better background contrast */
+	// Dims a hex color by a given factor for better background contrast
 	function dimColor(color: string, factor: number = 0.7): string {
 		const hex = color.replace('#', '');
 		const r = Math.round(parseInt(hex.substr(0, 2), 16) * factor);
@@ -302,7 +303,7 @@
 	async function deleteTierList(tierListId: number) {
 		try {
 			console.log('Attempting to delete tier list with ID:', tierListId);
-			await apiClient.deleteTierList(tierListId);
+			await apiClient.deleteTierList(String(tierListId));
 			console.log('Tier list deleted successfully');
 			// Navigate back to tier lists page after deletion
 			window.location.href = '/tierlists';
@@ -353,6 +354,7 @@
 						<div
 							class="relative flex flex-1 transition-all duration-300"
 							style="background-color: {dimColor(tier.color, 0.6)};"
+							in:fade={{ duration: 350 }}
 						>
 							<!-- Tier Items Area -->
 							<div class="relative flex-1 p-6">
@@ -384,6 +386,7 @@
 												role="button"
 												tabindex="0"
 												aria-label="View item {item.text}"
+												in:fade={{ duration: 250 }}
 											>
 												<!-- Gradient overlay -->
 												{#if item.image}
@@ -471,6 +474,7 @@
 									role="button"
 									tabindex="0"
 									aria-label="View item {item.text}"
+									in:fade={{ duration: 250 }}
 								>
 									<!-- Gradient overlay for images -->
 									{#if item.image}
@@ -524,6 +528,7 @@
 									role="button"
 									tabindex="0"
 									aria-label="View item {item.text}"
+									in:fade={{ duration: 250 }}
 								>
 									<!-- Gradient overlay -->
 									{#if item.image}
@@ -561,7 +566,7 @@
 				revision={1}
 				shareUrl={`${typeof window !== 'undefined' ? window.location.origin : ''}/tierlists/${tierList.id}`}
 				id={tierList.id}
-				tierListData={tierList}
+				tierListData={response}
 				on:delete={handleSidebarDelete}
 			/>
 		</div>

@@ -18,12 +18,19 @@ I want to make an app that people actually find useful and fun, that is made wit
 
 Standpoint is a platform built for the New Internet centered around sharing opinions and creating tierlists. AI-powered, blazing quick and literally just my school project.
 
+### note
+
+one day im going to have to pay for a bunch of gemini api credits and then im going to cry a lot.
+
 ## standpoint is made with
 
 - svelte
 - tailwindcss
 - sanic
 - pydantic
+- gemini 2.5 flash lite
+- google image search api
+- firebase
 
 # run dev server
 
@@ -31,6 +38,7 @@ Standpoint is a platform built for the New Internet centered around sharing opin
 - source src-sanic/bin/activate && python3 src-sanic/main.py
 
 ### v0.1.1
+
 - added proper tier list viewing
 - revised backend to work with posting tierlists
 - revised google images fetching to work with this project
@@ -44,28 +52,52 @@ Standpoint is a platform built for the New Internet centered around sharing opin
   - resizable items
 
 ### v0.1.3
+
 - redesigned add modal with animations
 - ai suggestions for tierlists with images
 - simplified drag and drop logic
 
+### v0.2
+
+- firebase integrations
+- authentication and tierlist ownership
+- updated to gemini 2.5 flash lite (from 2.0 flash)
+- added banner images
+- renaming tierlists now renames the title of the webpage
+- other minor refinements, fixes and improvements
+
 ## todo
-- pentagon polls are bugged (can't vote on edges)
+
+- ai features -- fixed but need to fix google image api rate limits (use a dedicated image provider) (ok google images just doesnt work on any app o_o) -- i actually have no idea what im going to do about this
+- **add and implement firebase auth with usergroups -- in progress**
+- **add firebase functionality to saving tierlists and polls -- in progress**
+  - make profile pages
+  - fix and test firebase uploading tierlists images and etc
+
+  
+- add feed -- dependent on auth
+- create onboarding
+- create mainpage -- talking about the platform what it is and what it does
+- add options for banner and background images for tierlists and poll display in lists
+- add poll suggestion input, no creating polls unless youre a dev
 - draft autosaving functionality
-- need to replace my server
 - make a mobile version
 - add animations
-- add auth
-- connect to supabase
-- add pro plan with customisation options
+- add pro plan with stripe for customisation options
   - ability to customise accent
   - backgrounds?
   - change fonts
   - animations on profile pictures and names
   - special voting animations (super reactions)
   - profile badges
-- suggest polls, limit creation
-- ai features
-- create onboarding
-- create mainpage
 - add blockchain
 - tierlist nfts
+- revamp the comment system | self documenting code
+- refine ui to look more fluid and alternative
+
+- ~~on rename tier list rename the title of the webpage~~
+- ability to change type of an item after adding it
+- fix click to add positioning
+- ~~fix header formatting on tier list creation~~
+- ~~give ability to sign in while creating a tier list~~
+- open tier list to non signed in users but not publish

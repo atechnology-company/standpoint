@@ -13,7 +13,7 @@ async def gemini_generate_content(
     temperature: float = 0.7,
     max_tokens: int = 3072,
     stop_sequences: Optional[List[str]] = None,
-    model: str = "gemini-2.0-flash"
+    model: str = "gemini-2.5-flash-lite"
 ) -> str:
     """
     Calls the Gemini API with the given prompt and returns the generated text.

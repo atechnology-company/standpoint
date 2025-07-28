@@ -2,11 +2,13 @@
 	import type { Writable } from 'svelte/store';
 	import { page } from '$app/stores';
 	import { getContext } from 'svelte';
+	import Modal from './login-modal.svelte';
+	import { currentUser, userGroup, signInWithGoogle, signOutUser } from '../lib/stores';
 
 	const navHoverStore = getContext<Writable<boolean>>('navHover');
 
-	let isLoggedIn = false;
 	let profileHovering = false;
+	let showLoginModal = false;
 
 	function handleMouseEnter() {
 		navHoverStore.set(true);
@@ -23,6 +25,23 @@
 	function handleProfileLeave() {
 		profileHovering = false;
 	}
+
+	function openLoginModal() {
+		showLoginModal = true;
+	}
+
+	function closeLoginModal() {
+		showLoginModal = false;
+	}
+
+	async function handleGoogleLogin() {
+		await signInWithGoogle();
+		closeLoginModal();
+	}
+
+	async function handleSignOut() {
+		await signOutUser();
+	}
 </script>
 
 <div class="flex h-20 items-start gap-4 p-4">
@@ -31,6 +50,7 @@
 		style="margin-top: calc((5rem - 2rem) / 3 / 3);"
 		on:mouseenter={handleMouseEnter}
 		on:mouseleave={handleMouseLeave}
+		role="region"
 	>
 		<a
 			href="/"
@@ -100,39 +120,83 @@
 	</div>
 
 	<div class="ml-auto flex items-center">
-		{#if isLoggedIn}
-			<div class="h-10 w-10 overflow-hidden rounded-full bg-gray-300">
-				<img src="/path/to/profile.jpg" alt="Profile" class="h-full w-full object-cover" />
+		{#if $currentUser}
+			<div class="group relative flex items-center">
+				<div
+					class="h-10 w-10 cursor-pointer overflow-hidden rounded-full bg-gray-300"
+					title={$currentUser.displayName || $currentUser.email}
+				>
+					{#if $currentUser.photoURL}
+						<img src={$currentUser.photoURL} alt="Profile" class="h-full w-full object-cover" />
+					{:else}
+						<span class="material-symbols-outlined text-gray-500">person</span>
+					{/if}
+				</div>
+				<button
+					class="ml-2 rounded bg-gray-200 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-300"
+					on:click={handleSignOut}
+				>
+					Sign Out
+				</button>
+				{#if $userGroup}
+					<span class="ml-2 rounded bg-orange-100 px-2 py-0.5 text-xs text-orange-700"
+						>{$userGroup}</span
+					>
+				{/if}
 			</div>
 		{:else}
 			<div
 				class="group relative flex items-center"
 				on:mouseenter={handleProfileEnter}
 				on:mouseleave={handleProfileLeave}
+				role="region"
 			>
 				<div
 					class="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-black transition-all duration-300"
+					on:click={openLoginModal}
+					on:keydown={(e) => {
+						if (e.key === 'Enter' || e.key === ' ') openLoginModal();
+					}}
+					role="button"
+					tabindex="0"
 				>
 					<span class="material-symbols-outlined text-white">person</span>
 				</div>
 
 				<div
-					class={`flex items-center overflow-hidden transition-all duration-300 ease-out ${profileHovering ? 'ml-2 w-36' : 'w-0'}`}
+					class={`flex items-center overflow-hidden transition-all duration-300 ease-out ${profileHovering ? 'ml-2 w-56 max-w-xs' : 'w-0'}`}
 				>
-					<a
-						href="/login"
-						class="bg-gray-600 px-3 py-1.5 text-sm font-medium whitespace-nowrap text-white transition-colors hover:bg-gray-700"
+					<button
+						class="flex w-full items-center gap-2 rounded border border-gray-300 bg-white px-4 py-2 font-medium whitespace-nowrap text-gray-700 shadow transition-colors hover:bg-gray-100"
+						style="min-width: 180px; max-width: 220px;"
+						on:click={handleGoogleLogin}
 					>
-						LOGIN
-					</a>
-					<a
-						href="/signup"
-						class="bg-orange-500 px-3 py-1.5 text-sm font-medium whitespace-nowrap text-white transition-colors hover:bg-orange-600"
-					>
-						SIGN UP
-					</a>
+						<img
+							src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
+							alt="Google"
+							class="h-5 w-5"
+						/>
+						<span>Sign in with Google</span>
+					</button>
 				</div>
 			</div>
+			<Modal open={showLoginModal} on:close={closeLoginModal}>
+				<!-- theres an error i have no idea what to do about it -->
+				<div class="flex flex-col items-center gap-4">
+					<h2 class="mb-2 text-xl font-bold">Sign in to Standpoint</h2>
+					<button
+						class="flex items-center gap-2 rounded border border-gray-300 bg-white px-4 py-2 shadow transition-colors hover:bg-gray-100"
+						on:click={handleGoogleLogin}
+					>
+						<img
+							src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
+							alt="Google"
+							class="h-5 w-5"
+						/>
+						<span>Sign in with Google</span>
+					</button>
+				</div>
+			</Modal>
 		{/if}
 	</div>
 </div>

@@ -1,12 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { apiClient } from '$lib/api';
+	import { savePollToFirestore, getPollsFromFirestore } from '$lib/firestore-polls-tierlists';
+	import { getAuth } from 'firebase/auth';
 	import PollSidebar from '$lib/../components/poll-sidebar.svelte';
 	import ChartRenderer from '$lib/../components/chart-renderer.svelte';
 	import PollForm from '$lib/../components/poll-form.svelte';
 	import { linear } from 'svelte/easing';
 
 	let polls: any[] = [];
+	const LOCAL_STORAGE_POLLS_KEY = 'standpoint_local_polls';
 	let loading = true;
 	let error = '';
 	let selectedPoll: any = null;
@@ -15,44 +18,48 @@
 	let creating = false;
 	let createError = '';
 
-	let poll = {
-		title: '',
-		responseType: 'line' as 'line' | 'triangle' | 'square' | 'pentagon',
-		customOptions: ['Option A', 'Option B'],
-		gradients: {
-			colors: ['#ff5705', '#0066cc', '#00ff88', '#ff4488', '#ffaa00'],
-			enabled: false
-		}
+	type PollFormType = {
+		title: string;
+		responseType: number;
+		customOptions: string[];
+		gradients: { colors: string[]; enabled: boolean };
 	};
+
+	const defaultPoll: PollFormType = {
+		title: '',
+		responseType: 0,
+		customOptions: ['Option A', 'Option B'],
+		gradients: { colors: ['#ff5705', '#0066cc'], enabled: false }
+	};
+
+	let poll: PollFormType = { ...defaultPoll };
 
 	const responseTypes = [
 		{
-			value: 'line',
+			value: 0,
 			label: 'Line Scale (2 options)',
 			icon: '─',
 			description: "It's a line, it has an option on each side."
 		},
 		{
-			value: 'triangle',
+			value: 1,
 			label: 'Triangle (3 options)',
 			icon: '△',
 			description: "It's a triangle, great for three-way comparisons."
 		},
 		{
-			value: 'square',
+			value: 2,
 			label: 'Square (4 options)',
 			icon: '□',
 			description: "It's a square, cool right?"
 		},
 		{
-			value: 'pentagon',
+			value: 3,
 			label: 'Pentagon (5 options)',
 			icon: '⬟',
 			description: "It's a pentagon, so many options to choose from!"
 		}
 	];
-
-	const responseTypeMap = { line: 2, triangle: 3, square: 4, pentagon: 5 };
 
 	onMount(async () => {
 		await loadPolls();
@@ -62,7 +69,15 @@
 		try {
 			loading = true;
 			error = '';
-			polls = await apiClient.getPolls();
+			const auth = getAuth();
+			let loadedPolls = [];
+			if (auth.currentUser) {
+				loadedPolls = await getPollsFromFirestore();
+			} else {
+				const localPolls = localStorage.getItem(LOCAL_STORAGE_POLLS_KEY);
+				loadedPolls = localPolls ? JSON.parse(localPolls) : [];
+			}
+			polls = loadedPolls;
 		} catch (err) {
 			error = 'Failed to load polls. Make sure the backend server is running.';
 			console.error('Error loading polls:', err);
@@ -85,7 +100,7 @@
 	function resetPollForm() {
 		poll = {
 			title: '',
-			responseType: 'line',
+			responseType: 0,
 			customOptions: ['Option A', 'Option B'],
 			gradients: { colors: ['#ff5705', '#0066cc'], enabled: false }
 		};
@@ -96,7 +111,7 @@
 	}
 
 	function updateOptionsForResponseType() {
-		const optionCounts = { line: 2, triangle: 3, square: 4, pentagon: 5 };
+		const optionCounts = [2, 3, 4, 5];
 		const targetCount = optionCounts[poll.responseType];
 
 		let newCustomOptions = [...poll.customOptions];
@@ -129,7 +144,6 @@
 	function updateOption(index: number, value: string) {
 		const newCustomOptions = [...poll.customOptions];
 		newCustomOptions[index] = value;
-
 		poll = {
 			...poll,
 			customOptions: newCustomOptions
@@ -159,8 +173,8 @@
 
 	async function deletePoll(pollId: string | number) {
 		try {
-			const numericPollId = typeof pollId === 'string' ? parseInt(pollId, 10) : pollId;
-			await apiClient.deletePoll(numericPollId);
+			const pollIdStr = typeof pollId === 'string' ? pollId : String(pollId);
+			await apiClient.deletePoll(pollIdStr);
 			await loadPolls();
 
 			if (selectedPoll?.id === pollId) {
@@ -190,17 +204,41 @@
 				return;
 			}
 
+			const optionCounts = [2, 3, 4, 5];
+			const auth = getAuth();
+			const ownerId = auth.currentUser ? auth.currentUser.uid : null;
 			const pollData = {
 				title: poll.title,
-				response_type: responseTypeMap[poll.responseType],
+				question: poll.title, 
+				response_type: optionCounts[poll.responseType],
 				options: poll.customOptions,
-				gradients: poll.gradients
+				gradients: poll.gradients,
+				owner: ownerId
 			};
-
-			const newPoll = await apiClient.createPoll(pollData);
+			let newPollId;
+			if (auth.currentUser) {
+				newPollId = await savePollToFirestore(pollData);
+				// Sync any local polls to Firebase
+				const localPolls = localStorage.getItem(LOCAL_STORAGE_POLLS_KEY);
+				if (localPolls) {
+					const pollsArr = JSON.parse(localPolls);
+					for (const localPoll of pollsArr) {
+						if (!localPoll.owner) {
+							await savePollToFirestore({ ...localPoll, owner: ownerId });
+						}
+					}
+					localStorage.removeItem(LOCAL_STORAGE_POLLS_KEY);
+				}
+			} else {
+				// Save to localStorage
+				const localPolls = localStorage.getItem(LOCAL_STORAGE_POLLS_KEY);
+				const pollsArr = localPolls ? JSON.parse(localPolls) : [];
+				newPollId = Date.now().toString();
+				pollsArr.push({ id: newPollId, ...pollData });
+				localStorage.setItem(LOCAL_STORAGE_POLLS_KEY, JSON.stringify(pollsArr));
+			}
 			await loadPolls();
-
-			selectedPoll = polls.find((p) => p.id === newPoll.id);
+			selectedPoll = polls.find((p) => p.id === newPollId);
 			showSidebar = true;
 			closeCreateModal();
 		} catch (err) {
@@ -379,7 +417,19 @@
 				</div>
 
 				<!-- Poll Form Component -->
-				<PollForm {poll} {responseTypes} onUpdate={(updatedPoll) => (poll = updatedPoll)} />
+				<PollForm
+					poll={{
+						...poll,
+						id: '',
+						response_type: poll.responseType,
+						options: poll.customOptions,
+						stats: { average: 0, std_dev: 0, total_votes: 0, vote_positions: [] },
+						user_vote: undefined,
+						created_at: ''
+					}}
+					{responseTypes}
+					onUpdate={(updatedPoll) => (poll = updatedPoll)}
+				/>
 
 				<!-- Preview -->
 				<div class="mb-8 rounded-lg bg-gray-700/50 p-6">
