@@ -23,7 +23,7 @@ from sanic_cors import CORS
 # Initialize Sanic app
 app = Sanic("StandpointAPI")
 
-# Apply CORS to each blueprint individually
+# Apply CORS to each blueprint individually (and it still didn't work)
 CORS(polls_bp, origins="http://localhost:5173", supports_credentials=True, allow_headers="*")
 CORS(tierlists_bp, origins="http://localhost:5173", supports_credentials=True, allow_headers="*")
 CORS(interactions_bp, origins="http://localhost:5173", supports_credentials=True, allow_headers="*")
@@ -49,8 +49,6 @@ class ErrorResponse(BaseModel):
     details: str
 
 # Health check endpoint
-
-
 @app.get("/health")
 async def health_check(request):
     response = HealthResponse(
@@ -66,8 +64,6 @@ async def health_check(request):
     return json(response.model_dump())
 
 # Example endpoint
-
-
 @app.get("/api/hello")
 async def hello(request):
     return json({"message": "Hello from Sanic backend!"})

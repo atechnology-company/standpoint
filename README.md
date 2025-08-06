@@ -103,7 +103,20 @@ _i want to sleep so bad_
 - fixing stripe and pro purchasing
 - make search more efficient with a firebase searching service
 - fix half baked mobile ui
-- finish accent color implementation and theming
+- finish accent color implementation and theming and update settings display
+- pressing space while editing an item name opens add modal
+- uploading indicators
+- file size limits
+- dynamic tierlists not displaying positions proper;y
+- editing tierlists after publishing
+- validity checking file uploads (only images)
+- xss prevention
+- notifications
+- image logic after transferring to new implementation is cooked
+- polls proximity logic
+- gradients in wrong position for polls
+- image cropping after placing and more tools
+- item colors
 
 ### things i wanna do
 
