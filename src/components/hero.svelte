@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { TierListResponse } from '../lib/api';
+	import { goto } from '$app/navigation';
+
 	let pauseAutoplay = false;
+
 	type Slide = {
 		header: string;
 		author: string;
@@ -12,24 +15,19 @@
 		forks: number;
 		image?: string;
 		backgroundColor?: string;
-		tierlist?: TierListResponse;
+		tierlist?: any;
 	};
 
 	export let slides: Array<Slide> = [];
-
-	// TODO: Replace all 'any' types with more specific types throughout this file.
-	// TODO: Add 'key' to each {#each} block as required by Svelte.
 
 	let currentSlide = 0;
 	let startX = 0;
 	let isDragging = false;
 	let carouselElement: HTMLElement;
 
-	// Like counts for each slide
 	let slideLikes: number[] = [];
 
 	onMount(async () => {
-		// Only fetch likes if slides have tierlist with id
 		slideLikes = slides.map((slide) => slide.likes || 0);
 		await Promise.all(
 			slides.map(async (slide, i) => {
@@ -41,13 +39,21 @@
 							slideLikes[i] = data.likes ?? 0;
 							slide.likes = data.likes ?? 0;
 						}
-					} catch {
-						// ignore error
-					}
+					} catch {}
 				}
 			})
 		);
+
+		startAutoplay();
 	});
+
+	function startAutoplay() {
+		setInterval(() => {
+			if (!pauseAutoplay && !isDragging) {
+				nextSlide();
+			}
+		}, 6000);
+	}
 
 	function goToSlide(index: number) {
 		if (index < 0) {
@@ -144,6 +150,12 @@
 			}, 3000);
 		}
 	}
+
+	function navigateToTierlist() {
+		if (slides[currentSlide]?.tierlist?.id) {
+			goto(`/tierlists/${slides[currentSlide].tierlist.id}`);
+		}
+	}
 </script>
 
 <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -158,76 +170,94 @@
 	on:mouseup={handleMouseUp}
 	on:mouseleave={handleMouseLeave}
 >
-	{#each slides as slide, i (slide.header)}
+	{#each slides as slide, i (slide.tierlist?.id || `${slide.header}-${slide.author}-${i}`)}
 		<div
 			class="pointer-events-none absolute top-0 left-0 h-full w-full bg-cover bg-center opacity-0 transition-opacity duration-500"
 			class:opacity-100={i === currentSlide}
 			class:pointer-events-auto={i === currentSlide}
 			style="background-color: {slide.backgroundColor || '#AADDEE'}; {slide.image
-				? `background-image: url('${slide.image}');`
+				? `background-image: url('${slide.image}'); background-size: cover;`
 				: ''}"
+			on:click={navigateToTierlist}
+			on:keydown={(e) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					navigateToTierlist();
+				}
+			}}
+			tabindex="0"
+			role="button"
+			aria-label="View tierlist {slide.header}"
 		>
-			<div class="bg-opacity-40 absolute top-0 left-0 z-10 h-full w-full bg-black backdrop-blur-sm">
-				<div class="flex items-center gap-4">
-					<!-- Like Icon -->
-					<div
-						class="group flex items-center"
-						style="background: none; border: none; padding: 0;"
-						aria-label="Like"
-					>
-						<span
-							class="material-symbols-outlined text-2xl transition-colors select-none"
-							style="color: {slide.likes > 0
-								? '#ff5705'
-								: '#fff'}; font-family: 'Material Symbols Outlined'; font-variation-settings: 'FILL' {slide.likes >
-							0
-								? 1
-								: 0}, 'wght' 600, 'GRAD' 0, 'opsz' 24;"
-						>
-							favorite
-						</span>
-						<span class="ml-1">{slide.likes || 0}</span>
+			<!-- Dark overlay -->
+			<div
+				class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/60 to-black/40 backdrop-blur-sm"
+			>
+				<div class="flex h-full flex-col justify-between p-6">
+					<!-- Top metadata -->
+					<div class="flex items-center justify-between text-white">
+						<div class="flex items-center gap-4">
+							<!-- Like Icon -->
+							<div class="flex items-center gap-1">
+								<span
+									class="material-symbols-outlined text-2xl"
+									style="color: {slide.likes > 0
+										? '#ff5705'
+										: '#fff'}; font-variation-settings: 'FILL' {slide.likes > 0
+										? 1
+										: 0}, 'wght' 600;"
+								>
+									favorite
+								</span>
+								<span>{slide.likes || 0}</span>
+							</div>
+							<!-- Comments Icon -->
+							<div class="flex items-center gap-1">
+								<span
+									class="material-symbols-outlined text-2xl"
+									style="font-variation-settings: 'FILL' 0, 'wght' 600;"
+								>
+									chat_bubble
+								</span>
+								<span>{slide.comments || 0}</span>
+							</div>
+							<!-- Forks Icon -->
+							<div class="flex items-center gap-1">
+								<span
+									class="material-symbols-outlined text-2xl"
+									style="font-variation-settings: 'FILL' 0, 'wght' 600;"
+								>
+									call_split
+								</span>
+								<span>{slide.forks || 0}</span>
+							</div>
+						</div>
+
+						<div>
+							<span class="text-sm">{slide.date}</span>
+						</div>
 					</div>
-					<!-- Comments Icon -->
-					<span class="flex items-center">
-						<span
-							class="material-symbols-outlined text-2xl"
-							style="color: #fff; font-family: 'Material Symbols Outlined'; font-variation-settings: 'FILL' 0, 'wght' 600, 'GRAD' 0, 'opsz' 24;"
-						>
-							chat_bubble
-						</span>
-						<span class="ml-1">{slide.comments || 0}</span>
-					</span>
-					<!-- Forks Icon -->
-					<span class="flex items-center">
-						<span
-							class="material-symbols-outlined text-2xl"
-							style="color: #fff; font-family: 'Material Symbols Outlined'; font-variation-settings: 'FILL' 0, 'wght' 600, 'GRAD' 0, 'opsz' 24;"
-						>
-							fork_right
-						</span>
-						<span class="ml-1">{slide.forks || 0}</span>
-					</span>
-				</div>
 
-				<div class="mt-auto mb-8 self-start">
-					<h2 class="mb-2 text-3xl font-bold opacity-50">TRENDING NOW</h2>
-					<h1 class="m-0 text-5xl font-bold">{slide.header || ''}</h1>
-				</div>
+					<!-- Center title and author -->
+					<div class="my-auto text-left text-white">
+						<p class="text-xl">{slide.author}</p>
+						<h1 class="mb-2 cursor-pointer text-6xl font-bold">{slide.header}</h1>
+					</div>
 
-				<div class="flex gap-2 self-end">
-					{#each slides as _, index (index)}
-						<button
-							class="h-4 w-4 cursor-pointer border-none p-0 transition-all duration-300"
-							class:opacity-50={index !== currentSlide}
-							class:hover:opacity-70={index !== currentSlide}
-							style={index === currentSlide
-								? 'background-color: #ff5705; width: 36px;'
-								: 'background-color: rgba(255, 255, 255, 0.5);'}
-							on:click={() => goToSlide(index)}
-							aria-label="Go to slide {index + 1}"
-						></button>
-					{/each}
+					<!-- Slide indicators -->
+					<div class="flex justify-end gap-2">
+						{#each slides as _, index (index)}
+							<button
+								class="h-4 w-4 cursor-pointer border-none p-0 transition-all duration-300"
+								class:opacity-50={index !== currentSlide}
+								class:hover:opacity-70={index !== currentSlide}
+								style={index === currentSlide
+									? 'background-color: #ff5705; width: 36px;'
+									: 'background-color: rgba(255, 255, 255, 0.5);'}
+								on:click|stopPropagation={() => goToSlide(index)}
+								aria-label="Go to slide {index + 1}"
+							></button>
+						{/each}
+					</div>
 				</div>
 			</div>
 		</div>

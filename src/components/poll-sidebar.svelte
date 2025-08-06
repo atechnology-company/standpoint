@@ -1,29 +1,51 @@
 <script lang="ts">
 	import type { PollResponse } from '../lib/api';
-	import { tick, createEventDispatcher } from 'svelte';
-	import { scale } from 'svelte/transition';
+	import { createEventDispatcher, onMount, onDestroy } from 'svelte';
 	import confetti from 'canvas-confetti';
+	import { currentUser, userGroup } from '$lib/stores';
+	import { db } from '$lib/firebase';
+	import {
+		collection,
+		addDoc,
+		query,
+		where,
+		orderBy,
+		onSnapshot,
+		Timestamp,
+		serverTimestamp,
+		getDocs,
+		deleteDoc,
+		doc
+	} from 'firebase/firestore';
+	import { addToast } from '$lib/toast';
+
 	let likeBtn: HTMLButtonElement | null = null;
 
 	export let title: string = '';
 	export let date: string = '';
 	export let author: string = 'Anonymous';
-	export let revision: number = 1;
 	export let shareUrl: string = '';
 	export let id: string | number = '';
 	export let pollData: PollResponse | null = null;
 	export let likes: number = 0;
 	export let liked: boolean = false;
+	export let showComments: boolean = true;
 
 	let likeLoading = false;
-	let likeAnim = false;
-	let likeHover = false;
-	let likeActive = false;
 	let copied = false;
+	let commentText = '';
+	let commentsList: Array<{
+		id: string;
+		text: string;
+		createdAt: Date;
+		userId: string;
+		userDisplayName: string;
+		userPhotoURL: string;
+	}> = [];
+	let comments = 0;
+	let unsubscribeComments: (() => void) | null = null;
 
 	// Fetch initial like count and liked state on mount
-	import { onMount } from 'svelte';
-
 	onMount(async () => {
 		try {
 			const res = await fetch(`/api/interactions/poll/${id}/likes`);
@@ -31,10 +53,18 @@
 				const data = await res.json();
 				likes = data.likes ?? 0;
 			}
-			// Optionally, fetch if the user has liked this poll (if backend supports)
-			// liked = ...;
 		} catch {
 			likes = 0;
+		}
+
+		// Load comments when component mounts
+		loadComments();
+	});
+
+	onDestroy(() => {
+		// Cleanup comment subscription
+		if (unsubscribeComments) {
+			unsubscribeComments();
 		}
 	});
 	async function handleLike() {
@@ -50,33 +80,20 @@
 			if (res.ok) {
 				const data = await res.json();
 				likes = data.likes;
-				// Only animate on like (not unlike)
-				if (!liked) {
-					likeAnim = false;
-					await tick();
-					likeAnim = true;
-					if (likeBtn) {
-						const rect = likeBtn.getBoundingClientRect();
-						const x = (rect.left + rect.width / 2) / window.innerWidth;
-						const y = (rect.top + rect.height / 2) / window.innerHeight;
-						for (let i = 0; i < 12; i++) {
-							confetti({
-								particleCount: 4,
-								spread: 360,
-								angle: Math.random() * 360,
-								origin: { x, y }
-							});
-						}
-					} else {
-						for (let i = 0; i < 12; i++) {
-							confetti({
-								particleCount: 4,
-								spread: 120,
-								angle: Math.random() * 360,
-								origin: { y: 0.7 }
-							});
-						}
-					}
+				// Only animate on like
+				if (!liked && likeBtn) {
+					const rect = likeBtn.getBoundingClientRect();
+					const x = (rect.left + rect.width / 2) / window.innerWidth;
+					const y = (rect.top + rect.height / 2) / window.innerHeight;
+
+					confetti({
+						particleCount: 50,
+						spread: 60,
+						origin: { x, y },
+						startVelocity: 15,
+						gravity: 0.8,
+						ticks: 100
+					});
 				}
 				liked = !liked;
 			}
@@ -87,25 +104,31 @@
 		}
 	}
 
-	// Remove infinite reactive loop: use a function instead
+	// Robust date normalization/formatting utility
+	function normalizeDate(input: any): Date | null {
+		if (!input) return null;
+		if (typeof input === 'string' || typeof input === 'number') {
+			const d = new Date(input);
+			return isNaN(d.getTime()) ? null : d;
+		}
+		if (typeof input.toDate === 'function') {
+			const d = input.toDate();
+			return isNaN(d.getTime()) ? null : d;
+		}
+		return null;
+	}
+	function formatDateSafe(input: any): string {
+		const d = normalizeDate(input);
+		return d
+			? d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+			: 'Invalid date';
+	}
 
 	const dispatch = createEventDispatcher();
 
 	function handleDelete() {
 		if (confirm(`Are you sure you want to delete this poll? This action cannot be undone.`)) {
 			dispatch('delete', { id, type: 'poll' });
-		}
-	}
-
-	function formatDate(dateStr: string) {
-		try {
-			return new Date(dateStr).toLocaleDateString('en-US', {
-				year: 'numeric',
-				month: 'short',
-				day: 'numeric'
-			});
-		} catch {
-			return dateStr;
 		}
 	}
 
@@ -128,104 +151,141 @@
 		};
 	}
 
-	function getVariabilityLevel(stdDev: number) {
-		// Adjust thresholds based on poll type (more options = higher natural std dev)
-		const responseType = pollData?.response_type || 2;
-		let lowThreshold = 0.15;
-		let mediumThreshold = 0.3;
-
-		// Scale thresholds based on number of options
-		if (responseType === 3) {
-			// Triangle
-			lowThreshold = 0.18;
-			mediumThreshold = 0.35;
-		} else if (responseType === 4) {
-			// Square
-			lowThreshold = 0.22;
-			mediumThreshold = 0.4;
-		} else if (responseType === 5) {
-			// Pentagon
-			lowThreshold = 0.25;
-			mediumThreshold = 0.45;
-		}
-
-		if (stdDev < lowThreshold) return 'Low';
-		if (stdDev < mediumThreshold) return 'Medium';
-		return 'High';
-	}
-
 	function getConsensusLevel(stdDev: number) {
-		// Adjust thresholds based on poll type (more options = higher natural std dev)
-		const responseType = pollData?.response_type || 2;
-		let strongThreshold = 0.1;
-		let moderateThreshold = 0.2;
-		let weakThreshold = 0.3;
-
-		// Scale thresholds based on number of options
-		if (responseType === 3) {
-			// Triangle
-			strongThreshold = 0.12;
-			moderateThreshold = 0.25;
-			weakThreshold = 0.35;
-		} else if (responseType === 4) {
-			// Square
-			strongThreshold = 0.15;
-			moderateThreshold = 0.3;
-			weakThreshold = 0.4;
-		} else if (responseType === 5) {
-			// Pentagon
-			strongThreshold = 0.18;
-			moderateThreshold = 0.35;
-			weakThreshold = 0.45;
-		}
-
-		if (stdDev < strongThreshold) return 'Strong Consensus';
-		if (stdDev < moderateThreshold) return 'Moderate Consensus';
-		if (stdDev < weakThreshold) return 'Weak Consensus';
+		if (stdDev < consensusThreshold * 0.5) return 'Very Strong';
+		if (stdDev < consensusThreshold) return 'Strong';
+		if (stdDev < consensusThreshold * 1.5) return 'Moderate';
+		if (stdDev < consensusThreshold * 2) return 'Weak';
 		return 'No Consensus';
 	}
 
-	function getEngagementLevel(totalVotes: number) {
-		if (totalVotes < 5) return 'Low';
-		if (totalVotes < 20) return 'Medium';
+	function getVariabilityLevel(stdDev: number) {
+		if (stdDev < variabilityThreshold * 0.5) return 'Very Low';
+		if (stdDev < variabilityThreshold) return 'Low';
+		if (stdDev < variabilityThreshold * 1.5) return 'Medium';
 		return 'High';
 	}
 
-	function calculateMedian(votes: number[]) {
-		const sorted = [...votes].sort((a, b) => a - b);
-		const middle = Math.floor(sorted.length / 2);
-		if (sorted.length % 2 === 0) {
-			return (sorted[middle - 1] + sorted[middle]) / 2;
-		}
-		return sorted[middle];
-	}
-
-	function calculateMode(votes: number[]) {
-		const frequency: Record<number, number> = {};
-		let maxFreq = 0;
-		let mode = null;
-
-		votes.forEach((vote) => {
-			const rounded = Math.round(vote * 10) / 10; // Round to 1 decimal
-			frequency[rounded] = (frequency[rounded] || 0) + 1;
-			if (frequency[rounded] > maxFreq) {
-				maxFreq = frequency[rounded];
-				mode = rounded;
-			}
-		});
-
-		return mode;
+	function getEngagementLevel(totalVotes: number) {
+		if (totalVotes < engagementThreshold * 0.5) return 'Very Low';
+		if (totalVotes < engagementThreshold) return 'Low';
+		if (totalVotes < engagementThreshold * 2) return 'Medium';
+		return 'High';
 	}
 
 	function copyLink() {
-		navigator.clipboard.writeText(shareUrl);
-		copied = true;
+		if (navigator.clipboard && shareUrl) {
+			navigator.clipboard
+				.writeText(shareUrl)
+				.then(() => {
+					copied = true;
+					setTimeout(() => {
+						copied = false;
+					}, 2000);
+				})
+				.catch(() => {
+				});
+		}
+	}
+
+	// Comments functionality
+	async function addComment() {
+		if (!$currentUser || !commentText.trim()) {
+			if (!$currentUser) addToast('Please sign in to comment', 'error');
+			return;
+		}
+
+		try {
+			// Add comment to Firebase
+			await addDoc(collection(db, 'comments'), {
+				itemId: id.toString(),
+				itemType: 'poll',
+				text: commentText.trim(),
+				userId: $currentUser.uid,
+				userDisplayName: $currentUser.displayName || 'Anonymous',
+				userPhotoURL: $currentUser.photoURL || '',
+				createdAt: serverTimestamp()
+			});
+
+			commentText = '';
+			addToast('Comment added!', 'success');
+		} catch (error) {
+			console.error('Error adding comment:', error);
+			addToast('Failed to add comment', 'error');
+		}
+	}
+
+	// Load comments from Firebase when component mounts
+	function loadComments() {
+		if (!id) return;
+
+		const commentsQuery = query(
+			collection(db, 'comments'),
+			where('itemId', '==', id.toString()),
+			where('itemType', '==', 'poll'),
+			orderBy('createdAt', 'desc')
+		);
+
+		unsubscribeComments = onSnapshot(
+			commentsQuery,
+			(snapshot) => {
+				commentsList = snapshot.docs.map((doc) => {
+					const data = doc.data();
+					return {
+						id: doc.id,
+						text: data.text,
+						createdAt: data.createdAt?.toDate() || new Date(),
+						userId: data.userId,
+						userDisplayName: data.userDisplayName || 'Anonymous',
+						userPhotoURL: data.userPhotoURL || ''
+					};
+				});
+				comments = commentsList.length;
+			},
+			(error) => {
+				console.error('Error loading comments:', error);
+			}
+		);
+	}
+
+	async function deleteComment(commentId: string) {
+		if (!$currentUser) return;
+
+		try {
+			// Check if user is owner or admin before deleting
+			const commentDoc = await getDocs(
+				query(collection(db, 'comments'), where('__name__', '==', commentId))
+			);
+
+			if (commentDoc.empty) return;
+
+			const commentData = commentDoc.docs[0].data();
+			if (commentData.userId !== $currentUser.uid && $userGroup !== 'dev') {
+				addToast('You can only delete your own comments', 'error');
+				return;
+			}
+
+			await deleteDoc(doc(db, 'comments', commentId));
+			addToast('Comment deleted', 'success');
+		} catch (error) {
+			console.error('Error deleting comment:', error);
+			addToast('Failed to delete comment', 'error');
+		}
 	}
 
 	$: hasVotes = (pollData?.stats?.total_votes ?? 0) > 0;
-	$: votes = pollData?.stats?.vote_positions || [];
-	$: median = hasVotes ? calculateMedian(votes) : 0;
-	$: mode = hasVotes ? calculateMode(votes) : 0;
+
+	// Default slider values
+	let consensusThreshold = 0.2;
+	let variabilityThreshold = 0.3;
+	let engagementThreshold = 10;
+
+	// Determine if current user can delete this poll (owner or dev role)
+	$: canDelete =
+		$currentUser && pollData && ($currentUser.uid === pollData.owner || $userGroup === 'dev');
+
+	// Determine if user can create polls (pro users only)
+	$: canCreatePolls = $userGroup === 'pro' || $userGroup === 'dev';
 </script>
 
 <div class="flex h-full min-h-0 flex-col overflow-y-auto bg-orange-900 p-6 text-white">
@@ -233,99 +293,85 @@
 	<div class="mb-6">
 		<div class="mb-4 flex items-center justify-between">
 			<span class="text-sm text-orange-300">{author}</span>
-			<div class="flex items-center space-x-2 text-sm text-orange-300">
-				<!-- Like Button -->
+			<!-- Interaction buttons -->
+			<div class="flex items-center space-x-2">
+				<!-- Like button -->
 				<button
-					class="group flex items-center space-x-1 focus:outline-none"
-					aria-label="Like"
+					class="flex h-10 w-10 items-center justify-center transition-colors duration-200 {liked
+						? 'bg-red-600 text-white hover:bg-red-700'
+						: 'bg-orange-700 text-orange-300 hover:bg-orange-600'}"
 					on:click={handleLike}
+					title={liked ? 'Unlike' : 'Like'}
+					aria-label={liked ? 'Unlike this poll' : 'Like this poll'}
 					disabled={likeLoading}
-					type="button"
 					bind:this={likeBtn}
-					on:mouseenter={() => (likeHover = true)}
-					on:mouseleave={() => {
-						likeHover = false;
-						likeActive = false;
-					}}
-					on:mousedown={() => (likeActive = true)}
-					on:mouseup={() => (likeActive = false)}
 				>
-					{#if likeAnim}
-						<span
-							in:scale={{ duration: 200, start: 0.7 }}
-							class="material-symbols-outlined text-lg transition-colors select-none"
-							style="color: #ff5705; font-family: 'Material Symbols Outlined' !important; font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24 !important; transition: transform 0.12s cubic-bezier(.4,2,.6,1); transform: scale({likeActive
-								? 0.96
-								: likeHover
-									? 1.08
-									: 1});"
-						>
-							favorite
-						</span>
-					{:else}
-						<span
-							class="material-symbols-outlined text-lg transition-colors select-none"
-							style="color: {liked
-								? '#ff5705'
-								: ''}; font-family: 'Material Symbols Outlined' !important; font-variation-settings: 'FILL' {liked
-								? 1
-								: 0}, 'wght' 400, 'GRAD' 0, 'opsz' 24 !important; transition: transform 0.12s cubic-bezier(.4,2,.6,1); transform: scale({likeActive
-								? 0.96
-								: likeHover
-									? 1.08
-									: 1});"
-						>
-							favorite
-						</span>
-					{/if}
-					<span class="text-xs">{likes}</span>
-					<style>
-						.material-symbols-outlined.fill {
-							color: #ff5705 !important;
-						}
-						.group:hover .material-symbols-outlined,
-						.material-symbols-outlined-filled:hover,
-						.group:hover .material-symbols-outlined-filled {
-							color: #ff5705 !important;
-						}
-					</style>
-				</button>
-				<!-- Comments Icon -->
-				<button class="group flex items-center" aria-label="Comments" disabled>
-					<span
-						class="material-symbols-outlined text-lg transition-colors select-none group-hover:text-orange-200"
+					<span class="material-symbols-outlined text-lg"
+						>{liked ? 'favorite' : 'favorite_border'}</span
 					>
-						chat_bubble
-					</span>
 				</button>
-				<!-- Forks Icon -->
-				<button class="group flex items-center" aria-label="Forks" disabled>
-					<span
-						class="material-symbols-outlined text-lg transition-colors select-none group-hover:text-orange-200"
+
+				<!-- Delete button -->
+				{#if canDelete}
+					<button
+						class="flex h-10 w-10 items-center justify-center bg-red-600 text-white transition-colors duration-200 hover:bg-red-700"
+						on:click={handleDelete}
+						title="Delete poll"
 					>
-						fork_right
-					</span>
-				</button>
+						<span class="material-symbols-outlined text-lg">delete</span>
+					</button>
+				{/if}
 			</div>
 		</div>
-		<h1 class="mb-4 text-2xl font-bold break-words">{title || 'TITLE'}</h1>
+		<h1 class="mb-4 text-2xl font-bold break-words">{pollData?.title || title}</h1>
 
 		<div class="mb-6 text-sm text-orange-300">
-			{formatDate(date)} | REVISION {revision}
+			{formatDateSafe(pollData?.created_at || date)}
 		</div>
 
 		<!-- Poll Statistics Section -->
 		{#if pollData}
-			<div class="mb-6 rounded-lg bg-orange-800/50 p-4">
+			<!-- User Vote Status -->
+			{#if pollData.user_vote !== undefined && pollData.user_vote !== null}
+				<div class="mb-4 border border-green-700/50 bg-green-800/30 p-3">
+					<div class="mb-2 flex items-center space-x-2">
+						<span class="material-symbols-outlined text-sm text-green-400">check_circle</span>
+						<span class="text-sm font-medium text-green-300">You've voted!</span>
+					</div>
+					<div class="text-xs text-green-200">
+						Your vote: {pollData.user_vote !== undefined
+							? (pollData.user_vote * 100).toFixed(1)
+							: '0'}%
+						{#if pollData.user_vote_2d}
+							(Position: {(pollData.user_vote_2d.x * 100).toFixed(1)}%, {(
+								pollData.user_vote_2d.y * 100
+							).toFixed(1)}%)
+						{/if}
+					</div>
+					<div class="mt-1 text-xs text-green-300">
+						Click anywhere on the chart to update your vote
+					</div>
+				</div>
+			{:else}
+				<div class="mb-4 border border-blue-700/50 bg-blue-800/30 p-3">
+					<div class="mb-2 flex items-center space-x-2">
+						<span class="material-symbols-outlined text-sm text-blue-400">how_to_vote</span>
+						<span class="text-sm font-medium text-blue-300">Ready to vote?</span>
+					</div>
+					<div class="text-xs text-blue-200">Click anywhere on the chart to cast your vote</div>
+				</div>
+			{/if}
+
+			<div class="mb-6 bg-orange-800/50 p-4">
 				<h3 class="mb-4 text-lg font-semibold text-orange-200">Poll Statistics</h3>
 
 				<!-- Basic Stats Grid -->
 				<div class="mb-6 grid grid-cols-2 gap-4">
-					<div class="rounded-lg bg-orange-800/30 p-3 text-center">
+					<div class=" bg-orange-800/30 p-3 text-center">
 						<div class="text-2xl font-bold text-white">{pollData.stats.total_votes}</div>
 						<div class="text-xs text-orange-300">Total Votes</div>
 					</div>
-					<div class="rounded-lg bg-orange-800/30 p-3 text-center">
+					<div class=" bg-orange-800/30 p-3 text-center">
 						<div class="text-lg font-bold text-white">
 							{getResponseTypeName(pollData.response_type)}
 						</div>
@@ -334,76 +380,46 @@
 				</div>
 
 				{#if hasVotes}
-					<!-- Average Position -->
-					<div class="mb-4">
-						<div class="mb-2 flex items-center justify-between">
-							<span class="text-sm text-orange-200">Average Position</span>
-							<span class="text-sm font-bold text-white"
-								>{(pollData.stats.average * 100).toFixed(1)}%</span
-							>
-						</div>
-						<div class="relative h-3 w-full rounded-full bg-orange-900">
-							<div
-								class="h-3 rounded-full bg-orange-300 transition-all duration-300"
-								style="width: {pollData.stats.average * 100}%"
-							></div>
-							<div
-								class="absolute top-0 h-3 w-1 rounded-full bg-white"
-								style="left: {pollData.stats.average * 100}%"
-							></div>
-						</div>
-					</div>
-
 					<!-- Central Tendency Measures -->
-					<div class="mb-4 grid grid-cols-3 gap-3">
-						<div class="rounded bg-orange-800/30 p-2 text-center">
-							<div class="text-sm font-bold text-white">
-								{(pollData.stats.average * 100).toFixed(1)}%
+					<div class="mb-4">
+						<div class="mb-2 text-sm font-semibold text-orange-200">Vote Distribution</div>
+						<div class=" bg-orange-800/30 p-3">
+							<div class="mb-2 text-sm font-bold text-white">
+								{pollData.stats.average !== undefined
+									? (pollData.stats.average * 100).toFixed(1)
+									: '0'}% Average
 							</div>
-							<div class="text-xs text-orange-300">Mean</div>
-						</div>
-						<div class="rounded bg-orange-800/30 p-2 text-center">
-							<div class="text-sm font-bold text-white">{(median * 100).toFixed(1)}%</div>
-							<div class="text-xs text-orange-300">Median</div>
-						</div>
-						<div class="rounded bg-orange-800/30 p-2 text-center">
-							<div class="text-sm font-bold text-white">
-								{mode !== null ? (mode * 100).toFixed(1) + '%' : 'N/A'}
+							<div class="mb-2 text-xs text-orange-300">
+								Total Votes: {pollData.stats.total_votes}
 							</div>
-							<div class="text-xs text-orange-300">Mode</div>
+							{#if pollData.stats.std_dev !== undefined}
+								<div class="text-xs text-orange-300">
+									Consensus Level: {getConsensusLevel(pollData.stats.std_dev)}
+								</div>
+							{/if}
 						</div>
 					</div>
 
-					<!-- Variability & Consensus -->
+					<!-- Proximity to Options -->
 					<div class="mb-4">
-						<div class="mb-2 flex items-center justify-between">
-							<span class="text-sm text-orange-200">Consensus Level</span>
-							<span class="text-sm font-bold text-white"
-								>{getConsensusLevel(pollData.stats.std_dev)}</span
-							>
-						</div>
-						<div class="mb-2 flex items-center justify-between">
-							<span class="text-sm text-orange-200">Variability</span>
-							<span class="text-sm font-bold text-white"
-								>{getVariabilityLevel(pollData.stats.std_dev)}</span
-							>
-						</div>
-						<div class="text-xs text-orange-300">
-							Standard Deviation: {pollData.stats.std_dev.toFixed(3)}
-						</div>
-					</div>
-
-					<!-- Engagement -->
-					<div class="mb-4">
-						<div class="mb-2 flex items-center justify-between">
-							<span class="text-sm text-orange-200">Engagement</span>
-							<span class="text-sm font-bold text-white"
-								>{getEngagementLevel(pollData.stats.total_votes)}</span
-							>
-						</div>
-						<div class="text-xs text-orange-300">
-							{pollData.stats.total_votes}
-							{pollData.stats.total_votes === 1 ? 'response' : 'responses'}
+						<div class="mb-2 text-sm text-orange-200">Proximity to Options</div>
+						<div class="space-y-2">
+							{#each pollData.options as option, i (option)}
+								{@const proximity =
+									pollData.stats.option_proximity &&
+									pollData.stats.option_proximity[i] !== undefined
+										? pollData.stats.option_proximity[i] * 100
+										: 0}
+								<div class=" bg-orange-800/30 p-3">
+									<div class="mb-1 flex items-center justify-between">
+										<span class="text-sm break-words text-orange-100">{option}</span>
+										<span class="text-sm font-bold">{proximity.toFixed(1)}%</span>
+									</div>
+									<div class="relative h-2 w-full bg-orange-900">
+										<div class="absolute h-2 bg-orange-400" style="width: {proximity}%"></div>
+									</div>
+								</div>
+							{/each}
 						</div>
 					</div>
 
@@ -419,52 +435,110 @@
 							<div class="text-xs text-orange-300">
 								{(ci.lower * 100).toFixed(1)}% - {(ci.upper * 100).toFixed(1)}%
 							</div>
-							<div class="relative mt-1 h-2 w-full rounded-full bg-orange-900">
+							<div class="relative mt-1 h-2 w-full bg-orange-900">
 								<div
-									class="absolute h-2 rounded-full bg-orange-400/50"
+									class="absolute h-2 bg-orange-400/50"
 									style="left: {ci.lower * 100}%; width: {(ci.upper - ci.lower) * 100}%"
 								></div>
 							</div>
 						</div>
 					{/if}
 
-					<!-- 2D Statistics (if available) -->
+					<!-- 2D Statistics -->
 					{#if pollData.stats.average_2d && pollData.response_type > 2}
 						<div class="mb-4">
-							<div class="mb-2 text-sm text-orange-200">2D Average Position</div>
-							<div class="grid grid-cols-2 gap-2">
-								<div class="rounded bg-orange-800/30 p-2 text-center">
-									<div class="text-sm font-bold text-white">
-										{(pollData.stats.average_2d?.[0]
-											? pollData.stats.average_2d[0] * 100
-											: 0
-										).toFixed(1)}%
+							<div class="mb-2 text-sm text-orange-200">2D Position Statistics</div>
+							<div class="mb-3 grid grid-cols-2 gap-4">
+								<div class=" bg-orange-800/30 p-3">
+									<div class="mb-2 text-sm font-semibold text-orange-200">X-Axis</div>
+									<div class="grid grid-cols-2 gap-2">
+										<div class=" bg-orange-800/20 p-2 text-center">
+											<div class="text-sm font-bold text-white">
+												{(pollData.stats.average_2d?.[0] !== undefined
+													? pollData.stats.average_2d[0] * 100
+													: 0
+												).toFixed(1)}%
+											</div>
+											<div class="text-xs text-orange-300">Mean</div>
+										</div>
+										<div class=" bg-orange-800/20 p-2 text-center">
+											<div class="text-sm font-bold text-white">
+												{pollData.stats.median_x !== null && pollData.stats.median_x !== undefined
+													? (pollData.stats.median_x * 100).toFixed(1) + '%'
+													: 'N/A'}
+											</div>
+											<div class="text-xs text-orange-300">Median</div>
+										</div>
+										<div class=" bg-orange-800/20 p-2 text-center">
+											<div class="text-sm font-bold text-white">
+												{pollData.stats.mode_x !== null && pollData.stats.mode_x !== undefined
+													? (pollData.stats.mode_x * 100).toFixed(1) + '%'
+													: 'N/A'}
+											</div>
+											<div class="text-xs text-orange-300">Mode</div>
+										</div>
+										<div class=" bg-orange-800/20 p-2 text-center">
+											<div class="text-sm font-bold text-white">
+												{pollData.stats.range_x !== null && pollData.stats.range_x !== undefined
+													? (pollData.stats.range_x * 100).toFixed(1) + '%'
+													: 'N/A'}
+											</div>
+											<div class="text-xs text-orange-300">Range</div>
+										</div>
 									</div>
-									<div class="text-xs text-orange-300">X-Axis</div>
 								</div>
-								<div class="rounded bg-orange-800/30 p-2 text-center">
-									<div class="text-sm font-bold text-white">
-										{(pollData.stats.average_2d?.[1]
-											? pollData.stats.average_2d[1] * 100
-											: 0
-										).toFixed(1)}%
+								<div class=" bg-orange-800/30 p-3">
+									<div class="mb-2 text-sm font-semibold text-orange-200">Y-Axis</div>
+									<div class="grid grid-cols-2 gap-2">
+										<div class=" bg-orange-800/20 p-2 text-center">
+											<div class="text-sm font-bold text-white">
+												{(pollData.stats.average_2d?.[1] !== undefined
+													? pollData.stats.average_2d[1] * 100
+													: 0
+												).toFixed(1)}%
+											</div>
+											<div class="text-xs text-orange-300">Mean</div>
+										</div>
+										<div class=" bg-orange-800/20 p-2 text-center">
+											<div class="text-sm font-bold text-white">
+												{pollData.stats.median_y !== null && pollData.stats.median_y !== undefined
+													? (pollData.stats.median_y * 100).toFixed(1) + '%'
+													: 'N/A'}
+											</div>
+											<div class="text-xs text-orange-300">Median</div>
+										</div>
+										<div class=" bg-orange-800/20 p-2 text-center">
+											<div class="text-sm font-bold text-white">
+												{pollData.stats.mode_y !== null && pollData.stats.mode_y !== undefined
+													? (pollData.stats.mode_y * 100).toFixed(1) + '%'
+													: 'N/A'}
+											</div>
+											<div class="text-xs text-orange-300">Mode</div>
+										</div>
+										<div class=" bg-orange-800/20 p-2 text-center">
+											<div class="text-sm font-bold text-white">
+												{pollData.stats.range_y !== null && pollData.stats.range_y !== undefined
+													? (pollData.stats.range_y * 100).toFixed(1) + '%'
+													: 'N/A'}
+											</div>
+											<div class="text-xs text-orange-300">Range</div>
+										</div>
 									</div>
-									<div class="text-xs text-orange-300">Y-Axis</div>
 								</div>
 							</div>
 						</div>
 					{/if}
 				{/if}
 
-				<!-- Poll Options with Colors -->
+				<!-- Poll Options-->
 				<div class="mb-4">
 					<div class="mb-2 text-sm text-orange-200">Response Options</div>
 					<div class="space-y-2">
 						{#each pollData.options as option, i (option)}
-							<div class="flex items-center space-x-2 rounded bg-orange-800/30 p-2">
+							<div class="flex items-center space-x-2 bg-orange-800/30 p-2">
 								{#if pollData.gradients && pollData.gradients.colors && pollData.gradients.colors[i]}
 									<div
-										class="h-4 w-4 flex-shrink-0 rounded border border-orange-300"
+										class="h-4 w-4 flex-shrink-0 border border-orange-300"
 										style="background-color: {pollData.gradients.colors[i]}"
 									></div>
 								{/if}
@@ -476,45 +550,99 @@
 			</div>
 		{/if}
 
-		<!-- Bottom Bar: Share Link (left) and Delete Icon (right) -->
-		<div class="mt-auto flex items-center justify-between pt-4">
-			<!-- Share Link (copies to clipboard on click) -->
-			{#if shareUrl}
-				<button
-					type="button"
-					class="flex cursor-pointer items-center space-x-2 border-0 bg-transparent p-0 text-orange-200 transition-colors hover:text-orange-100"
-					title="Click to copy link"
-					on:click={() => {
-						copyLink();
-					}}
-					tabindex="0"
-				>
-					<span class="material-symbols-outlined align-middle text-base"
-						>{copied ? 'check' : 'link'}</span
-					>
-					<span class="text-xs break-all">{shareUrl}</span>
-				</button>
-			{/if}
+		<!-- Comments Section -->
+		<div class="mb-6 bg-orange-800/50 p-4">
+			<h3 class="mb-4 text-lg font-semibold text-orange-200">Comments ({comments})</h3>
 
-			<!-- Delete Icon (right) -->
-			<button
-				type="button"
-				class="group flex cursor-pointer items-center border-0 bg-transparent p-0"
-				title="Delete Poll"
-				on:click={handleDelete}
-				tabindex="0"
-				on:keydown={(e) => {
-					if (e.key === 'Enter' || e.key === ' ') {
-						handleDelete();
-					}
-				}}
-			>
-				<span
-					class="material-symbols-outlined text-2xl text-orange-300 transition-colors select-none group-hover:text-red-600"
+			<!-- Add Comment Form -->
+			<div class="mb-4">
+				<textarea
+					bind:value={commentText}
+					placeholder="Add a comment..."
+					class="w-full border border-orange-700 bg-orange-800/30 px-3 py-2 text-white placeholder-orange-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
+					rows="3"
+					disabled={!$currentUser}
+				></textarea>
+				<div class="mt-2 flex items-center justify-between">
+					{#if !$currentUser}
+						<p class="text-xs text-orange-300">Sign in to comment</p>
+					{:else}
+						<p class="text-xs text-orange-300">{commentText.length}/500 characters</p>
+					{/if}
+					<button
+						on:click={addComment}
+						disabled={!$currentUser || !commentText.trim() || commentText.length > 500}
+						class=" bg-orange-500 px-3 py-1 text-sm font-medium text-white hover:bg-orange-600 disabled:opacity-50"
+					>
+						Post
+					</button>
+				</div>
+			</div>
+
+			<!-- Comments List -->
+			{#if commentsList.length > 0}
+				<div class="space-y-4">
+					{#each commentsList as comment (comment.id)}
+						<div class=" bg-orange-800/30 p-3">
+							<div class="mb-2 flex justify-between">
+								<div class="flex items-center">
+									{#if comment.userPhotoURL}
+										<img
+											src={comment.userPhotoURL}
+											alt={comment.userDisplayName}
+											class="mr-2 h-8 w-8"
+										/>
+									{:else}
+										<div class="mr-2 flex h-8 w-8 items-center justify-center bg-orange-600">
+											<span class="text-sm text-white"
+												>{comment.userDisplayName?.charAt(0) || 'A'}</span
+											>
+										</div>
+									{/if}
+									<div>
+										<div class="text-sm font-medium text-orange-200">{comment.userDisplayName}</div>
+										<div class="text-xs text-orange-300">
+											{comment.createdAt.toLocaleDateString('en-US', {
+												month: 'short',
+												day: 'numeric',
+												year: 'numeric'
+											})}
+										</div>
+									</div>
+								</div>
+								{#if $currentUser && ($currentUser.uid === comment.userId || $userGroup === 'dev')}
+									<button
+										on:click={() => deleteComment(comment.id)}
+										class="text-orange-300 hover:text-orange-100"
+										title="Delete comment"
+									>
+										<span class="material-symbols-outlined text-sm">delete</span>
+									</button>
+								{/if}
+							</div>
+							<p class="text-sm break-words whitespace-pre-wrap text-white">{comment.text}</p>
+						</div>
+					{/each}
+				</div>
+			{:else}
+				<div class="text-center text-orange-300">
+					<p class="text-sm">No comments yet. Be the first to comment!</p>
+				</div>
+			{/if}
+		</div>
+
+		<!-- Bottom section with link and delete -->
+		<div class="sticky bottom-0 mt-auto border-t border-orange-700 pt-4">
+			<div class="flex items-end justify-between">
+				<!-- Copyable link at bottom left -->
+				<button
+					class="flex-1 truncate pr-4 text-left text-sm text-orange-300 transition-colors hover:text-orange-200"
+					on:click={copyLink}
+					title="Click to copy link"
 				>
-					delete
-				</span>
-			</button>
+					{shareUrl}
+				</button>
+			</div>
 		</div>
 	</div>
 </div>

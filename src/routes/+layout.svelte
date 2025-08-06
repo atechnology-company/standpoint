@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import Header from '../components/header.svelte';
+	import Onboarding from '../components/onboarding.svelte';
 	let { children } = $props();
 
 	import { writable } from 'svelte/store';
@@ -9,6 +10,12 @@
 
 	const navHoverStore = writable(false);
 	setContext('navHover', navHoverStore);
+
+	let showOnboarding = $state(false);
+
+	function handleOnboardingComplete() {
+		showOnboarding = false;
+	}
 </script>
 
 <svelte:head>
@@ -33,4 +40,7 @@
 		></div>
 	{/if}
 	{@render children()}
+
+	<!-- Onboarding Component -->
+	<Onboarding bind:show={showOnboarding} on:complete={handleOnboardingComplete} />
 </main>

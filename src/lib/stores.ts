@@ -1,6 +1,6 @@
-import { writable } from 'svelte/store';
+import { writable, derived } from 'svelte/store';
 
-import { auth } from './firebase';
+import { auth, firebaseUser, db } from './firebase';
 import {
 	GoogleAuthProvider,
 	signInWithPopup,
@@ -8,6 +8,7 @@ import {
 	onAuthStateChanged,
 	type User
 } from 'firebase/auth';
+import { getDoc, doc } from 'firebase/firestore';
 import { getUserGroup, setUserGroup } from './user-groups';
 
 export interface ImageResult {
@@ -23,19 +24,28 @@ export interface ImageResult {
 export const resultImages = writable<ImageResult[]>([]);
 
 // Store for current user
-export const currentUser = writable<User | null>(null);
+export const currentUser = firebaseUser;
 
 // Store for user group (example: 'dev', 'user', 'pro')
 export const userGroup = writable<string | null>(null);
+
+// Derived store for current user profile
+export const currentUserProfile = derived(firebaseUser, ($firebaseUser, set) => {
+	if ($firebaseUser) {
+		getDoc(doc(db, 'users', $firebaseUser.uid)).then((userDoc) => {
+			set(userDoc.exists() ? { ...userDoc.data(), id: $firebaseUser.uid } : null);
+		});
+	} else {
+		set(null);
+	}
+});
 
 // Listen for auth state changes
 onAuthStateChanged(auth, async (user) => {
 	currentUser.set(user);
 	if (user) {
-		// Fetch user group from Firestore
 		let group = await getUserGroup(user.uid);
 		if (!group) {
-			// If user doc doesn't exist, set default group
 			group = 'user';
 			await setUserGroup(user.uid, group);
 		}
@@ -55,3 +65,11 @@ export async function signInWithGoogle() {
 export async function signOutUser() {
 	await signOut(auth);
 }
+
+// Utility function to check if user has pro-level access
+export function hasProAccess(group: string | null): boolean {
+	return group === 'pro' || group === 'dev';
+}
+
+// Store for pro access
+export const hasProAccessStore = derived(userGroup, (group) => hasProAccess(group));

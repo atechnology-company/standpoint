@@ -147,30 +147,78 @@ async def delete_poll(request, poll_id: int):
     
     return json({"message": "Poll deleted successfully"})
 
-@polls_bp.post("/<poll_id:int>/vote")
-async def vote_on_poll(request, poll_id: int):
+@polls_bp.post("/<poll_id>/vote")
+async def vote_on_poll(request, poll_id):
     """Submit a position vote on the preference scale"""
     try:
+        print(f"[VOTE DEBUG] Received vote request for poll {poll_id}")
+        print(f"[VOTE DEBUG] Request body: {request.json}")
+        
+        # Try to convert to int if it's a numeric string, otherwise keep as string
+        try:
+            poll_id_key = int(poll_id)
+        except ValueError:
+            poll_id_key = poll_id
+        
         vote_json = request.json.copy()
         if 'poll_id' in vote_json:
             del vote_json['poll_id']
-        vote_data = VoteCreate(poll_id=poll_id, **vote_json)
+        vote_data = VoteCreate(poll_id=poll_id_key, **vote_json)
         
-        poll = next((p for p in polls_storage if p["id"] == poll_id), None)
+        print(f"[VOTE DEBUG] Parsed vote data: position={vote_data.position}, position_2d={vote_data.position_2d}")
+        
+        if isinstance(poll_id_key, str):
+            print(f"[VOTE DEBUG] Firebase poll detected (string ID: {poll_id_key})")
+            
+            # Store vote for Firebase polls using string keys
+            if poll_id_key not in votes_storage:
+                votes_storage[poll_id_key] = []
+            votes_storage[poll_id_key].append(vote_data.position)
+            print(f"[VOTE DEBUG] Added 1D vote for Firebase poll: {vote_data.position}")
+            
+            if vote_data.position_2d:
+                if poll_id_key not in votes_2d_storage:
+                    votes_2d_storage[poll_id_key] = []
+                votes_2d_storage[poll_id_key].append(vote_data.position_2d)
+                print(f"[VOTE DEBUG] Added 2D vote for Firebase poll: {vote_data.position_2d}")
+            
+            user_votes_storage[poll_id_key] = {
+                "position": vote_data.position,
+                "position_2d": vote_data.position_2d if vote_data.position_2d else None
+            }
+            
+            # Return user vote data so frontend can display the vote position
+            user_vote_data = user_votes_storage.get(poll_id_key)
+            response_data = {
+                "message": "Vote recorded for Firebase poll",
+                "user_vote": user_vote_data["position"] if user_vote_data else None,
+                "user_vote_2d": user_vote_data["position_2d"] if user_vote_data and "position_2d" in user_vote_data else None
+            }
+            
+            return json(response_data)
+        
+        # Handle backend polls (integer IDs)
+        poll = next((p for p in polls_storage if p["id"] == poll_id_key), None)
         if not poll:
             return json({"error": "Poll not found"}, status=404)
+
+        print(f"[VOTE DEBUG] Poll response_type: {poll['response_type']}")
         
-        if poll_id not in votes_storage:
-            votes_storage[poll_id] = []
+        if poll_id_key not in votes_storage:
+            votes_storage[poll_id_key] = []
         
-        votes_storage[poll_id].append(vote_data.position)
+        votes_storage[poll_id_key].append(vote_data.position)
+        print(f"[VOTE DEBUG] Added 1D vote: {vote_data.position}")
         
-        if vote_data.position_2d and poll["response_type"] in [3, 4, 5]:
-            if poll_id not in votes_2d_storage:
-                votes_2d_storage[poll_id] = []
-            votes_2d_storage[poll_id].append(vote_data.position_2d)
+        if vote_data.position_2d and poll["response_type"] in [2, 3, 4, 5]:
+            if poll_id_key not in votes_2d_storage:
+                votes_2d_storage[poll_id_key] = []
+            votes_2d_storage[poll_id_key].append(vote_data.position_2d)
+            print(f"[VOTE DEBUG] Added 2D vote: {vote_data.position_2d}")
+        else:
+            print(f"[VOTE DEBUG] No 2D vote stored. position_2d: {vote_data.position_2d}, response_type: {poll['response_type']}")
         
-        user_votes_storage[poll_id] = {
+        user_votes_storage[poll_id_key] = {
             "position": vote_data.position,
             "position_2d": vote_data.position_2d if vote_data.position_2d else None
         }
@@ -190,6 +238,26 @@ async def vote_on_poll(request, poll_id: int):
         
     except ValidationError as e:
         return json({"error": "Validation failed", "details": e.errors()}, status=400)
+
+@polls_bp.get("/<poll_id>/backend-votes")
+async def get_backend_votes(request, poll_id):
+    """Get backend-stored vote data for Firebase polls"""
+    try:
+        try:
+            poll_id_key = int(poll_id)
+        except ValueError:
+            poll_id_key = poll_id
+            
+        vote_positions_2d = votes_2d_storage.get(poll_id_key, [])
+        vote_positions = votes_storage.get(poll_id_key, [])
+        
+        return json({
+            "vote_positions": vote_positions,
+            "vote_positions_2d": vote_positions_2d
+        })
+        
+    except Exception as e:
+        return json({"error": str(e)}, status=500)
 
 @polls_bp.get("/<poll_id:int>/stats")
 async def get_poll_stats(request, poll_id: int):

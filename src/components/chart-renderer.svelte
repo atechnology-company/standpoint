@@ -18,397 +18,544 @@
 </script>
 
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { fade } from 'svelte/transition';
+
 	export let chartData: ChartData;
 	export let onVote: (position: number, position2D?: { x: number; y: number }) => void;
-	function handleClickFromKeyboard(responseType: number) {
-		const x = 0.5,
-			y = 0.5;
-		switch (responseType) {
-			case 2:
-				onVote(0.5);
-				break;
-			case 3:
-			case 4:
-			case 5:
-				onVote(0.5, { x, y });
-				break;
-			default:
-				break;
-		}
-	}
 
-	// Common chart styles and classes
-	const chartClasses = 'relative h-full w-full cursor-crosshair';
-	const textStyle = 'fill: rgba(255,255,255,0.5); font-size: 2.5px; font-weight: normal;';
-
-	// Vote dot and user vote styles
-	const voteDotStyle = { fill: '#05ffac', r: '2' };
-	const userVoteStyle = { fill: '#ff5705', r: '3' };
-	const avgStyle = { fill: 'white', r: '3' };
-	const stdDevStyle = { fill: 'rgba(255,255,255,0.1)', opacity: '0.5' };
-
-	function handleClick(e: MouseEvent, responseType: number) {
-		const target = e.currentTarget as HTMLElement;
-		if (!target) return;
-
-		const rect = target.getBoundingClientRect();
-		const x = (e.clientX - rect.left) / rect.width;
-		const y = (e.clientY - rect.top) / rect.height;
-
-		let position = 0.5;
-		let position2D = { x, y };
-
-		switch (responseType) {
-			case 2: {
-				// Line
-				position = x <= 0.08 ? 0 : x >= 0.92 ? 1 : (x - 0.08) / 0.84;
-				onVote(position);
-				break;
-			}
-			case 3: {
-				// Triangle
-				if (isPointInTriangle(x, y)) {
-					const [a, b, c] = getBarycentricCoords(x, y);
-					position = a >= b && a >= c ? 0.1 : b >= c ? 0.3 : 0.7;
-					onVote(position, position2D);
-				}
-				break;
-			}
-			case 4: {
-				// Square
-				const clampedX = Math.max(0, Math.min(1, x));
-				const clampedY = Math.max(0, Math.min(1, y));
-				onVote(clampedX, { x: clampedX, y: clampedY });
-				break;
-			}
-			case 5: {
-				// Pentagon
-				if (isPointInPentagon(x, y)) {
-					onVote(Math.max(0, Math.min(1, (x + y) / 2)), position2D);
-				}
-				break;
+	let shapeType = 'line';
+	$: {
+		if (chartData?.poll?.response_type) {
+			switch (chartData.poll.response_type) {
+				case 2:
+					shapeType = 'line';
+					break;
+				case 3:
+					shapeType = 'triangle';
+					break;
+				case 4:
+					shapeType = 'square';
+					break;
+				case 5:
+					shapeType = 'pentagon';
+					break;
+				default:
+					shapeType = 'line';
 			}
 		}
 	}
 
-	function isPointInTriangle(x: number, y: number): boolean {
-		const [a, b, c] = getBarycentricCoords(x, y);
-		return a >= 0 && b >= 0 && c >= 0;
-	}
-
-	function getBarycentricCoords(x: number, y: number): [number, number, number] {
-		const v0x = 0.5,
-			v0y = 0.02;
-		const v1x = 0.02,
-			v1y = 0.95;
-		const v2x = 0.98,
-			v2y = 0.95;
-
-		const denom = (v1y - v2y) * (v0x - v2x) + (v2x - v1x) * (v0y - v2y);
-		const a = ((v1y - v2y) * (x - v2x) + (v2x - v1x) * (y - v2y)) / denom;
-		const b = ((v2y - v0y) * (x - v2x) + (v0x - v2x) * (y - v2y)) / denom;
-		const c = 1 - a - b;
-
-		return [a, b, c];
-	}
-
-	function isPointInPentagon(x: number, y: number): boolean {
-		const vertices = [
-			{ x: 0.5, y: 0.02 },
-			{ x: 0.95, y: 0.3 },
-			{ x: 0.8, y: 0.9 },
-			{ x: 0.2, y: 0.9 },
-			{ x: 0.05, y: 0.3 }
-		];
-
-		let inside = false;
-		for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
-			if (
-				vertices[i].y > y !== vertices[j].y > y &&
-				x <
-					((vertices[j].x - vertices[i].x) * (y - vertices[i].y)) /
-						(vertices[j].y - vertices[i].y) +
-						vertices[i].x
-			) {
-				inside = !inside;
-			}
-		}
-		// Make voting more forgiving near the edges by allowing a small buffer outside the pentagon
-		if (!inside) {
-			const buffer = 0.03; // Allow a 3% buffer outside the pentagon
-			for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
-				const dist = pointToSegmentDistance({ x, y }, vertices[j], vertices[i]);
-				if (dist < buffer) {
-					return true;
-				}
-			}
-		}
-		return inside;
-	}
-
-	// Helper function to calculate distance from point to segment
-	function pointToSegmentDistance(
-		p: { x: number; y: number },
-		v: { x: number; y: number },
-		w: { x: number; y: number }
-	): number {
-		const l2 = (v.x - w.x) ** 2 + (v.y - w.y) ** 2;
-		if (l2 === 0) return Math.sqrt((p.x - v.x) ** 2 + (p.y - v.y) ** 2);
-		let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
-		t = Math.max(0, Math.min(1, t));
-		const proj = { x: v.x + t * (w.x - v.x), y: v.y + t * (w.y - v.y) };
-		return Math.sqrt((p.x - proj.x) ** 2 + (p.y - proj.y) ** 2);
-	}
-
+	let showSavedMessage = false;
+	let isDragging = false;
+	let svgRef: SVGSVGElement;
+	let heatmapEnabled = true;
+	let dragging2DPosition: { x: number; y: number } | null = null;
+	let userHasVoted = !!chartData?.poll?.user_vote;
+	let userHasVoted2D = !!chartData?.poll?.user_vote_2d;
+	let lastPosition: number | null = null;
+	let lastPosition2D: { x: number; y: number } | null = null;
 	function renderGradients(responseType: number) {
-		if (!chartData.poll.gradients?.enabled) return '';
+		if (!chartData?.poll?.gradients?.enabled) return [];
 
 		const gradientConfigs: Record<number, Array<{ cx: string; cy: string }>> = {
+			// Line has just two endpoints
+			2: [
+				{ cx: '5%', cy: '50%' },
+				{ cx: '95%', cy: '50%' }
+			],
+			// Triangle corners
 			3: [
-				{ cx: '50%', cy: '2%' },
-				{ cx: '2%', cy: '95%' },
-				{ cx: '98%', cy: '95%' }
+				{ cx: '50%', cy: '5%' }, 
+				{ cx: '5%', cy: '85%' }, 
+				{ cx: '95%', cy: '85%' } 
 			],
+			// Square corners
 			4: [
-				{ cx: '50%', cy: '0%' },
-				{ cx: '0%', cy: '0%' },
-				{ cx: '100%', cy: '0%' },
-				{ cx: '50%', cy: '100%' }
+				{ cx: '5%', cy: '5%' }, 
+				{ cx: '95%', cy: '5%' }, 
+				{ cx: '95%', cy: '95%' }, 
+				{ cx: '5%', cy: '95%' } 
 			],
+			// Pentagon corners
 			5: [
-				{ cx: '50%', cy: '2%' },
-				{ cx: '95%', cy: '30%' },
-				{ cx: '80%', cy: '90%' },
-				{ cx: '20%', cy: '90%' },
-				{ cx: '5%', cy: '30%' }
+				{ cx: '50%', cy: '5%' }, 
+				{ cx: '90%', cy: '30%' }, 
+				{ cx: '80%', cy: '85%' }, 
+				{ cx: '20%', cy: '85%' }, 
+				{ cx: '10%', cy: '30%' } 
 			]
 		};
 
 		return gradientConfigs[responseType] || [];
 	}
+
+	function getShapePoints(scale = 1, rotation = 0): Array<{ x: number; y: number; label: string }> {
+		const centerX = 0.5;
+		const centerY = 0.5;
+		const points = [];
+
+		if (shapeType === 'line') {
+			return [
+				{ x: 0.05, y: 0.5, label: chartData.poll.options[0] },
+				{ x: 0.95, y: 0.5, label: chartData.poll.options[1] }
+			];
+		} else if (shapeType === 'triangle') {
+			const radius = 0.35 * scale;
+			for (let i = 0; i < 3; i++) {
+				const angle = (i * 2 * Math.PI) / 3 + rotation - Math.PI / 2;
+				points.push({
+					x: centerX + radius * Math.cos(angle),
+					y: centerY + radius * Math.sin(angle),
+					label: chartData.poll.options[i]
+				});
+			}
+		} else if (shapeType === 'square') {
+			const radius = 0.3 * scale;
+			for (let i = 0; i < 4; i++) {
+				const angle = (i * Math.PI) / 2 + rotation + Math.PI / 4;
+				points.push({
+					x: centerX + radius * Math.cos(angle),
+					y: centerY + radius * Math.sin(angle),
+					label: chartData.poll.options[i]
+				});
+			}
+		} else if (shapeType === 'pentagon') {
+			const radius = 0.35 * scale;
+			for (let i = 0; i < 5; i++) {
+				const angle = (i * 2 * Math.PI) / 5 + rotation - Math.PI / 2;
+				points.push({
+					x: centerX + radius * Math.cos(angle),
+					y: centerY + radius * Math.sin(angle),
+					label: chartData.poll.options[i]
+				});
+			}
+		}
+
+		return points;
+	}
+
+	function handleVote(e: MouseEvent) {
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		const x = (e.clientX - rect.left) / rect.width;
+		const y = (e.clientY - rect.top) / rect.height;
+
+		const boundedX = Math.max(0, Math.min(1, x));
+		const boundedY = Math.max(0, Math.min(1, y));
+
+		if (chartData.poll.response_type === 2) {
+			lastPosition = boundedX;
+			submitVote();
+		} else {
+			lastPosition2D = { x: boundedX, y: boundedY };
+			submitVote();
+		}
+	}
+
+	function handlePointerDown(e: PointerEvent) {
+		if (chartData.poll.response_type >= 3) {
+			isDragging = true;
+			const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+			const x = (e.clientX - rect.left) / rect.width;
+			const y = (e.clientY - rect.top) / rect.height;
+
+			dragging2DPosition = {
+				x: Math.max(0, Math.min(1, x)),
+				y: Math.max(0, Math.min(1, y))
+			};
+		}
+	}
+
+	function handlePointerMove(e: PointerEvent) {
+		if (isDragging && chartData.poll.response_type >= 3) {
+			const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+			const x = (e.clientX - rect.left) / rect.width;
+			const y = (e.clientY - rect.top) / rect.height;
+
+			dragging2DPosition = {
+				x: Math.max(0, Math.min(1, x)),
+				y: Math.max(0, Math.min(1, y))
+			};
+		}
+	}
+
+	function handlePointerUp(e: PointerEvent) {
+		if (isDragging && chartData.poll.response_type >= 3) {
+			isDragging = false;
+			const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+			const x = (e.clientX - rect.left) / rect.width;
+			const y = (e.clientY - rect.top) / rect.height;
+
+			lastPosition2D = {
+				x: Math.max(0, Math.min(1, x)),
+				y: Math.max(0, Math.min(1, y))
+			};
+			dragging2DPosition = null;
+			submitVote();
+		}
+	}
+
+	function submitVote() {
+		if (chartData.poll.response_type >= 3) {
+			if (lastPosition2D !== null) {
+				onVote(lastPosition2D.x, lastPosition2D);
+				lastPosition2D = null;
+			}
+		} else {
+			if (lastPosition !== null) {
+				onVote(lastPosition);
+				lastPosition = null;
+			}
+		}
+
+		showSavedMessage = true;
+		setTimeout(() => {
+			showSavedMessage = false;
+		}, 1000);
+	}
+
+	function drawHeatmap() {
+		if (!chartData?.positions2D || !svgRef) return;
+
+		while (svgRef.firstChild) {
+			svgRef.removeChild(svgRef.firstChild);
+		}
+
+		const shapePoints = getShapePoints();
+		const shape = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+
+		let pathD = '';
+		if (shapeType === 'line') {
+			pathD = `M ${shapePoints[0].x} ${shapePoints[0].y} L ${shapePoints[1].x} ${shapePoints[1].y}`;
+		} else {
+			pathD =
+				shapePoints.map((point, i) => `${i === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ') +
+				' Z';
+		}
+
+		shape.setAttribute('d', pathD);
+		shape.setAttribute('stroke', 'rgba(255, 255, 255, 0.3)');
+		shape.setAttribute('stroke-width', '0.003');
+
+		if (chartData.poll.gradients?.enabled && chartData.poll.gradients.colors) {
+			const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+			const configs = renderGradients(chartData.poll.response_type);
+
+			if (configs.length > 0 && configs.length === chartData.poll.gradients.colors.length) {
+				configs.forEach((config, i) => {
+					const gradientId = `corner-gradient-${i}`;
+					const radialGradient = document.createElementNS(
+						'http://www.w3.org/2000/svg',
+						'radialGradient'
+					);
+					radialGradient.setAttribute('id', gradientId);
+					radialGradient.setAttribute('cx', config.cx);
+					radialGradient.setAttribute('cy', config.cy);
+					radialGradient.setAttribute('r', '80%');
+
+					// First stop at center of the radial gradient
+					const stop1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+					stop1.setAttribute('offset', '0%');
+					stop1.setAttribute(
+						'style',
+						`stop-color:${chartData.poll.gradients!.colors[i]};stop-opacity:0.6`
+					);
+
+					// Middle stop
+					const stop2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+					stop2.setAttribute('offset', '70%');
+					stop2.setAttribute(
+						'style',
+						`stop-color:${chartData.poll.gradients!.colors[i]};stop-opacity:0.1`
+					);
+
+					// Final stop - transparent
+					const stop3 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+					stop3.setAttribute('offset', '100%');
+					stop3.setAttribute('style', 'stop-color:transparent;stop-opacity:0');
+
+					radialGradient.appendChild(stop1);
+					radialGradient.appendChild(stop2);
+					radialGradient.appendChild(stop3);
+					defs.appendChild(radialGradient);
+
+					// Create a clone of the shape to apply each gradient
+					if (i > 0) {
+						const newShape = shape.cloneNode(true) as SVGElement;
+						newShape.setAttribute('fill', `url(#${gradientId})`);
+						newShape.setAttribute('stroke', 'none');
+						svgRef.appendChild(newShape);
+					} else {
+						// For the first gradient, apply to the original shape
+						shape.setAttribute('fill', `url(#${gradientId})`);
+					}
+				});
+			} else {
+				// Fallback to original linear gradient if configs don't match colors
+				const gradientId = 'shape-gradient';
+				const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+				gradient.setAttribute('id', gradientId);
+				gradient.setAttribute('x1', '0%');
+				gradient.setAttribute('y1', '0%');
+				gradient.setAttribute('x2', '100%');
+				gradient.setAttribute('y2', '100%');
+
+				chartData.poll.gradients.colors.forEach((color, i) => {
+					const stop = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+					stop.setAttribute(
+						'offset',
+						`${(i / (chartData.poll.gradients!.colors.length - 1)) * 100}%`
+					);
+					stop.setAttribute('style', `stop-color:${color};stop-opacity:0.3`);
+					gradient.appendChild(stop);
+				});
+
+				defs.appendChild(gradient);
+				shape.setAttribute('fill', `url(#${gradientId})`);
+			}
+
+			svgRef.appendChild(defs);
+		} else {
+			shape.setAttribute('fill', 'rgba(255, 255, 255, 0.05)');
+		}
+
+		svgRef.appendChild(shape);
+
+		const positions = chartData.positions2D;
+		const maxDensity = Math.max(1, positions.length / 20);
+		const clusters: Array<{ x: number; y: number; count: number }> = [];
+
+		positions.forEach((pos) => {
+			const found = clusters.find(
+				(c) => Math.abs(c.x - pos.x) < 0.05 && Math.abs(c.y - pos.y) < 0.05
+			);
+
+			if (found) {
+				found.count++;
+				found.x = (found.x * (found.count - 1) + pos.x) / found.count;
+				found.y = (found.y * (found.count - 1) + pos.y) / found.count;
+			} else {
+				clusters.push({ x: pos.x, y: pos.y, count: 1 });
+			}
+		});
+
+		clusters.forEach((cluster) => {
+			const opacity = Math.min(0.8, 0.3 + (cluster.count / maxDensity) * 0.5);
+			const radius = 0.008 + (cluster.count / maxDensity) * 0.015;
+
+			const point = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+			point.setAttribute('cx', cluster.x.toString());
+			point.setAttribute('cy', cluster.y.toString());
+			point.setAttribute('r', radius.toString());
+			point.setAttribute('fill', `rgba(255, 255, 255, ${opacity})`);
+			point.setAttribute('class', 'vote-point');
+			svgRef.appendChild(point);
+		});
+
+		if (
+			chartData.average2D &&
+			Array.isArray(chartData.average2D) &&
+			chartData.average2D.length === 2
+		) {
+			const [cx, cy] = chartData.average2D;
+
+			if (
+				typeof cx === 'number' &&
+				typeof cy === 'number' &&
+				!isNaN(cx) &&
+				!isNaN(cy) &&
+				cx >= 0 &&
+				cx <= 1 &&
+				cy >= 0 &&
+				cy <= 1
+			) {
+				const avgPoint = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+				avgPoint.setAttribute('cx', cx.toString());
+				avgPoint.setAttribute('cy', cy.toString());
+				avgPoint.setAttribute('r', '0.025');
+				avgPoint.setAttribute('fill', 'white');
+				avgPoint.setAttribute('class', 'average-point');
+				avgPoint.setAttribute('style', 'z-index: 1000;');
+				svgRef.appendChild(avgPoint);
+
+				if (chartData.stdDev && chartData.stdDev > 0) {
+					const stdDevCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+					stdDevCircle.setAttribute('cx', cx.toString());
+					stdDevCircle.setAttribute('cy', cy.toString());
+					stdDevCircle.setAttribute('r', Math.min(0.4, chartData.stdDev * 1.5).toString());
+					stdDevCircle.setAttribute('fill', 'none');
+					stdDevCircle.setAttribute('stroke', 'rgba(255, 255, 255, 0.2)');
+					stdDevCircle.setAttribute('stroke-width', '0.002');
+					stdDevCircle.setAttribute('stroke-dasharray', '0.01, 0.01');
+					stdDevCircle.setAttribute('style', 'z-index: 999;');
+					svgRef.appendChild(stdDevCircle);
+				}
+			}
+		}
+
+		shapePoints.forEach((point, index) => {
+			const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+
+			label.setAttribute('x', point.x.toString());
+			label.setAttribute('y', point.y.toString());
+			label.setAttribute('text-anchor', 'middle');
+			label.setAttribute('dominant-baseline', 'middle');
+			label.setAttribute('fill', 'white');
+			label.setAttribute('font-size', '0.04');
+			label.setAttribute('font-family', 'system-ui, -apple-system, sans-serif');
+			label.setAttribute('font-weight', '400');
+			label.textContent = point.label;
+			svgRef.appendChild(label);
+		});
+	}
+
+	function toggleHeatmap() {
+		heatmapEnabled = !heatmapEnabled;
+		if (heatmapEnabled) {
+			drawHeatmap();
+		} else {
+			const points = svgRef.querySelectorAll('.vote-point');
+			points.forEach((point) => point.remove());
+		}
+	}
+
+	onMount(() => {
+		if (chartData?.poll?.response_type >= 3 && chartData?.positions2D) {
+			drawHeatmap();
+		}
+	});
+
+	$: if (chartData?.poll?.response_type >= 3 && chartData?.positions2D && svgRef) {
+		drawHeatmap();
+	}
 </script>
 
 {#if chartData.poll.response_type === 2}
-	<!-- Line Chart -->
-	<div
-		class={chartClasses}
-		on:click={(e) => handleClick(e, 2)}
-		on:keydown={(e) => {
-			if (e.key === 'Enter') handleClickFromKeyboard(2);
-		}}
-		role="button"
-		tabindex="0"
-	>
+	<div class="relative h-full space-y-4">
 		<div
-			class="absolute top-1/2 right-8 left-8 h-32 -translate-y-1/2 transform rounded bg-white/10"
+			class="relative flex h-full w-full items-center justify-center border border-gray-700 bg-gradient-to-b from-gray-900 to-black"
+			on:click={handleVote}
+			on:keydown={(e) => e.key === 'Enter' && e.currentTarget.click()}
+			role="button"
+			tabindex="0"
 		>
-			{#if chartData.poll.gradients?.enabled}
-				<div
-					class="h-full w-full rounded"
-					style="background: linear-gradient(to right, {chartData.poll.gradients
-						.colors[0]}, {chartData.poll.gradients.colors[1]});"
-				></div>
-			{/if}
-		</div>
+			<svg viewBox="0 0 1 1" preserveAspectRatio="none" class="h-full w-full">
+				<line
+					x1="0.05"
+					y1="0.5"
+					x2="0.95"
+					y2="0.5"
+					stroke="rgba(255, 255, 255, 0.3)"
+					stroke-width="0.003"
+				/>
 
-		<!-- Grid lines -->
-		{#each Array(5) as i (i)}
-			<div
-				class="absolute top-1/2 h-32 w-px -translate-y-1/2 transform bg-white/20"
-				style="left: {8 + ((i + 1) * 84) / 6}%"
-			></div>
-		{/each}
+				{#each chartData.positions || [] as value, i}
+					<circle cx={value} cy="0.5" r="0.008" fill="rgba(255, 255, 255, 0.8)" />
+				{/each}
 
-		<!-- Std dev area, average line, votes -->
-		<div
-			class="absolute top-1/2 h-32 -translate-y-1/2 transform rounded bg-white/10"
-			style="left: {8 + chartData.lowerBound * 84}%; width: {(chartData.upperBound -
-				chartData.lowerBound) *
-				84}%"
-		></div>
-		<div
-			class="absolute top-1/2 h-32 w-1 -translate-x-1/2 -translate-y-1/2 transform bg-white"
-			style="left: {8 + chartData.average * 84}%"
-		></div>
+				{#if chartData.average !== undefined && chartData.average !== null}
+					<circle cx={chartData.average} cy="0.5" r="0.02" fill="white" class="average-point" />
 
-		{#each chartData.positions as position, i (i)}
-			<div
-				class="absolute top-1/2 h-24 w-2 -translate-x-1/2 -translate-y-1/2 transform rounded bg-[#05ffac]"
-				style="left: {8 + position * 84}%"
-			></div>
-		{/each}
+					{#if chartData.stdDev !== undefined}
+						<rect
+							x={Math.max(0, chartData.average - chartData.stdDev * 1.5)}
+							y="0.45"
+							width={Math.min(
+								1 - Math.max(0, chartData.average - chartData.stdDev * 1.5),
+								chartData.stdDev * 3
+							)}
+							height="0.1"
+							fill="rgba(255, 255, 255, 0.1)"
+						/>
+					{/if}
+				{/if}
 
-		{#if chartData.poll.user_vote !== undefined && chartData.poll.user_vote !== null}
-			<div
-				class="absolute top-1/2 h-24 w-3 -translate-x-1/2 -translate-y-1/2 transform rounded bg-[#ff5705]"
-				style="left: {8 + chartData.poll.user_vote * 84}%"
-			></div>
-		{/if}
+				{#if userHasVoted && chartData.poll.user_vote !== null && chartData.poll.user_vote !== undefined}
+					<circle cx={chartData.poll.user_vote} cy="0.5" r="0.015" fill="rgb(249, 115, 22)" />
+				{/if}
 
-		<div
-			class="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 transform rounded-full bg-white"
-			style="left: {8 + chartData.average * 84}%"
-		></div>
-
-		<!-- Labels -->
-		<div class="absolute top-8 left-8 text-sm font-normal text-white/50">
-			{chartData.poll.options[0]}
-		</div>
-		<div class="absolute top-8 right-8 text-right text-sm font-normal text-white/50">
-			<!-- This block seems incorrect, likely a copy-paste error. Remove the {#each} and just render the option. -->
-			{chartData.poll.options[1]}
+				<text
+					x="0.05"
+					y="0.4"
+					fill="white"
+					font-size="0.04"
+					text-anchor="middle"
+					font-family="system-ui, -apple-system, sans-serif"
+					font-weight="400"
+				>
+					{chartData.poll.options[0]}
+				</text>
+				<text
+					x="0.95"
+					y="0.4"
+					fill="white"
+					font-size="0.04"
+					text-anchor="middle"
+					font-family="system-ui, -apple-system, sans-serif"
+					font-weight="400"
+				>
+					{chartData.poll.options[1]}
+				</text>
+			</svg>
 		</div>
 	</div>
-{:else if [3, 4, 5].includes(chartData.poll.response_type)}
-	<!-- Polygon Charts -->
-	<div
-		class={chartClasses}
-		on:click={(e) => handleClick(e, chartData.poll.response_type)}
-		on:keydown={(e) => {
-			if (e.key === 'Enter') handleClickFromKeyboard(chartData.poll.response_type);
-		}}
-		role="button"
-		tabindex="0"
-	>
-		<svg viewBox="0 0 100 100" class="h-full w-full">
-			{#if chartData.poll.gradients?.enabled}
-				<defs>
-					{#each renderGradients(chartData.poll.response_type) as config, i (i)}
-						<radialGradient
-							id="corner{i + 1}"
-							cx={typeof config === 'string' ? '' : config.cx}
-							cy={typeof config === 'string' ? '' : config.cy}
-							r="80%"
-						>
-							<stop
-								offset="0%"
-								style="stop-color:{chartData.poll.gradients.colors[i]};stop-opacity:0.6"
-							/>
-							<stop
-								offset="70%"
-								style="stop-color:{chartData.poll.gradients.colors[i]};stop-opacity:0.1"
-							/>
-							<stop offset="100%" style="stop-color:transparent;stop-opacity:0" />
-						</radialGradient>
-					{/each}
-				</defs>
-			{/if}
+{:else if chartData.poll.response_type >= 3}
+	<div class="relative h-full w-full">
+		<div
+			class="absolute inset-0 cursor-crosshair bg-black"
+			on:pointerdown={handlePointerDown}
+			on:pointermove={handlePointerMove}
+			on:pointerup={handlePointerUp}
+		>
+			<svg bind:this={svgRef} viewBox="0 0 1 1" preserveAspectRatio="none" class="h-full w-full" />
 
-			<!-- Base shape -->
-			{#if chartData.poll.response_type === 3}
-				<polygon
-					points="50,2 2,95 98,95"
-					fill="rgba(255,255,255,0.05)"
-					stroke="rgba(255,255,255,0.3)"
-					stroke-width="0.5"
-				/>
-				{#if chartData.poll.gradients?.enabled}
-					{#each renderGradients(3) as config, index (index)}
-						<polygon points="50,2 2,95 98,95" fill="url(#corner{index + 1})" />
-					{/each}
-				{/if}
-			{:else if chartData.poll.response_type === 4}
-				<rect
-					x="0"
-					y="0"
-					width="100"
-					height="100"
-					fill="rgba(255,255,255,0.05)"
-					stroke="rgba(255,255,255,0.3)"
-					stroke-width="0.5"
-				/>
-				{#if chartData.poll.gradients?.enabled}
-					{#each renderGradients(4) as config, index (index)}
-						<rect x="0" y="0" width="100" height="100" fill="url(#corner{index + 1})" />
-					{/each}
-				{/if}
-			{:else if chartData.poll.response_type === 5}
-				<polygon
-					points="50,2 95,30 80,90 20,90 5,30"
-					fill="rgba(255,255,255,0.05)"
-					stroke="rgba(255,255,255,0.3)"
-					stroke-width="0.5"
-				/>
-				{#if chartData.poll.gradients?.enabled}
-					{#each renderGradients(5) as config, index (index)}
-						<polygon points="50,2 95,30 80,90 20,90 5,30" fill="url(#corner{index + 1})" />
-					{/each}
-				{/if}
-			{/if}
-
-			<!-- Vote dots -->
-			{#if chartData.positions2D && chartData.positions2D.length > 0}
-				{#each chartData.positions2D as pos, i (pos.id !== undefined ? pos.id : i)}
-					<circle cx={pos.x * 100} cy={pos.y * 100} {...voteDotStyle} />
-				{/each}
-			{:else}
-				{#each chartData.positions as position, index (index)}
-					<circle
-						cx={50 + ((typeof position === 'number' ? position : 0) - 0.5) * 60}
-						cy={50}
-						{...voteDotStyle}
-					/>
-				{/each}
-			{/if}
-
-			<!-- User vote -->
-			{#if chartData.poll.user_vote !== undefined && chartData.poll.user_vote !== null}
-				{#if chartData.poll.user_vote_2d}
-					<circle
-						cx={chartData.poll.user_vote_2d.x * 100}
-						cy={chartData.poll.user_vote_2d.y * 100}
-						{...userVoteStyle}
-					/>
-				{:else}
-					<circle
-						cx={50 +
-							((typeof chartData.poll.user_vote === 'number' ? chartData.poll.user_vote : 0) -
-								0.5) *
-								60}
-						cy={50}
-						{...userVoteStyle}
-					/>
-				{/if}
-			{/if}
-
-			<!-- Average indicator -->
-			{#if chartData.average2D?.length === 2}
-				<circle
-					cx={chartData.average2D[0] * 100}
-					cy={chartData.average2D[1] * 100}
-					r={chartData.stdDev * 60 * 1.5}
-					{...stdDevStyle}
-				/>
-				<circle cx={chartData.average2D[0] * 100} cy={chartData.average2D[1] * 100} {...avgStyle} />
-			{:else}
-				<circle
-					cx={50 + (chartData.average - 0.5) * 60}
-					cy={50}
-					r={chartData.stdDev * 60 * 1.5}
-					{...stdDevStyle}
-				/>
-				<circle cx={50 + (chartData.average - 0.5) * 60} cy={50} {...avgStyle} />
-			{/if}
-
-			<!-- Labels -->
-			{#if chartData.poll.response_type === 3}
-				<text x="50" y="8" text-anchor="middle" style={textStyle}>{chartData.poll.options[0]}</text>
-				<text x="8" y="90" text-anchor="start" style={textStyle}>{chartData.poll.options[1]}</text>
-				<text x="92" y="90" text-anchor="end" style={textStyle}>{chartData.poll.options[2]}</text>
-			{:else if chartData.poll.response_type === 4}
-				<text x="8" y="8" text-anchor="start" style={textStyle}>{chartData.poll.options[0]}</text>
-				<text x="92" y="8" text-anchor="end" style={textStyle}>{chartData.poll.options[1]}</text>
-				<text x="92" y="95" text-anchor="end" style={textStyle}>{chartData.poll.options[2]}</text>
-				<text x="8" y="95" text-anchor="start" style={textStyle}>{chartData.poll.options[3]}</text>
-			{:else if chartData.poll.response_type === 5}
-				<text x="50" y="8" text-anchor="middle" style={textStyle}>{chartData.poll.options[0]}</text>
-				<text x="92" y="25" text-anchor="end" style={textStyle}>{chartData.poll.options[1]}</text>
-				<text x="75" y="95" text-anchor="middle" style={textStyle}>{chartData.poll.options[2]}</text
+			{#if dragging2DPosition}
+				<div
+					class="absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 transform"
+					style="left: {dragging2DPosition.x * 100}%; top: {dragging2DPosition.y * 100}%;"
 				>
-				<text x="25" y="95" text-anchor="middle" style={textStyle}>{chartData.poll.options[3]}</text
-				>
-				<text x="8" y="25" text-anchor="start" style={textStyle}>{chartData.poll.options[4]}</text>
+					<div class="h-full w-full bg-orange-500 ring-2 ring-white"></div>
+				</div>
 			{/if}
-		</svg>
+
+			{#if userHasVoted2D && chartData.poll.user_vote_2d}
+				<div
+					class="absolute -translate-x-1/2 -translate-y-1/2 transform"
+					style="left: {chartData.poll.user_vote_2d.x * 100}%; top: {chartData.poll.user_vote_2d.y *
+						100}%;"
+				>
+					<div class="h-4 w-4 bg-orange-500 ring-2 ring-white"></div>
+				</div>
+			{/if}
+
+			<div class="absolute right-4 bottom-4">
+				<button
+					class="bg-black/50 px-3 py-1 text-sm text-white backdrop-blur hover:bg-black/70"
+					on:click={toggleHeatmap}
+				>
+					{heatmapEnabled ? 'Hide' : 'Show'} Votes
+				</button>
+			</div>
+		</div>
 	</div>
 {/if}
+
+{#if showSavedMessage}
+	<div
+		class="absolute right-8 bottom-8 left-8 flex items-center justify-between bg-black/50 px-4
+		py-2 text-center text-white backdrop-blur transition-opacity duration-300"
+		transition:fade={{ duration: 200 }}
+	>
+		<span>Vote saved!</span>
+	</div>
+{/if}
+
+<style>
+	:global(.vote-point:hover) {
+		filter: brightness(1.2);
+	}
+
+	:global(.average-point) {
+		filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.5));
+	}
+</style>

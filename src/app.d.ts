@@ -10,6 +10,4 @@ declare global {
 	}
 }
 
-// Removed unused ImportMeta interface
-
 export {};

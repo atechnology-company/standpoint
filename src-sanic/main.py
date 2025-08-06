@@ -1,6 +1,6 @@
 from sanic import Sanic
 from sanic.response import json
-from sanic_ext import Extend
+from sanic_cors import CORS
 from pydantic import BaseModel, ValidationError
 import os
 try:
@@ -10,34 +10,34 @@ except ImportError:
     print("python-dotenv not installed. Create .env manually or install with: pip install python-dotenv")
 
 # Import blueprints
+
 from modules.polls import polls_bp
 from modules.tierlists import tierlists_bp
 from modules.interactions import interactions_bp
 from modules.gemini.routes import gemini_bp
+from modules.stripe_checkout import stripe_bp
+from modules.stripe_verify import stripe_verify_bp
+
+from sanic_cors import CORS
 
 # Initialize Sanic app
 app = Sanic("StandpointAPI")
 
-# Configure ext
-app.extend(
-    config={
-        "cors": {
-            "origins": [os.getenv("FRONTEND_URL", "http://localhost:5173")],
-            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "allow_headers": ["Content-Type", "Authorization"],
-        }
-    }
-)
+# Apply CORS to each blueprint individually
+CORS(polls_bp, origins="http://localhost:5173", supports_credentials=True, allow_headers="*")
+CORS(tierlists_bp, origins="http://localhost:5173", supports_credentials=True, allow_headers="*")
+CORS(interactions_bp, origins="http://localhost:5173", supports_credentials=True, allow_headers="*")
+CORS(gemini_bp, origins="http://localhost:5173", supports_credentials=True, allow_headers="*")
 
 # Register blueprints
 app.blueprint(polls_bp)
 app.blueprint(tierlists_bp)
 app.blueprint(interactions_bp)
 app.blueprint(gemini_bp)
+app.blueprint(stripe_bp)
+app.blueprint(stripe_verify_bp)
 
 # Pydantic models
-
-
 class HealthResponse(BaseModel):
     status: str
     message: str
@@ -73,8 +73,6 @@ async def hello(request):
     return json({"message": "Hello from Sanic backend!"})
 
 # Error handler for validation errors
-
-
 @app.exception(ValidationError)
 async def validation_error_handler(request, exception):
     error_response = ErrorResponse(
@@ -84,8 +82,6 @@ async def validation_error_handler(request, exception):
     return json(error_response.model_dump(), status=400)
 
 # Global error handler
-
-
 @app.exception(Exception)
 async def global_error_handler(request, exception):
     import traceback

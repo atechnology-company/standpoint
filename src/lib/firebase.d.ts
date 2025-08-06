@@ -1,3 +1,4 @@
 declare module '$lib/firebase' {
-	export const db: any;
+	import type { Firestore } from 'firebase/firestore';
+	export const db: Firestore;
 }

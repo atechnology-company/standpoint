@@ -1,42 +1,50 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { fade, scale } from 'svelte/transition';
 	import TierlistSidebar from '../../../components/tierlist-sidebar.svelte';
-	import { apiClient } from '$lib/api';
+	import Toast from '../../../components/toast.svelte';
+	import LoadingIndicator from '../../../components/loading-indicator.svelte';
+	import { apiClient, type TierListResponse, type TierItem, type TierCreate } from '$lib/api';
+	import { currentUser } from '$lib/stores';
+	import { addToast } from '$lib/toast';
+	import {
+		likeTierlist,
+		unlikeTierlist,
+		hasUserLikedTierlist
+	} from '$lib/firestore-polls-tierlists.js';
 
-	// Types
-	interface TierItem {
+	interface DisplayTier extends TierCreate {
 		id: string;
-		text: string;
-		image?: string;
-		type: 'text' | 'image' | 'search';
-		position?: { x: number; y: number };
-		size?: { width: number; height: number };
-		naturalSize?: { width: number; height: number };
-	}
-
-	interface Tier {
-		id: string;
-		name: string;
-		color: string;
 		items: TierItem[];
 	}
 
-	interface TierList {
-		id: number;
+	interface DisplayTierList {
+		id: string;
 		title: string;
-		type: 'classic' | 'dynamic';
-		tiers: Tier[];
+		list_type: string;
+		tiers: DisplayTier[];
 		unassignedItems: TierItem[];
-		author?: string;
 		created_at?: string;
+		owner_displayName?: string;
+		banner_image?: string;
+		author?: string;
 	}
 
-	let tierList: TierList | null = null;
+	let tierList: DisplayTierList | null = null;
 	let loading = true;
 	let error = '';
 	let selectedItem: TierItem | null = null;
+
+	let likes = 0;
+	let liked = false;
+	let comments = 0;
+	let forks = 0;
+	let interacting = false;
+	let showComments = false;
+	let commentText = '';
+	let commentsList: any[] = [];
 
 	// Responsive layout state
 	let windowWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
@@ -44,10 +52,11 @@
 
 	$: tierListId = $page.params.id;
 
-	onMount(() => {
+	$: if (tierListId) {
 		loadTierList();
+	}
 
-		// Add window resize listener for responsive layout
+	onMount(() => {
 		const handleResize = () => {
 			if (typeof window !== 'undefined') {
 				windowWidth = window.innerWidth;
@@ -67,13 +76,18 @@
 	});
 
 	async function loadTierList() {
+		if (!tierListId) {
+			console.log('No tierListId provided');
+			return;
+		}
+
 		try {
 			loading = true;
 			error = '';
+			console.log('Loading tier list with ID:', tierListId);
 			const response = await apiClient.getTierList(String(tierListId));
-			console.log('Raw API response:', response);
+			console.log('Tier list response:', response);
 
-			// Transform the API response to match our expected structure
 			const defaultColors = [
 				'#ff7f7f',
 				'#ffbf7f',
@@ -87,17 +101,14 @@
 				'#ff7fff'
 			];
 
-			// Create tier structure with items properly placed
-			const transformedTiers: Tier[] = response.tiers.map((tier, index) => ({
-				id: tier.name,
-				name: tier.name,
-				color: defaultColors[index % defaultColors.length],
+			const transformedTiers: DisplayTier[] = response.tiers.map((tier, index) => ({
+				...tier,
+				id: tier.name || `tier-${index}`,
+				color: tier.color || defaultColors[index % defaultColors.length],
 				items: []
 			}));
 
-			// Create items and place them in tiers based on item_placements
 			const allItems: TierItem[] = response.items.map((item) => {
-				// Handle both old format (strings) and new format (objects)
 				if (typeof item === 'string') {
 					return {
 						id: item,
@@ -117,29 +128,13 @@
 				}
 			});
 
-			console.log('All items:', allItems);
-			console.log('Item placements:', response.item_placements);
-			console.log('Tiers:', response.tiers);
-			console.log('Transformed tiers:', transformedTiers);
-
-			// Place items in appropriate tiers
 			if (response.item_placements && response.item_placements.length > 0) {
 				response.item_placements.forEach((placement, index) => {
-					console.log(`Processing placement ${index}:`, placement);
-
 					const item = allItems.find((item) => item.id === placement.item_id);
 					const tierByPosition = response.tiers[placement.tier_position];
 					const tier = transformedTiers.find((tier) => tier.name === tierByPosition?.name);
 
-					console.log(
-						`Placing item "${placement.item_id}" in tier position ${placement.tier_position}`
-					);
-					console.log(`- Found item:`, item);
-					console.log(`- Tier by position:`, tierByPosition);
-					console.log(`- Found tier:`, tier);
-
 					if (item && tier) {
-						// For dynamic mode, preserve the position and size from placement
 						if (response.list_type === 'dynamic') {
 							if (placement.position) {
 								item.position = placement.position;
@@ -158,10 +153,24 @@
 					}
 				});
 			} else {
-				console.log('No item placements found or empty array');
+				console.log('No item placements found - creating default placements');
+				allItems.forEach((item, index) => {
+					const tierIndex = index % transformedTiers.length;
+					const tier = transformedTiers[tierIndex];
+					if (tier) {
+						if (response.list_type === 'dynamic') {
+							item.position = {
+								x: 0.1 + Math.random() * 0.8,
+								y: (tierIndex + 0.2 + Math.random() * 0.6) / transformedTiers.length
+							};
+							item.size = { width: 120, height: 120 };
+						}
+						tier.items.push(item);
+						console.log(`✅ Auto-placed item "${item.text}" in tier "${tier.name}"`);
+					}
+				});
 			}
 
-			// Find unassigned items
 			const assignedItemIds = new Set();
 			transformedTiers.forEach((tier) => {
 				tier.items.forEach((item) => assignedItemIds.add(item.id));
@@ -169,16 +178,20 @@
 			const unassignedItems = allItems.filter((item) => !assignedItemIds.has(item.id));
 
 			tierList = {
-				id: Number(response.id),
+				id: response.id,
 				title: response.title,
-				type: response.list_type === 'dynamic' ? 'dynamic' : 'classic',
+				list_type: response.list_type === 'dynamic' ? 'dynamic' : 'classic',
 				tiers: transformedTiers,
 				unassignedItems: unassignedItems,
-				author: 'Anonymous',
+				author: response.owner_displayName || 'Anonymous',
 				created_at: response.created_at
 			};
 
 			console.log('Transformed tier list:', tierList);
+
+			if ($currentUser) {
+				liked = await hasUserLikedTierlist(tierList.id, $currentUser.uid);
+			}
 		} catch (err) {
 			error = 'Failed to load tier list';
 			console.error('Error loading tier list:', err);
@@ -187,11 +200,91 @@
 		}
 	}
 
+	async function toggleLike() {
+		if (!$currentUser || !tierList) {
+			addToast('Please sign in to like tierlists', 'error');
+			return;
+		}
+
+		try {
+			interacting = true;
+
+			if (liked) {
+				await unlikeTierlist(tierList.id, $currentUser.uid);
+				likes--;
+				liked = false;
+				addToast('Removed like', 'success');
+			} else {
+				await likeTierlist(tierList.id, $currentUser.uid);
+				likes++;
+				liked = true;
+				addToast('Added like!', 'success');
+			}
+		} catch (error: unknown) {
+			console.error('Error toggling like:', error);
+			addToast(error instanceof Error ? error.message : 'Failed to update like', 'error');
+		} finally {
+			interacting = false;
+		}
+	}
+
+	async function addComment() {
+		if (!$currentUser || !tierList || !commentText.trim()) {
+			if (!$currentUser) addToast('Please sign in to comment', 'error');
+			return;
+		}
+
+		try {
+			interacting = true;
+
+			const newComment = {
+				id: Date.now().toString(),
+				text: commentText.trim(),
+				author: $currentUser.displayName || 'Anonymous',
+				timestamp: Date.now()
+			};
+
+			commentsList = [newComment, ...commentsList];
+			comments++;
+			commentText = '';
+			addToast('Comment added!', 'success');
+		} catch (error) {
+			console.error('Error adding comment:', error);
+			addToast('Failed to add comment', 'error');
+		} finally {
+			interacting = false;
+		}
+	}
+
+	async function forkTierlist() {
+		if (!$currentUser || !tierList) {
+			addToast('Please sign in to fork tierlists', 'error');
+			return;
+		}
+
+		try {
+			interacting = true;
+			forks++;
+			addToast('Tierlist forked! Redirecting to editor...', 'success');
+
+			// Navigate to create page with the current tierlist as a template
+			setTimeout(() => {
+				if (tierList) {
+					goto(`/tierlists/create?fork=${tierList.id}`);
+				}
+			}, 1000);
+		} catch (error) {
+			console.error('Error forking tierlist:', error);
+			addToast('Failed to fork tierlist', 'error');
+		} finally {
+			interacting = false;
+		}
+	}
+
 	function selectItem(item: TierItem) {
 		selectedItem = selectedItem?.id === item.id ? null : item;
 	}
 
-	// Dims a hex color by a given factor for better background contrast
 	function dimColor(color: string, factor: number = 0.7): string {
 		const hex = color.replace('#', '');
 		const r = Math.round(parseInt(hex.substr(0, 2), 16) * factor);
@@ -225,7 +318,7 @@
 		// Available width (accounting for tier label area - 320px and sidebar - 320px and padding)
 		const availableWidth = windowWidth - 320 - 320 - 64;
 
-		// Try full height first - all items are squares (width = height)
+		// Try full height first 
 		let itemHeight = Math.max(80, tierContainerHeight - gap * 2);
 		let itemWidth = itemHeight;
 
@@ -242,7 +335,7 @@
 				margin: '0'
 			};
 		} else {
-			// Need to use half size to fit more items in multiple rows
+			// Half size to fit more items in multiple rows
 			const maxRows = 2;
 			const halfHeight = Math.max(
 				40,
@@ -250,7 +343,6 @@
 			);
 			const halfItemWidth = halfHeight;
 
-			// Calculate items per row at half height
 			const itemsPerRowHalfHeight = Math.floor((availableWidth + gap) / (halfItemWidth + gap));
 
 			return {
@@ -262,7 +354,6 @@
 		}
 	}
 
-	// Gets the dynamic gradient background for dynamic mode
 	function getDynamicGradient(): string {
 		if (!tierList?.tiers) return 'background: linear-gradient(to bottom, #222, #333)';
 
@@ -281,7 +372,7 @@
 			return `rgba(${r},${g},${b},${alpha})`;
 		}
 
-		const colors = tierList.tiers.map((tier) => hexToRgba(tier.color, 0.65));
+		const colors = tierList.tiers.map((tier) => hexToRgba(tier.color || '#666666', 0.65));
 		return `background: linear-gradient(to bottom, ${colors.join(', ')});`;
 	}
 
@@ -305,7 +396,6 @@
 			console.log('Attempting to delete tier list with ID:', tierListId);
 			await apiClient.deleteTierList(String(tierListId));
 			console.log('Tier list deleted successfully');
-			// Navigate back to tier lists page after deletion
 			window.location.href = '/tierlists';
 		} catch (err) {
 			console.error('Error deleting tier list:', err);
@@ -314,7 +404,6 @@
 			} else {
 				error = 'Failed to delete tier list. The server may be unavailable.';
 			}
-			// Clear error after 5 seconds
 			setTimeout(() => {
 				error = '';
 			}, 5000);
@@ -330,16 +419,13 @@
 <div class="fixed inset-0 flex bg-black text-white">
 	{#if loading}
 		<div class="flex flex-1 items-center justify-center">
-			<div class="text-xl text-gray-400">Loading tier list...</div>
+			<LoadingIndicator size="lg" />
 		</div>
 	{:else if error}
 		<div class="flex flex-1 items-center justify-center">
 			<div class="text-center">
 				<div class="mb-4 text-xl text-red-400">{error}</div>
-				<a
-					href="/tierlists"
-					class="rounded bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700"
-				>
+				<a href="/tierlists" class="bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700">
 					Back to Tier Lists
 				</a>
 			</div>
@@ -347,13 +433,13 @@
 	{:else if tierList}
 		<!-- Main Tier List Display -->
 		<div class="flex flex-1 flex-col">
-			{#if tierList.type === 'classic'}
+			{#if tierList.list_type === 'classic'}
 				<!-- Classic Mode -->
 				<div class="flex flex-1 flex-col">
 					{#each tierList.tiers as tier, index (tier.id)}
 						<div
 							class="relative flex flex-1 transition-all duration-300"
-							style="background-color: {dimColor(tier.color, 0.6)};"
+							style="background-color: {dimColor(tier.color || '#666666', 0.6)};"
 							in:fade={{ duration: 350 }}
 						>
 							<!-- Tier Items Area -->
@@ -368,13 +454,13 @@
 									</div>
 								</div>
 
-								{#if tier.items.length > 0}
+								{#if tier.items && tier.items.length > 0}
 									{@const itemsStyle = getTierItemsStyle(tier.items.length)}
 									<div class="grid items-center gap-4 pr-80" style={itemsStyle.gridStyle}>
 										{#each tier.items as item, itemIndex (item.id)}
 											<!-- svelte-ignore a11y-no-static-element-interactions -->
 											<div
-												class="group/item relative cursor-pointer overflow-hidden rounded-lg shadow-sm transition-shadow hover:shadow-lg {selectedItem?.id ===
+												class="group/item relative cursor-pointer overflow-hidden shadow-sm transition-shadow hover:shadow-lg {selectedItem?.id ===
 												item.id
 													? 'ring-2 ring-orange-400'
 													: ''}"
@@ -395,7 +481,7 @@
 													></div>
 												{/if}
 
-												<!-- Text positioning - center for text-only items, bottom-left for image items -->
+												<!-- Text positioning -->
 												{#if item.type === 'text' && !item.image}
 													<div class="absolute inset-0 z-10 flex items-center justify-center p-2">
 														<span class="text-center text-sm leading-tight font-medium text-white"
@@ -452,14 +538,14 @@
 
 						<!-- All Dynamic Items -->
 						{#if tierList && tierList.tiers}
-							{#each [...tierList.unassignedItems, ...tierList.tiers.flatMap( (tier, tierIndex) => tier.items.map( (item) => ({ ...item, _defaultY: (tierIndex + 0.5) / tierList!.tiers.length }) ) )] as item, i (item.id)}
+							{#each [...(tierList.unassignedItems || []), ...tierList.tiers.flatMap( (tier, tierIndex) => (tier.items || []).map( (item) => ({ ...item, _defaultY: (tierIndex + 0.5) / tierList!.tiers.length }) ) )] as item, i (item.id)}
 								{@const x = item.position?.x ?? 0.1 + (i % 8) * 0.1}
 								{@const y = item.position?.y ?? (item as any)._defaultY ?? 0.5}
 								{@const itemSize = getItemSize(item)}
 
 								<!-- svelte-ignore a11y-no-static-element-interactions -->
 								<div
-									class="group/item absolute -translate-x-1/2 -translate-y-1/2 transform cursor-pointer overflow-hidden rounded-lg shadow-lg transition-all hover:shadow-xl {selectedItem?.id ===
+									class="group/item absolute -translate-x-1/2 -translate-y-1/2 transform cursor-pointer overflow-hidden shadow-lg transition-all hover:shadow-xl {selectedItem?.id ===
 									item.id
 										? 'ring-2 ring-orange-400'
 										: ''}"
@@ -484,14 +570,14 @@
 									{/if}
 
 									{#if item.type === 'text' && !item.image}
-										<!-- Text items - centered text -->
+										<!-- Text items -->
 										<div class="absolute inset-0 z-10 flex items-center justify-center p-2">
 											<div class="text-center text-sm leading-tight font-medium text-white">
 												{item.text}
 											</div>
 										</div>
 									{:else}
-										<!-- Image items - text in bottom right -->
+										<!-- Image items -->
 										<div class="absolute right-1 bottom-1 z-10">
 											<div
 												class="text-right text-xs leading-tight font-medium text-white drop-shadow-lg"
@@ -506,69 +592,42 @@
 					</div>
 				</div>
 			{/if}
-
-			<!-- Unassigned Items (for classic mode) -->
-			{#if tierList.type === 'classic' && tierList.unassignedItems.length > 0}
-				<div class="border-t border-gray-600 bg-gray-800">
-					<div class="p-6">
-						<div class="mb-4 text-lg font-bold text-gray-300">Unranked Items</div>
-						<div class="flex flex-wrap gap-3">
-							{#each tierList.unassignedItems as item (item.id)}
-								<!-- svelte-ignore a11y-no-static-element-interactions -->
-								<div
-									class="relative cursor-pointer overflow-hidden rounded-lg bg-gradient-to-br from-gray-700 to-gray-800 shadow-sm transition-shadow hover:shadow-lg {selectedItem?.id ===
-									item.id
-										? 'ring-2 ring-orange-400'
-										: ''}"
-									style="width: 120px; height: 120px; {item.image
-										? `background-image: url('${item.image}'); background-size: cover; background-position: center;`
-										: ''}"
-									on:click|stopPropagation={() => selectItem(item)}
-									on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && selectItem(item)}
-									role="button"
-									tabindex="0"
-									aria-label="View item {item.text}"
-									in:fade={{ duration: 250 }}
-								>
-									<!-- Gradient overlay -->
-									{#if item.image}
-										<div
-											class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"
-										></div>
-									{/if}
-
-									<!-- Text positioning -->
-									{#if item.type === 'text' && !item.image}
-										<div class="absolute inset-0 z-10 flex items-center justify-center p-2">
-											<span class="text-center text-sm leading-tight font-medium text-white"
-												>{item.text}</span
-											>
-										</div>
-									{:else}
-										<div class="absolute bottom-2 left-2 z-10">
-											<span class="text-sm font-medium text-white drop-shadow-lg">{item.text}</span>
-										</div>
-									{/if}
-								</div>
-							{/each}
-						</div>
-					</div>
-				</div>
-			{/if}
 		</div>
 
 		<!-- Sidebar -->
 		<div class="w-80 border-l border-gray-600 bg-gray-900">
-			<TierlistSidebar
-				title={tierList.title}
-				author={tierList.author || 'Anonymous'}
-				date={tierList.created_at || new Date().toISOString()}
-				revision={1}
-				shareUrl={`${typeof window !== 'undefined' ? window.location.origin : ''}/tierlists/${tierList.id}`}
-				id={tierList.id}
-				tierListData={response}
-				on:delete={handleSidebarDelete}
-			/>
+			   <TierlistSidebar
+				   title={tierList.title}
+				   author={tierList.owner_displayName || 'Anonymous'}
+				   shareUrl={`${typeof window !== 'undefined' ? window.location.origin : ''}/tierlists/${tierList.id}`}
+				   id={tierList.id}
+				   tierListData={{
+					   ...tierList,
+					   items: tierList.tiers
+						   .flatMap((tier) => tier.items || [])
+						   .concat(tierList.unassignedItems || []),
+					   item_placements: []
+				   } as any}
+				   on:delete={handleSidebarDelete}
+			   />
+		</div>
+	{:else}
+		<!-- Debug: No tierList data -->
+		<div class="flex flex-1 items-center justify-center">
+			<div class="text-center">
+				<div class="mb-4 text-xl text-yellow-400">Debug: No tier list data available</div>
+				<div class="text-sm text-gray-400">
+					Loading: {loading}, Error: {error}, TierListId: {tierListId}
+				</div>
+				<a
+					href="/tierlists"
+					class="mt-4 inline-block bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700"
+				>
+					Back to Tier Lists
+				</a>
+			</div>
 		</div>
 	{/if}
 </div>
+
+<Toast />

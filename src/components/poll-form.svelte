@@ -37,6 +37,13 @@
 		poll.gradients.colors = colors.slice(0, poll.customOptions.length);
 		onUpdate(poll);
 	}
+
+	let previousResponseType: number | undefined = undefined;
+
+	$: if (poll.responseType !== undefined && poll.responseType !== previousResponseType) {
+		previousResponseType = poll.responseType;
+		onUpdate(poll);
+	}
 </script>
 
 <!-- Response Type Selection -->
@@ -45,7 +52,7 @@
 	<div class="space-y-3">
 		{#each responseTypes as type (type.value)}
 			<label
-				class="flex cursor-pointer items-center rounded-lg border p-4 transition-colors hover:bg-gray-700 {poll.responseType ===
+				class="flex cursor-pointer items-center border p-4 transition-colors hover:bg-gray-700 {poll.responseType ===
 				type.value
 					? 'border-[#ff5705] bg-[#ff5705]/20'
 					: 'border-gray-600 bg-gray-700/50'}"
@@ -60,8 +67,8 @@
 				</div>
 				{#if poll.responseType === type.value}
 					<div class="ml-auto">
-						<div class="flex h-5 w-5 items-center justify-center rounded-full bg-[#ff5705]">
-							<div class="h-2 w-2 rounded-full bg-white"></div>
+						<div class="flex h-5 w-5 items-center justify-center bg-[#ff5705]">
+							<div class="h-2 w-2 bg-white"></div>
 						</div>
 					</div>
 				{/if}
@@ -80,11 +87,11 @@
 					type="color"
 					bind:value={poll.gradients.colors[index]}
 					on:input={() => onUpdate(poll)}
-					class="h-12 w-12 cursor-pointer rounded-lg border border-gray-600 bg-transparent"
+					class="h-12 w-12 cursor-pointer border border-gray-600 bg-transparent"
 					title="Choose color for {option}"
 				/>
 				<input
-					class="flex-1 rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-transparent focus:ring-2 focus:ring-[#ff5705] focus:outline-none"
+					class="flex-1 border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-transparent focus:ring-2 focus:ring-[#ff5705] focus:outline-none"
 					type="text"
 					value={option}
 					on:input={(e) => {
@@ -110,19 +117,19 @@
 				class="peer sr-only"
 			/>
 			<div
-				class="peer h-6 w-11 rounded-full bg-gray-600 peer-checked:bg-[#ff5705] peer-focus:ring-4 peer-focus:ring-[#ff5705]/20 peer-focus:outline-none after:absolute after:top-[2px] after:left-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"
+				class="peer h-6 w-11 bg-gray-600 peer-checked:bg-[#ff5705] peer-focus:ring-4 peer-focus:ring-[#ff5705]/20 peer-focus:outline-none after:absolute after:top-[2px] after:left-[2px] after:h-5 after:w-5 after:after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"
 			></div>
 		</label>
 	</div>
 
 	{#if poll.gradients.enabled}
-		<div class="space-y-4 rounded-lg border border-gray-600 bg-gray-700/50 p-4">
+		<div class="space-y-4 border border-gray-600 bg-gray-700/50 p-4">
 			<div class="mb-3 text-sm text-white/70">
 				Choose option colors above to customize your poll visualization gradient
 			</div>
 
 			<!-- Gradient Preview -->
-			<div class="h-12 overflow-hidden rounded-lg border border-gray-600">
+			<div class="h-12 overflow-hidden border border-gray-600">
 				<div
 					class="h-full w-full"
 					style="background: linear-gradient(to right, {poll.gradients.colors
@@ -138,7 +145,7 @@
 					{#each colorSchemes as scheme (scheme.name)}
 						<button
 							type="button"
-							class="h-8 rounded border border-gray-600 text-xs text-white/70 transition-colors hover:border-white/50"
+							class="h-8 border border-gray-600 text-xs text-white/70 transition-colors hover:border-white/50"
 							style="background: linear-gradient(to right, {scheme.colors
 								.slice(0, Math.min(3, scheme.colors.length))
 								.join(', ')})"

@@ -16,7 +16,7 @@ script is located within.
 .Parameter Prompt
 The prompt prefix to display when this virtual environment is activated. By
 default, this prompt is the name of the virtual environment folder (VenvDir)
-surrounded by parentheses and followed by a single space (ie. '(.venv) ').
+surby parentheses and followed by a single space (ie. '(.venv) ').
 
 .Example
 Activate.ps1
@@ -34,7 +34,7 @@ Activates the Python virtual environment located in the specified location.
 .Example
 Activate.ps1 -Prompt "MyPython"
 Activates the Python virtual environment that contains the Activate.ps1 script,
-and prefixes the current prompt with the specified string (surrounded in
+and prefixes the current prompt with the specified string (surin
 parentheses) while the virtual environment is active.
 
 .Notes

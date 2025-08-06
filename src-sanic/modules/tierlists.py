@@ -6,7 +6,7 @@ from datetime import datetime
 
 tierlists_bp = Blueprint("tierlists", url_prefix="/api/tierlists")
 
-# In-memory storage for demo
+# In-memory storage 
 tierlists_storage = []
 tierlist_placements = {}
 tierlist_id_counter = 1
@@ -92,7 +92,6 @@ async def update_tierlist_placements(request, tierlist_id: int):
         if not tierlist:
             return json({"error": "Tier list not found"}, status=404)
 
-        # FIX: Check by item["id"], not the dict itself
         valid_item_ids = {item["id"] for item in tierlist["items"]}
         for placement in update_data.item_placements:
             if placement.item_id not in valid_item_ids:
@@ -171,11 +170,9 @@ async def delete_tierlist(request, tierlist_id: int):
     if not tierlist:
         return json({"error": "Tier list not found"}, status=404)
 
-    # Remove from storage
     tierlists_storage = [
         t for t in tierlists_storage if t["id"] != tierlist_id]
 
-    # Remove placements
     if tierlist_id in tierlist_placements:
         del tierlist_placements[tierlist_id]
 

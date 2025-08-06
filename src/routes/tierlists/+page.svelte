@@ -1,28 +1,34 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { apiClient } from '$lib/api';
+	import {
+		getTierlistsFromFirestore,
+		getTierlistInteractions
+	} from '$lib/firestore-polls-tierlists.js';
 	import Hero from '../../components/hero.svelte';
+	import LoadingIndicator from '../../components/loading-indicator.svelte';
 	import { fade } from 'svelte/transition';
+	import { goto } from '$app/navigation';
 
 	let tierLists: any[] = [];
 	let loading = true;
 	let error = '';
 	let heroSlides: any[] = [];
 
-	let likeCounts: Record<number, number> = {};
+	let interactionCounts: Record<string, { likes: number; comments: number; forks: number }> = {};
 
 	onMount(async () => {
 		await loadTierLists();
 	});
 
-	async function fetchLikeCount(tierlistId: number) {
+	async function loadInteractions(tierlistId: string) {
 		try {
-			const res = await fetch(`/api/interactions/tierlist/${tierlistId}/likes`);
-			if (!res.ok) return 0;
-			const data = await res.json();
-			return data.likes || 0;
-		} catch {
-			return 0;
+			const counts = await getTierlistInteractions(tierlistId);
+			interactionCounts[tierlistId] = counts;
+			return counts;
+		} catch (error) {
+			console.error('Error loading interactions:', error);
+			return { likes: 0, comments: 0, forks: 0 };
 		}
 	}
 
@@ -30,30 +36,36 @@
 		try {
 			loading = true;
 			error = '';
-			tierLists = await apiClient.getTierLists();
+			tierLists = await getTierlistsFromFirestore();
 
-			const likePromises = tierLists.map(async (tl) => {
-				const likes = await fetchLikeCount(tl.id);
-				likeCounts[tl.id] = likes;
-				return likes;
-			});
-			await Promise.all(likePromises);
+			// Load interaction counts for all tierlists
+			await Promise.all(
+				tierLists.map(async (tierList) => {
+					const counts = await loadInteractions(tierList.id);
+					tierList.likes = counts.likes;
+					tierList.comments = counts.comments;
+					tierList.forks = counts.forks;
+				})
+			);
 
 			if (tierLists.length > 0) {
 				heroSlides = tierLists.slice(0, 5).map((tierList, index) => ({
 					header: tierList.title,
-					author: tierList.author || 'Community',
-					date: new Date(tierList.created_at).toISOString().split('T')[0],
+					author: tierList.ownerDisplayName || 'Community',
+					date: tierList.created_at
+						? new Date(tierList.created_at.toDate()).toISOString().split('T')[0]
+						: new Date().toISOString().split('T')[0],
 					revision: 1,
-					likes: likeCounts[tierList.id] || 0,
-					comments: 0,
-					forks: 0,
+					likes: tierList.likes || 0,
+					comments: tierList.comments || 0,
+					forks: tierList.forks || 0,
 					backgroundColor: ['#FFD6E0', '#FFEFB5', '#C1E7E3', '#DCEBDD', '#E2D0F9'][index % 5],
+					image: tierList.banner_image || tierList.thumbnail,
 					tierlist: tierList
 				}));
 			}
 		} catch (err) {
-			error = 'Failed to load tier lists. Make sure the backend server is running.';
+			error = 'Failed to load tier lists. Make sure Firebase is configured properly.';
 			console.error('Error loading tier lists:', err);
 		} finally {
 			loading = false;
@@ -61,7 +73,7 @@
 	}
 
 	function navigateToTierList(tierList: any) {
-		window.location.href = `/tierlists/${tierList.id}`;
+		goto(`/tierlists/${tierList.id}`);
 	}
 </script>
 
@@ -75,11 +87,10 @@
 		<Hero slides={heroSlides} />
 	{/if}
 
-	<!-- Main Content Area -->
 	<div>
 		{#if error}
 			<div class="container mx-auto mb-4 px-6">
-				<div class="rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700">
+				<div class="border border-red-400 bg-red-100 px-4 py-3 text-red-700">
 					{error}
 				</div>
 			</div>
@@ -87,10 +98,7 @@
 
 		{#if loading}
 			<div class="py-8 text-center">
-				<div
-					class="inline-block h-8 w-8 animate-spin rounded-full border-b-2 border-purple-500"
-				></div>
-				<p class="mt-2 text-gray-600">Loading tier lists...</p>
+				<LoadingIndicator size="lg" />
 			</div>
 		{:else if tierLists.length === 0}
 			<div class="py-16 text-center">
@@ -99,50 +107,76 @@
 				<p class="mb-6 text-gray-500">Be the first to create a tier list!</p>
 			</div>
 		{:else}
-			<!-- Full width Sharp Grid -->
+			<!-- Tierlist Grid -->
 			<div
 				class="grid grid-cols-1 gap-0 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6"
 			>
 				{#each tierLists as tierList}
 					<div
-						class="relative h-64 cursor-pointer border-r border-b border-gray-800 transition-all duration-200 hover:brightness-110"
-						style={tierList.banner_image
-							? `background-image: url('${tierList.banner_image}'); background-size: cover; background-position: center;`
-							: `background-color: ${
-									['#FFD6E0', '#FFEFB5', '#C1E7E3', '#DCEBDD', '#E2D0F9', '#FFB5B5', '#B5E5FF'][
-										Math.floor(Math.random() * 7)
-									]
-								};`}
+						class="relative h-64 cursor-pointer overflow-hidden border-r border-b border-gray-800 transition-all duration-200 hover:brightness-110"
 						on:click={() => navigateToTierList(tierList)}
 						on:keydown={(e) => e.key === 'Enter' && navigateToTierList(tierList)}
 						role="button"
 						tabindex="0"
 						in:fade={{ duration: 350 }}
 					>
-						<!-- Overlay -->
-						<div class="bg-opacity-40 absolute inset-0 bg-black"></div>
+						<!-- Background Image -->
+						{#if tierList.banner_image}
+							<div
+								class="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-40"
+								style="background-image: url('{tierList.banner_image}');"
+							></div>
+						{:else if tierList.thumbnail}
+							<div
+								class="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-40"
+								style="background-image: url('{tierList.thumbnail}');"
+							></div>
+						{:else}
+							<div
+								class="absolute inset-0"
+								style="background-color: {[
+									'#FFD6E0',
+									'#FFEFB5',
+									'#C1E7E3',
+									'#DCEBDD',
+									'#E2D0F9',
+									'#FFB5B5',
+									'#B5E5FF'
+								][Math.floor(Math.random() * 7)]};"
+							></div>
+						{/if}
+
+						<!-- Dark overlay -->
+						<div class="absolute inset-0 bg-gradient-to-t from-black/80 to-black/40"></div>
 
 						<!-- Content -->
-						<div class="relative flex h-full flex-col justify-between p-4 text-white">
+						<div class="relative z-10 flex h-full flex-col justify-between p-4 text-white">
 							<!-- Top metadata -->
 							<div class="flex items-start justify-between text-xs">
 								<div class="flex gap-2 opacity-80">
-									<span>{tierList.author || 'Community'}</span>
-									<span>{new Date(tierList.created_at).toLocaleDateString()}</span>
+									{#if tierList.created_at}<span>
+											{new Date(tierList.created_at.toDate()).toLocaleString('en-US', {
+												year: 'numeric',
+												month: 'short',
+												day: 'numeric',
+												hour: '2-digit',
+												minute: '2-digit'
+											})}</span
+										>{/if}
 								</div>
 								<div class="flex items-center gap-2 opacity-80">
 									<span class="flex items-center gap-1">
 										<span class="material-symbols-outlined align-middle text-base">favorite</span>
-										{likeCounts[tierList.id] || 0}
+										{tierList.likes || 0}
 									</span>
 									<span class="flex items-center gap-1">
 										<span class="material-symbols-outlined align-middle text-base">chat_bubble</span
 										>
-										0
+										{tierList.comments || 0}
 									</span>
 									<span class="flex items-center gap-1">
-										<span class="material-symbols-outlined align-middle text-base">fork_right</span>
-										0
+										<span class="material-symbols-outlined align-middle text-base">call_split</span>
+										{tierList.forks || 0}
 									</span>
 								</div>
 							</div>
@@ -150,7 +184,9 @@
 							<!-- Title -->
 							<div class="flex flex-1 items-center">
 								<div class="w-full">
-									<div class="mb-1 text-xs tracking-wide uppercase opacity-60">Tier List</div>
+									<span class="mt-1 text-xs text-gray-300">
+										{tierList.ownerDisplayName || 'Anonymous User'}
+									</span>
 									<h3 class="text-xl leading-tight font-bold">{tierList.title}</h3>
 								</div>
 							</div>
@@ -161,11 +197,11 @@
 								<span>{tierList.items?.length || 0} items</span>
 								<span
 									class="px-2 py-1 text-white"
-									style="
-										background-color: {tierList.list_type === 'dynamic' ? '#ff570599' : '#05FFAC99'};
-									"
+									style="background-color: {tierList.list_type === 'dynamic'
+										? '#ff570599'
+										: '#05FFAC99'};"
 								>
-									{tierList.list_type || 'Classic'}
+									{tierList.list_type === 'dynamic' ? 'DYNAMIC' : 'CLASSIC'}
 								</span>
 							</div>
 						</div>

@@ -40,6 +40,7 @@ module.exports = {
 		},
 		fontFamily: {
 			sans: [
+				'Instrument Sans',
 				'Space Grotesk',
 				'-apple-system',
 				'BlinkMacSystemFont',

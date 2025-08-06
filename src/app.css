@@ -1,5 +1,16 @@
 @import 'tailwindcss';
 
+:root {
+	--primary: 255, 107, 53;
+	--primary-600: 245, 101, 101;
+	--primary-700: 239, 68, 68;
+	--base-font-size: 16px;
+}
+
+html {
+	font-size: var(--base-font-size);
+}
+
 @keyframes fadein-stagger {
 	from {
 		opacity: 0;
@@ -11,12 +22,44 @@
 	}
 }
 
+@keyframes gradient-x {
+	0%,
+	100% {
+		background-position: 0% 50%;
+	}
+	50% {
+		background-position: 100% 50%;
+	}
+}
+
 .animate-fadein-suggestion {
 	animation: fadein-stagger 0.4s cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 
 .animate-fadein-image {
 	animation: fadein-stagger 0.5s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.animate-gradient-x {
+	animation: gradient-x 3s ease infinite;
+	background-size: 200% 200%;
+}
+
+.bg-size-200 {
+	background-size: 200% 200%;
+}
+
+/* Dynamic color classes */
+.bg-primary {
+	background-color: rgb(var(--primary));
+}
+
+.text-primary {
+	color: rgb(var(--primary));
+}
+
+.border-primary {
+	border-color: rgb(var(--primary));
 }
 
 /* Custom shapes for poll types */

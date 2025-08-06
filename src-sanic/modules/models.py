@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List, Literal
+from typing import List, Optional, Literal, Union
 
 # Poll Models
 class GradientConfig(BaseModel):
@@ -14,7 +14,7 @@ class PollCreate(BaseModel):
     gradients: Optional[GradientConfig] = Field(default=None, description="Gradient configuration for background")
     
 class VoteCreate(BaseModel):
-    poll_id: int
+    poll_id: Union[int, str]
     position: float = Field(..., ge=0.0, le=1.0, description="Position on the scale (0.0 to 1.0)")
     position_2d: Optional[dict] = Field(None, description="2D coordinates for square voting {x: float, y: float}")
     

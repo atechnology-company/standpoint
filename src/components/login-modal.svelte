@@ -37,7 +37,6 @@
 {/if}
 
 <style>
-	/* Remove border radius and set black/white theme */
 	.modal-btn {
 		border-radius: 0 !important;
 	}

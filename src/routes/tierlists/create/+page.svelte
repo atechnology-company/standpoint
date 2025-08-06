@@ -1,32 +1,29 @@
 <script lang="ts">
-	import { apiClient } from '$lib/api';
+	import { apiClient, type TierItem } from '$lib/api';
 	import {
-	saveTierlistToFirestore,
-	getTierlistsFromFirestore
-	} from '$lib/firestore-polls-tierlists';
+		saveTierlistToFirestore,
+		getTierlistsFromFirestore,
+		getTierlist
+	} from '$lib/firestore-polls-tierlists.js';
 	import { getAuth } from 'firebase/auth';
-	import { searchGoogleImages } from '$lib/google-images';
+	import { searchForImages } from '$lib/google-images';
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { fade, scale } from 'svelte/transition';
-	import { currentUser, signInWithGoogle } from '$lib/stores';
-
-	// Represents an item in the tier list, which can be text, image, or a search result
-	interface TierItem {
-	id: string; 
-	text: string; 
-	image?: string; 
-	type: 'text' | 'image' | 'search'; 
-	position?: { x: number; y: number }; 
-	size?: { width: number; height: number }; 
-	naturalSize?: { width: number; height: number };
-	}
+	import { currentUser, signInWithGoogle, userGroup } from '$lib/stores';
+	import { hasProAccessStore } from '$lib';
+	import { getUserProfile } from '$lib/user-profile';
+	import type { UserProfile } from '$lib/user-profile';
+	import { addToast } from '$lib/toast';
+	import Toast from '$lib/../components/toast.svelte';
+	import { createAutosaver, getDrafts, deleteDraft, type TierListDraft } from '$lib/draft-autosave';
 
 	// Represents a tier/category in the tier list
 	interface Tier {
 		id: string;
 		name: string;
 		color: string;
-		items: TierItem[]; 
+		items: TierItem[];
 	}
 
 	// Placement info for saving tier list state
@@ -41,26 +38,43 @@
 	const LOCAL_STORAGE_TIERLISTS_KEY = 'standpoint_local_tierlists';
 
 	// Main tier list state object
-	let tierList = {
-	title: 'Untitled Tier List',
-	type: 'classic' as 'classic' | 'dynamic', // Tier list mode
-	bannerImage: '' as string, // Banner image URL
-	tiers: [
-		{ id: 's', name: 'S', color: '#ff7f7f', items: [] },
-		{ id: 'a', name: 'A', color: '#ffbf7f', items: [] },
-		{ id: 'b', name: 'B', color: '#ffff7f', items: [] },
-		{ id: 'c', name: 'C', color: '#bfff7f', items: [] }
-	] as Tier[],
-	unassignedItems: [] as TierItem[]
+	interface TierList {
+		title: string;
+		type: 'classic' | 'dynamic';
+		bannerImage: string;
+		isForked: boolean;
+		originalId: string;
+		unassignedItems: TierItem[];
+		tiers: Tier[];
+	}
+
+	let tierList: TierList = {
+		title: 'Untitled Tier List',
+		type: 'classic',
+		bannerImage: '',
+		isForked: false,
+		originalId: '',
+		unassignedItems: [],
+		tiers: [
+			{ id: 's', name: 'S', color: '#ff7f7f', items: [] },
+			{ id: 'a', name: 'A', color: '#ffbf7f', items: [] },
+			{ id: 'b', name: 'B', color: '#ffff7f', items: [] },
+			{ id: 'c', name: 'C', color: '#bfff7f', items: [] }
+		]
 	};
 
+	// Autosave functionality
+	let draftId: string = crypto.randomUUID();
+	let autosaveCleanup: (() => void) | null = null;
+	let lastSaveIndicator = '';
+
 	// Modal and UI state
-	let showAddItemModal = false; 
-	let addItemModalX = 0; 
-	let addItemModalY = 0; 
-	let addItemType: 'text' | 'upload' | 'search' = 'text'; 
-	let error = ''; 
-	let creating = false; 
+	let showAddItemModal = false;
+	let addItemModalX = 0;
+	let addItemModalY = 0;
+	let addItemType: 'text' | 'upload' | 'search' = 'text';
+	let error = '';
+	let creating = false;
 	let editingTitle = false;
 	let lastFetchedTitle = '';
 
@@ -68,6 +82,13 @@
 	function randomDelay(i: number) {
 		return 80 + (i % 5) * 40;
 	}
+
+	// Pro user check
+	$: isProUser = $hasProAccessStore;
+
+	// User profile and AI settings
+	let userProfile: UserProfile | null = null;
+	let aiEnabled = true; // Default to enabled until we load the user's preference
 
 	// Gemini suggestion system state
 	let suggestedItems: any[] = [];
@@ -88,8 +109,12 @@
 
 	// Filtered AI suggestions based on input
 	$: filteredAISuggestions = (() => {
-		if (!newItemText.trim()) return suggestedItems;
-		return suggestedItems.filter((s) =>
+		// First filter out items without valid names to prevent undefined key errors
+		const validSuggestions = suggestedItems.filter(
+			(s) => s && s.name && typeof s.name === 'string' && s.name.trim()
+		);
+		if (!newItemText.trim()) return validSuggestions;
+		return validSuggestions.filter((s) =>
 			s.name.toLowerCase().includes(newItemText.trim().toLowerCase())
 		);
 	})();
@@ -99,12 +124,68 @@
 	let lastGeminiPrompt = '';
 	let lastGeminiRawResponse = '';
 
+	// Handle item type changes - clean up inconsistent data
+	$: if (editingItem) {
+		// If changing to text type, remove image
+		if (editingItem.type === 'text' && editingItem.image) {
+			editingItem.image = undefined;
+		}
+		// If changing from text to image/search but no image, provide placeholder
+		if (editingItem.type !== 'text' && !editingItem.image) {
+			// Keep the current state, user can add image separately
+		}
+	}
+
 	// Item management state
 	let targetTierId: string | null = null;
 	let targetPosition: number | null = null;
 	let newItemText = '';
 	let editingItemId: string | null = null;
 	let inlineEditText = '';
+
+	// Add item logic (prevents duplicates in dynamic/classic)
+	function addItem(text: string) {
+		if (!text.trim()) return;
+		// Prevent duplicate by text or id
+		const exists =
+			tierList.unassignedItems.some((i) => i.text === text) ||
+			tierList.tiers.some((tier) => tier.items.some((i) => i.text === text));
+		if (exists) return;
+		const newItem: TierItem = { id: crypto.randomUUID(), text, type: 'text' };
+		if (tierList.type === 'dynamic') {
+			tierList.unassignedItems.push(newItem);
+		} else {
+			// Classic: add to first tier by default
+			if (tierList.tiers.length > 0) tierList.tiers[0].items.push(newItem);
+		}
+		newItemText = '';
+	}
+
+	// Delete item logic with fallback (no backend)
+	function deleteItemEverywhere(itemId: string) {
+		// Remove from unassigned
+		tierList.unassignedItems = tierList.unassignedItems.filter((i) => i.id !== itemId);
+		// Remove from all tiers
+		tierList.tiers = tierList.tiers.map((tier) => ({
+			...tier,
+			items: tier.items.filter((i) => i.id !== itemId)
+		}));
+		// Fallback: update localStorage if present
+		const localTierlists = localStorage.getItem(LOCAL_STORAGE_TIERLISTS_KEY);
+		if (localTierlists) {
+			const tierlists = JSON.parse(localTierlists);
+			for (const t of tierlists) {
+				if (t.unassignedItems)
+					t.unassignedItems = t.unassignedItems.filter((i: any) => i.id !== itemId);
+				if (t.tiers)
+					t.tiers = t.tiers.map((tier: any) => ({
+						...tier,
+						items: (tier.items || []).filter((i: any) => i.id !== itemId)
+					}));
+			}
+			localStorage.setItem(LOCAL_STORAGE_TIERLISTS_KEY, JSON.stringify(tierlists));
+		}
+	}
 
 	// Search state
 	let searchQuery = '';
@@ -146,10 +227,15 @@
 	function convertDynamicToClassic() {
 		const allItems: TierItem[] = [
 			...tierList.unassignedItems,
-			...tierList.tiers.flatMap((tier) => tier.items)
+			...tierList.tiers.flatMap((tier: { items: TierItem[] }) => tier.items)
 		];
 
-		tierList.tiers = tierList.tiers.map((tier) => ({ ...tier, items: [] }));
+		tierList.tiers = tierList.tiers.map(
+			(tier: { items: TierItem[]; id: string; name: string; color: string }) => ({
+				...tier,
+				items: []
+			})
+		);
 		tierList.unassignedItems = [];
 
 		const nTiers = tierList.tiers.length;
@@ -205,8 +291,7 @@
 		itemHeight: string;
 		itemWidth: string;
 		margin: string;
-	} 
-	{
+	} {
 		if (itemCount === 0)
 			return { gridStyle: '', itemHeight: '8rem', itemWidth: '8rem', margin: '0' };
 
@@ -224,7 +309,7 @@
 		const availableWidth = windowWidth - 320 - 64;
 
 		let itemHeight = Math.max(80, tierContainerHeight - gap * 2);
-		let itemWidth = itemHeight; 
+		let itemWidth = itemHeight;
 
 		const itemsPerRowFullHeight = Math.floor((availableWidth + gap) / (itemWidth + gap));
 
@@ -265,11 +350,11 @@
 	}
 
 	function findItem(itemId: string): { item: TierItem; tier: Tier | null } | null {
-		const unassignedItem = tierList.unassignedItems.find((i) => i.id === itemId);
+		const unassignedItem = tierList.unassignedItems.find((i: TierItem) => i.id === itemId);
 		if (unassignedItem) return { item: unassignedItem, tier: null };
 
 		for (const tier of tierList.tiers) {
-			const item = tier.items.find((i) => i.id === itemId);
+			const item = tier.items.find((i: TierItem) => i.id === itemId);
 			if (item) return { item, tier };
 		}
 
@@ -277,17 +362,25 @@
 	}
 
 	function updateItemEverywhere(itemId: string, updates: Partial<TierItem>) {
-		tierList.tiers = tierList.tiers.map((tier) => ({
+		tierList.tiers = tierList.tiers.map((tier: Tier) => ({
 			...tier,
-			items: tier.items.map((item) => (item.id === itemId ? { ...item, ...updates } : item))
+			items: tier.items.map((item: TierItem) =>
+				item.id === itemId ? { ...item, ...updates } : item
+			)
 		}));
 
-		tierList.unassignedItems = tierList.unassignedItems.map((item) =>
+		tierList.unassignedItems = tierList.unassignedItems.map((item: TierItem) =>
 			item.id === itemId ? { ...item, ...updates } : item
 		);
 	}
 
 	async function fetchGeminiSuggestions(title: string, usedItems: string[] = []) {
+		// Check if user is pro and has AI enabled before fetching suggestions
+		if (!isProUser || !aiEnabled) {
+			suggestedItems = [];
+			return;
+		}
+
 		fetchingSuggestions = true;
 		try {
 			const prompt = buildGeminiPrompt(title, usedItems, 30);
@@ -303,7 +396,8 @@
 			});
 			const data = await res.json();
 			lastGeminiRawResponse = data.raw ?? data.raw_response ?? data.error ?? JSON.stringify(data);
-			if (data.items) {			const usedSet = new Set(usedItems.map((i) => i.toLowerCase()));
+			if (data.items) {
+				const usedSet = new Set(usedItems.map((i) => i.toLowerCase()));
 				suggestedItems = data.items.filter((item: any) => !usedSet.has(item.name.toLowerCase()));
 				await prefetchImagesForSuggestions(suggestedItems);
 			} else {
@@ -345,13 +439,9 @@
 			.filter((s) => s.image && s.image_query && !prefetchedImages[s.name])
 			.map(async (s) => {
 				try {
-					const results = await searchGoogleImages(s.image_query, 1, 1);
-					if (results && results.length > 0) {
-						const imageObj =
-							typeof results[0].image === 'object'
-								? (results[0].image as { thumbnailLink?: string })
-								: {};
-						prefetchedImages[s.name] = imageObj.thumbnailLink ?? results[0].link ?? '';
+					const results = await searchForImages(s.image_query);
+					if (Array.isArray(results) && results.length > 0) {
+						prefetchedImages[s.name] = results[0].url ?? '';
 					}
 				} catch (e) {
 					console.warn('Image prefetch failed for', s.name, e);
@@ -361,8 +451,8 @@
 	}
 
 	function addSuggestedItem(suggestion: any) {
-	   const newItem: TierItem = {
-		   id: `item_${crypto.randomUUID()}`,
+		const newItem: TierItem = {
+			id: `item_${crypto.randomUUID()}`,
 			text: suggestion.name,
 			type: suggestion.image ? 'search' : 'text',
 			image: prefetchedImages[suggestion.name],
@@ -372,7 +462,10 @@
 		usedSuggestedItems = [...usedSuggestedItems, suggestion.name];
 		suggestedItems = suggestedItems.filter((item) => item.name !== suggestion.name);
 
-		if (suggestedItems.length < 10) {
+		const urlParams = new URLSearchParams(window.location.search);
+		const isForked = urlParams.get('forked') === 'true' || urlParams.get('fork') !== null;
+
+		if (!isForked && suggestedItems.length < 10) {
 			const allUsed = [
 				...usedSuggestedItems,
 				...tierList.tiers.flatMap((t) => t.items.map((i) => i.text)),
@@ -384,7 +477,11 @@
 	}
 
 	function handleTitleSet() {
+		const urlParams = new URLSearchParams(window.location.search);
+		const isForked = urlParams.get('forked') === 'true' || urlParams.get('fork') !== null;
+
 		if (
+			!isForked &&
 			tierList.title &&
 			tierList.title !== lastGeminiTitle &&
 			tierList.title !== 'Untitled Tier List'
@@ -406,6 +503,118 @@
 		tierList.unassignedItems = tierList.unassignedItems.filter((item) => item.id !== itemId);
 	}
 
+	// Draft Management
+
+	function loadDraftById(id: string) {
+		const draft = getDrafts().find((d) => d.id === id);
+		if (draft) {
+			tierList.title = draft.title;
+			tierList.type = draft.type;
+			tierList.bannerImage = draft.bannerImage || '';
+			tierList.tiers = draft.tiers;
+			tierList.unassignedItems = draft.unassignedItems;
+			draftId = draft.id; // Use the same draft ID to continue saving
+			addToast('Draft loaded successfully', 'success');
+		} else {
+			addToast('Draft not found', 'error');
+		}
+	}
+
+	function loadForkedData() {
+		try {
+			const forkDataString = localStorage.getItem('standpoint_fork_data');
+			if (forkDataString) {
+				const forkData = JSON.parse(forkDataString);
+
+				// Keep the original title instead of prefixing with "Fork of"
+				tierList.title = forkData.sourceTitle;
+
+				// Store original ID for reference
+				const originalId = forkData.sourceId;
+
+				// Load all items as AI suggestions instead of directly into tierlist
+				suggestedItems = forkData.items
+					.filter(
+						(item: TierItem) =>
+							item && item.text && typeof item.text === 'string' && item.text.trim()
+					)
+					.map((item: TierItem) => ({
+						name: item.text,
+						image: item.image,
+						category: 'Forked Item'
+					}));
+
+				// Clear the fork data from localStorage
+				localStorage.removeItem('standpoint_fork_data');
+
+				// Mark this as a fork for when saving
+				tierList.isForked = true;
+				tierList.originalId = originalId;
+
+				addToast(`Loaded ${suggestedItems.length} items from tierlist`, 'success');
+			}
+		} catch (error) {
+			console.error('Error loading forked data:', error);
+			addToast('Failed to load forked data', 'error');
+		}
+	}
+
+	async function loadTierlistForFork(tierlistId: string) {
+		try {
+			const tierlist = await getTierlist(tierlistId);
+			if (tierlist) {
+				// Set title as "Fork of [original title]"
+				tierList.title = `Fork of ${tierlist.title}`;
+
+				// Copy banner image if it exists
+				if (tierlist.banner_image) {
+					tierList.bannerImage = tierlist.banner_image;
+				}
+
+				// Load all items as AI suggestions, avoiding duplicates
+				const tierItems = tierlist.tiers
+					? tierlist.tiers.flatMap((tier: any) => tier.items || [])
+					: [];
+				const unassignedItems = (tierlist as any).unassignedItems || [];
+
+				// Create a Set to track unique items by text
+				const uniqueItems = new Map();
+
+				// Add tier items first
+				tierItems.forEach((item: any) => {
+					if (item && item.text && typeof item.text === 'string' && item.text.trim()) {
+						uniqueItems.set(item.text.trim().toLowerCase(), {
+							name: item.text,
+							image: item.image,
+							category: 'Forked Item'
+						});
+					}
+				});
+
+				// Add unassigned items only if they're not already included
+				unassignedItems.forEach((item: any) => {
+					if (item && item.text && typeof item.text === 'string' && item.text.trim()) {
+						const key = item.text.trim().toLowerCase();
+						if (!uniqueItems.has(key)) {
+							uniqueItems.set(key, {
+								name: item.text,
+								image: item.image,
+								category: 'Forked Item'
+							});
+						}
+					}
+				});
+
+				suggestedItems = Array.from(uniqueItems.values());
+
+				addToast(`Loaded ${suggestedItems.length} items from forked tierlist`, 'success');
+			}
+		} catch (error) {
+			console.error('Error loading tierlist for fork:', error);
+			addToast('Failed to load tierlist for forking', 'error');
+		}
+	}
+
 	// Tier Management
 
 	function toggleTitleEdit() {
@@ -413,8 +622,8 @@
 	}
 
 	function addTier() {
-	   const newTier: Tier = {
-		   id: `tier_${crypto.randomUUID()}`,
+		const newTier: Tier = {
+			id: `tier_${crypto.randomUUID()}`,
 			name: `Tier ${tierList.tiers.length + 1}`,
 			color: tierColors[tierList.tiers.length % tierColors.length],
 			items: []
@@ -423,8 +632,8 @@
 	}
 
 	function addTierAtPosition(position: number) {
-	   const newTier: Tier = {
-		   id: `tier_${crypto.randomUUID()}`,
+		const newTier: Tier = {
+			id: `tier_${crypto.randomUUID()}`,
 			name: `Tier ${tierList.tiers.length + 1}`,
 			color: tierColors[tierList.tiers.length % tierColors.length],
 			items: []
@@ -473,19 +682,43 @@
 	function openAddItemModal(
 		tierId: string | null = null,
 		position: number | null = null,
-		event?: MouseEvent
+		event?: MouseEvent | KeyboardEvent
 	) {
 		targetTierId = tierId;
 		targetPosition = position;
 
 		const modalWidth = 350;
+		const modalHeight = 400; // Approximate modal height
 		const margin = 16;
+
 		if (event) {
-			addItemModalX = Math.min(event.clientX + 10, window.innerWidth - modalWidth - margin);
-			addItemModalY = Math.max(event.clientY - 50, margin);
+			// Calculate optimal position based on click location (only for mouse events)
+			if ('clientX' in event && 'clientY' in event) {
+				let x = event.clientX + 10;
+				let y = event.clientY - 50;
+
+				// Check if modal would go off the right edge
+				if (x + modalWidth + margin > window.innerWidth) {
+					x = event.clientX - modalWidth - 10; // Position to the left of cursor
+				}
+
+				// Check if modal would go off the bottom edge
+				if (y + modalHeight + margin > window.innerHeight) {
+					y = Math.max(window.innerHeight - modalHeight - margin, margin);
+				}
+
+				// Ensure modal doesn't go off the top or left edges
+				addItemModalX = Math.max(x, margin);
+				addItemModalY = Math.max(y, margin);
+			} else {
+				// For keyboard events, use default center position
+				addItemModalX = window.innerWidth / 2 - modalWidth / 2;
+				addItemModalY = window.innerHeight / 2 - modalHeight / 2;
+			}
 		} else {
-			addItemModalX = Math.max(window.innerWidth / 2 - modalWidth / 2, margin);
-			addItemModalY = Math.max(window.innerHeight / 2 - 100, margin);
+			// Center the modal when no event is provided
+			addItemModalX = Math.max((window.innerWidth - modalWidth) / 2, margin);
+			addItemModalY = Math.max((window.innerHeight - modalHeight) / 2, margin);
 		}
 
 		showAddItemModal = true;
@@ -500,7 +733,14 @@
 			...tierList.tiers.flatMap((t) => t.items.map((i) => i.text)),
 			...tierList.unassignedItems.map((i) => i.text)
 		];
-		if (tierList.title !== lastGeminiTitle && tierList.title !== 'Untitled Tier List') {
+		// Only fetch Gemini suggestions if not forking and title has changed
+		const urlParams = new URLSearchParams(window.location.search);
+		const isForked = urlParams.get('forked') === 'true' || urlParams.get('fork') !== null;
+		if (
+			!isForked &&
+			tierList.title !== lastGeminiTitle &&
+			tierList.title !== 'Untitled Tier List'
+		) {
 			fetchGeminiSuggestions(tierList.title, allUsed);
 		}
 
@@ -617,13 +857,14 @@
 	// Drag and Drop
 
 	function handleDragStart(event: DragEvent, item: TierItem) {
-		console.log('hds');
 		if (!event.dataTransfer) return;
 
 		draggedItem = item;
 		isDragging = true;
 
-		const tierWithItem = tierList.tiers.find((tier) => tier.items.some((i) => i.id === item.id));
+		const tierWithItem = tierList.tiers.find((tier: { items: TierItem[] }) =>
+			tier.items.some((i: TierItem) => i.id === item.id)
+		);
 		draggedFromTier = tierWithItem ? tierWithItem.id : null;
 
 		event.dataTransfer.effectAllowed = 'move';
@@ -635,7 +876,6 @@
 	}
 
 	function handleDragEnd(event: DragEvent) {
-		console.log('hde');
 		isDragging = false;
 		draggedItem = null;
 		draggedFromTier = null;
@@ -670,7 +910,6 @@
 	}
 
 	function handleDrop(event: DragEvent, tierId: string | null, position?: number) {
-		console.log('hd');
 		event.preventDefault();
 		if (!draggedItem) return;
 
@@ -693,7 +932,7 @@
 		if (tierList.type !== 'dynamic') return undefined;
 
 		if (tierId) {
-			const tierIndex = tierList.tiers.findIndex((t) => t.id === tierId);
+			const tierIndex = tierList.tiers.findIndex((t: Tier) => t.id === tierId);
 			if (tierIndex !== -1) {
 				return {
 					x: 0.1 + Math.random() * 0.8,
@@ -721,8 +960,8 @@
 	function addTextItem() {
 		if (!newItemText.trim()) return;
 
-	   const newItem: TierItem = {
-		   id: `item_${crypto.randomUUID()}`,
+		const newItem: TierItem = {
+			id: `item_${crypto.randomUUID()}`,
 			text: newItemText.trim(),
 			type: 'text',
 			position: createItemPosition(targetTierId || undefined)
@@ -736,24 +975,60 @@
 		const target = event.target as HTMLInputElement;
 		const file = target.files?.[0];
 		if (!file || !file.type.startsWith('image/')) return;
-
-	   const newItem: TierItem = {
-		   id: `item_${crypto.randomUUID()}`,
-			text: file.name,
-			image: URL.createObjectURL(file),
-			type: 'image',
-			position: createItemPosition(targetTierId || undefined)
-		};
-
-		addItemToLocation(newItem);
-		closeAddItemModal();
+		try {
+			const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
+			const storage = getStorage();
+			const fileRef = ref(storage, `tierlist-items/${Date.now()}_${file.name}`);
+			await uploadBytes(fileRef, file);
+			const url = await getDownloadURL(fileRef);
+			const newItem: TierItem = {
+				id: `item_${crypto.randomUUID()}`,
+				text: file.name,
+				image: url,
+				type: 'image',
+				position: createItemPosition(targetTierId || undefined)
+			};
+			addItemToLocation(newItem);
+			closeAddItemModal();
+		} catch (err) {
+			addToast('Image upload failed. Please try again.', 'error');
+		}
+	}
+	async function handlePasteImage(e: ClipboardEvent) {
+		const items = e.clipboardData?.items;
+		if (!items) return;
+		for (const item of items) {
+			if (item.type.startsWith('image/')) {
+				const file = item.getAsFile();
+				if (file) {
+					try {
+						const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
+						const storage = getStorage();
+						const fileRef = ref(storage, `tierlist-items/${Date.now()}_${file.name}`);
+						await uploadBytes(fileRef, file);
+						const url = await getDownloadURL(fileRef);
+						const newItem: TierItem = {
+							id: `item_${crypto.randomUUID()}`,
+							text: file.name,
+							image: url,
+							type: 'image',
+							position: createItemPosition(targetTierId || undefined)
+						};
+						addItemToLocation(newItem);
+						closeAddItemModal();
+					} catch (err) {
+						addToast('Image paste upload failed. Please try again.', 'error');
+					}
+				}
+			}
+		}
 	}
 
-	function addSearchResult(result: any) {
-	   const newItem: TierItem = {
-		   id: `item_${crypto.randomUUID()}`,
+	function addSearchResult(result: { url: string; title: string; snippet?: string }) {
+		const newItem: TierItem = {
+			id: `item_${crypto.randomUUID()}`,
 			text: searchQuery.trim() || result.title,
-			image: result.fullUrl || result.url,
+			image: result.url,
 			type: 'search',
 			position: createItemPosition(targetTierId || undefined)
 		};
@@ -772,15 +1047,6 @@
 	async function searchImages(reset = true) {
 		if (!searchQuery.trim()) return;
 
-		console.log('searchImages called', {
-			reset,
-			searchQuery,
-			searchPage,
-			hasMoreResults,
-			loadingMore,
-			searching
-		});
-
 		if (reset) {
 			searching = true;
 			searchResults = [];
@@ -791,20 +1057,17 @@
 		}
 
 		try {
-			// Calculate proper start index for pagination
-			const startIndex = reset ? 1 : searchPage * 10 + 1;
-			const results = await searchGoogleImages(searchQuery, 10, startIndex);
-			const newResults = results.map((result) => ({
-				url:
-					result.image && typeof result.image === 'object' && (result.image as any).thumbnailLink
-						? (result.image as any).thumbnailLink
-						: result.link,
-				fullUrl: result.link,
-				title: result.title,
-				snippet: result.snippet,
-				id: `${searchQuery}-${startIndex}-${result.title}`
-			}));
-
+			const results = await searchForImages(searchQuery);
+			let newResults: { url: string; title: string; snippet?: string }[] = [];
+			if (Array.isArray(results)) {
+				newResults = results.map((result) => ({
+					url: result.url,
+					fullUrl: result.url,
+					title: result.title,
+					snippet: result.snippet,
+					id: `${searchQuery}-${searchPage}-${result.title}`
+				}));
+			}
 			if (reset) {
 				searchResults = newResults;
 				searchPage = 1;
@@ -814,8 +1077,7 @@
 				searchResults = [...searchResults, ...uniqueNewResults];
 				searchPage++;
 			}
-
-			hasMoreResults = newResults.length === 10;
+			hasMoreResults = newResults.length > 0;
 		} catch (err) {
 			console.error('Search error:', err);
 			const fallbackStartIndex = reset ? 0 : searchResults.length;
@@ -826,7 +1088,6 @@
 				snippet: 'Fallback result',
 				id: `fallback-${searchQuery}-${fallbackStartIndex + i + 1}`
 			}));
-
 			if (reset) {
 				searchResults = fallbackResults;
 				searchPage = 1;
@@ -834,8 +1095,6 @@
 				searchResults = [...searchResults, ...fallbackResults];
 				searchPage++;
 			}
-
-			hasMoreResults = true;
 		} finally {
 			searching = false;
 			loadingMore = false;
@@ -843,14 +1102,7 @@
 	}
 
 	async function loadMoreImages() {
-		console.log('loadMoreImages called', {
-			loadingMore,
-			hasMoreResults,
-			searchQuery: searchQuery.trim(),
-			searchResultsLength: searchResults.length
-		});
 		if (!loadingMore && hasMoreResults && searchQuery.trim()) {
-			console.log('Loading more images...');
 			await searchImages(false);
 		}
 	}
@@ -869,10 +1121,23 @@
 				return;
 			}
 
-			const allItems = [
-				...tierList.unassignedItems,
-				...tierList.tiers.flatMap((tier) => tier.items)
-			];
+			// Collect all items from unassigned and tiers, but deduplicate by id
+			const itemMap = new Map();
+			// Add tier items first
+			for (const tier of tierList.tiers) {
+				for (const item of tier.items) {
+					if (item && item.id) {
+						itemMap.set(item.id, item);
+					}
+				}
+			}
+			// Add unassigned items only if not already present
+			for (const item of tierList.unassignedItems) {
+				if (item && item.id && !itemMap.has(item.id)) {
+					itemMap.set(item.id, item);
+				}
+			}
+			const allItems = Array.from(itemMap.values());
 
 			if (allItems.length === 0) {
 				error = 'Please add at least 1 item';
@@ -882,26 +1147,38 @@
 			const auth = getAuth();
 			const ownerId = auth.currentUser ? auth.currentUser.uid : null;
 			// Build placements array
-			const placements = tierList.tiers.flatMap((tier, tierIdx) =>
-				tier.items.map((item, itemIdx) => ({
+			const placements = tierList.tiers.flatMap((tier: { items: TierItem[] }, tierIdx: number) =>
+				tier.items.map((item: TierItem, itemIdx: number) => ({
 					item_id: item.id,
 					tier_position: tierIdx,
-					position: item.position,
-					size: item.size
+					...(item.position && { position: item.position }),
+					...(item.size && { size: item.size })
 				}))
 			);
 			const tierListData = {
 				title: tierList.title,
 				list_type: tierList.type,
-				banner_image: tierList.bannerImage,
-				tiers: tierList.tiers.map((tier, index) => ({
+				...(tierList.bannerImage && { banner_image: tierList.bannerImage }),
+				tiers: tierList.tiers.map((tier: Tier, index: number) => ({
 					name: tier.name,
 					position: index / tierList.tiers.length,
-					color: tier.color,
-					items: tier.items
+					color: tier.color
 				})),
-				items: allItems,
-				owner: ownerId
+				items: allItems.map((item) => ({
+					id: item.id,
+					text: item.text || item.name || '',
+					name: item.text || item.name || '',
+					...(item.url && { url: item.url }),
+					...(item.image && { image: item.image }),
+					...(item.type && { type: item.type }),
+					...(item.position && { position: item.position }),
+					...(item.size && { size: item.size })
+				})),
+				item_placements: placements,
+				owner: ownerId,
+				likes: 0,
+				forks: 0,
+				comments: 0
 			};
 			let newTierlistId;
 			if (auth.currentUser) {
@@ -923,10 +1200,15 @@
 				tierlistsArr.push({ id: newTierlistId, ...tierListData });
 				localStorage.setItem(LOCAL_STORAGE_TIERLISTS_KEY, JSON.stringify(tierlistsArr));
 			}
-			window.location.href = '/tierlists';
+			goto(`/tierlists/${newTierlistId}`);
 		} catch (err) {
-			error = 'Failed to create tier list';
 			console.error('Error creating tier list:', err);
+			if (err instanceof Error) {
+				error = `Failed to create tier list: ${err.message}`;
+			} else {
+				error = 'Failed to create tier list. Please try again.';
+			}
+			addToast('Failed to create tier list', 'error');
 		} finally {
 			creating = false;
 		}
@@ -936,9 +1218,9 @@
 		if (tierList.tiers.length <= 1)
 			return 'background: linear-gradient(to bottom, #2d7a2d, #7a2d2d);';
 
-		const colors = tierList.tiers.map((tier) => dimColor(tier.color, 0.6));
+		const colors = tierList.tiers.map((tier: { color: string }) => dimColor(tier.color, 0.6));
 		const gradientStops = colors
-			.map((color, index) => `${color} ${(index / (colors.length - 1)) * 100}%`)
+			.map((color: string, index: number) => `${color} ${(index / (colors.length - 1)) * 100}%`)
 			.join(', ');
 
 		return `background: linear-gradient(to bottom, ${gradientStops});`;
@@ -1020,7 +1302,7 @@
 		const maxFontSize = 32;
 
 		const textLength = item.text.length;
-		const avgCharWidth = 0.6; 
+		const avgCharWidth = 0.6;
 
 		const maxFontForWidth = (width * 0.9) / (textLength * avgCharWidth);
 		const maxFontForHeight = height * 0.4;
@@ -1057,12 +1339,60 @@
 
 		if (typeof window !== 'undefined') {
 			window.addEventListener('resize', handleResize);
+
+			// Load user profile and AI settings
+			if ($currentUser) {
+				getUserProfile($currentUser.uid)
+					.then((profile) => {
+						if (profile) {
+							userProfile = profile;
+							aiEnabled = profile.enableAI ?? true;
+						}
+					})
+					.catch((error) => {
+						console.error('Error loading user profile:', error);
+						aiEnabled = true; 
+					});
+			}
+
+			// Check for draft parameter in URL
+			const urlParams = new URLSearchParams(window.location.search);
+			const draftId = urlParams.get('draft');
+			const isForked = urlParams.get('forked');
+			const forkId = urlParams.get('fork');
+
+			if (draftId) {
+				loadDraftById(draftId);
+			} else if (isForked === 'true') {
+				// Load forked data as suggestions
+				loadForkedData();
+			} else if (forkId) {
+				// Handle direct fork by ID
+				loadTierlistForFork(forkId);
+			}
 		}
+
+		// Setup autosave
+		autosaveCleanup = createAutosaver(
+			() => ({
+				id: draftId,
+				title: tierList.title,
+				type: tierList.type,
+				bannerImage: tierList.bannerImage,
+				tiers: tierList.tiers,
+				unassignedItems: tierList.unassignedItems,
+				lastSaved: Date.now()
+			}),
+			() => tierList.title.trim() !== 'Untitled Tier List' && tierList.title.trim().length > 0
+		);
 
 		return () => {
 			document.body.style.overflow = 'auto';
 			if (typeof window !== 'undefined') {
 				window.removeEventListener('resize', handleResize);
+			}
+			if (autosaveCleanup) {
+				autosaveCleanup();
 			}
 		};
 	});
@@ -1074,14 +1404,14 @@
 	>
 </svelte:head>
 <div class="fixed inset-0 flex flex-col bg-black text-white">
-	<!-- Banner background -->
+	<!-- Banner-->
 	{#if tierList.bannerImage}
 		<div
 			class="pointer-events-none absolute inset-0 z-0"
 			style="background: url('{tierList.bannerImage}') center/cover no-repeat; filter: blur(12px) brightness(0.5);"
 		></div>
 	{/if}
-	<!-- Header (single line) -->
+	<!-- Header -->
 	<div
 		class="relative z-10 flex min-h-[56px] items-center justify-between border-b border-gray-700 bg-black/80 px-6 py-4"
 		in:fade={{ duration: 400 }}
@@ -1116,7 +1446,7 @@
 				{/if}
 				<!-- Banner upload button -->
 				<label
-					class="ml-4 flex cursor-pointer items-center gap-2 rounded bg-gray-800 px-2 py-1 transition-colors hover:bg-gray-700"
+					class="ml-4 flex cursor-pointer items-center gap-2 bg-gray-800 px-2 py-1 transition-colors hover:bg-gray-700"
 					title="Upload banner image"
 				>
 					<span class="material-symbols-outlined text-lg text-orange-400">image</span>
@@ -1138,13 +1468,13 @@
 								tierList.bannerImage = url;
 							} catch (err) {
 								console.error('Banner upload failed:', err);
-								alert('Banner upload failed. Please try again.');
+								addToast('Banner upload failed. Please try again.', 'error');
 							}
 						}}
 					/>
 				</label>
 				{#if tierList.bannerImage}
-					<div class="relative ml-2 h-12 w-24 overflow-hidden rounded shadow">
+					<div class="relative ml-2 h-12 w-24 overflow-hidden shadow">
 						<img
 							src={tierList.bannerImage}
 							alt="Banner Preview"
@@ -1155,7 +1485,7 @@
 				{/if}
 				{#if !$currentUser}
 					<button
-						class="ml-4 flex items-center gap-2 rounded border border-gray-300 bg-white px-4 py-2 shadow transition-colors hover:bg-gray-100"
+						class="ml-4 flex items-center gap-2 border border-gray-300 bg-white px-4 py-2 shadow transition-colors hover:bg-gray-100"
 						on:click={signInWithGoogle}
 					>
 						<img
@@ -1169,26 +1499,34 @@
 			</div>
 			<!-- Suggestions, mode toggle, POST button -->
 			<div class="flex flex-1 items-center justify-end gap-4">
-				{#if fetchingSuggestions}
-					<span class="ml-4 animate-pulse text-xs text-blue-400" in:fade={{ duration: 300 }}>
-						Fetching suggestions...
-					</span>
-				{:else if suggestedItems.length === 0 && tierList.title}
-					{#if tierList.title === 'Untitled Tier List'}
-						<span class="ml-4 cursor-pointer text-xs text-white" in:fade={{ duration: 300 }}>
-							Change the title to view AI suggestions
+				{#if aiEnabled}
+					{#if fetchingSuggestions}
+						<span class="ml-4 animate-pulse text-xs text-blue-400" in:fade={{ duration: 300 }}>
+							Fetching suggestions...
 						</span>
-					{:else}
-						<button
-							type="button"
-							class="ml-4 cursor-pointer border-0 bg-transparent p-0 text-xs text-orange-400"
-							on:click={() => (showGeminiDebugModal = true)}
-							in:fade={{ duration: 300 }}>No suggestions found</button
-						>
+					{:else if suggestedItems.length === 0 && tierList.title}
+						{#if tierList.title === 'Untitled Tier List'}
+							<span class="ml-4 cursor-pointer text-xs text-white" in:fade={{ duration: 300 }}>
+								Change the title to view AI suggestions
+							</span>
+						{:else}
+							<button
+								type="button"
+								class="ml-4 cursor-pointer border-0 bg-transparent p-0 text-xs text-orange-400"
+								on:click={() => (showGeminiDebugModal = true)}
+								in:fade={{ duration: 300 }}>No suggestions found</button
+							>
+						{/if}
+					{:else if suggestedItems.length > 0}
+						<span class="ml-4 text-xs text-green-400" in:fade={{ duration: 300 }}>
+							Suggestions ready
+						</span>
 					{/if}
-				{:else if suggestedItems.length > 0}
-					<span class="ml-4 text-xs text-green-400" in:fade={{ duration: 300 }}>
-						Suggestions ready
+				{/if}
+				<!-- Draft autosave indicator -->
+				{#if tierList.title.trim() !== 'Untitled Tier List' && tierList.title.trim().length > 0}
+					<span class="ml-4 text-xs text-blue-400" title="Draft automatically saved">
+						💾 Auto-saved
 					</span>
 				{/if}
 				<!-- Mode Toggle -->
@@ -1230,18 +1568,40 @@
 						on:click={saveTierList}
 						disabled={creating}
 					>
-						{creating ? 'POSTING...' : 'POST'}
+						{creating ? 'PUBLISHING...' : 'PUBLISH'}
+					</button>
+				{:else}
+					<button
+						class="bg-gray-600 px-6 py-2 font-bold text-white transition-colors hover:bg-gray-700 disabled:opacity-50"
+						on:click={saveTierList}
+						disabled={creating}
+						title="Creates a local tier list - sign in to publish publicly"
+					>
+						{creating ? 'CREATING...' : 'CREATE LOCALLY'}
 					</button>
 				{/if}
 			</div>
 		</div>
 	</div>
 	{#if error}
-		<div class="mx-6 mt-4 rounded border border-red-700 bg-red-900 px-4 py-3 text-red-200">
+		<div class="mx-6 mt-4 border border-red-700 bg-red-900 px-4 py-3 text-red-200">
 			{error}
 		</div>
 	{/if}
-	<!-- Main Tier List Display (fills remaining space) -->
+
+	{#if !$currentUser}
+		<div class="mx-6 mt-4 border border-blue-700 bg-blue-900 px-4 py-3 text-blue-200">
+			<div class="flex items-center gap-2">
+				<span class="material-symbols-outlined text-lg">info</span>
+				<span>
+					You can create tier lists without signing in, but they'll only be saved locally on your
+					device.
+					<strong>Sign in to publish and share your creations publicly!</strong>
+				</span>
+			</div>
+		</div>
+	{/if}
+	<!-- Main Tier List Display -->
 	<div class="flex min-h-0 w-full flex-1 flex-col">
 		{#if tierList.type === 'classic'}
 			<!-- Classic Mode -->
@@ -1256,12 +1616,15 @@
 						<div
 							class="relative flex-1 cursor-pointer p-6 transition-colors"
 							on:click={(e) => openAddItemModal(tier.id, null, e)}
-							on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && openAddItemModal(tier.id)}
+							on:keydown={(e) =>
+								(e.key === 'Enter' || e.key === ' ') && openAddItemModal(tier.id, null, e)}
 							role="button"
 							tabindex="0"
 						>
 							<!-- Tier Controls -->
-							<div class="group absolute top-0 right-4 flex h-full w-64 items-center justify-end">
+							<div
+								class="group absolute top-0 right-4 z-20 flex h-full w-64 items-center justify-end"
+							>
 								<div class="flex flex-col items-end space-y-3" style="color: {tier.color};">
 									<!-- Tier Title -->
 									<input
@@ -1278,7 +1641,7 @@
 									>
 										{#each [{ icon: 'add', action: () => openAddItemModal(tier.id), title: 'Add item' }, { icon: 'settings', action: () => openColorPicker(tier.id), title: 'Settings' }, { icon: 'keyboard_arrow_down', action: () => addTierAtPosition(index + 1), title: 'Add tier below' }, { icon: 'keyboard_arrow_up', action: () => addTierAtPosition(index), title: 'Add tier above' }] as control}
 											<button
-												class="hover:bg-opacity-20 flex h-8 w-8 items-center justify-center rounded transition-colors hover:bg-black"
+												class="hover:bg-opacity-20 flex h-8 w-8 items-center justify-center transition-colors hover:bg-black"
 												style="color: {tier.color};"
 												on:click|stopPropagation={control.action}
 												title={control.title}
@@ -1288,7 +1651,7 @@
 										{/each}
 										{#if tierList.tiers.length > 1}
 											<button
-												class="hover:bg-opacity-20 flex h-8 w-8 items-center justify-center rounded transition-colors hover:bg-black"
+												class="hover:bg-opacity-20 flex h-8 w-8 items-center justify-center transition-colors hover:bg-black"
 												style="color: {tier.color};"
 												on:click|stopPropagation={() => removeTier(tier.id)}
 												title="Remove tier"
@@ -1315,7 +1678,7 @@
 											{#if isDragging}
 												<!-- Empty tier drop zone -->
 												<div
-													class="flex flex-1 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-gray-400 bg-gray-800/40 transition-colors hover:border-orange-400 hover:bg-orange-900/10"
+													class="flex flex-1 cursor-pointer items-center justify-center border-2 border-dashed border-gray-400 bg-gray-800/40 transition-colors hover:border-orange-400 hover:bg-orange-900/10"
 													style="height: {itemsStyle.itemHeight}; min-width: 120px;"
 													on:dragover={(e) => handleDragOver(e, tier.id, 0)}
 													on:drop={(e) => handleDrop(e, tier.id, 0)}
@@ -1328,7 +1691,7 @@
 										{:else}
 											{#each tier.items as item, idx (item.id)}
 												<div
-													class="group/item relative cursor-pointer overflow-hidden rounded-lg shadow-sm transition-shadow hover:shadow-lg"
+													class="group/item relative cursor-pointer overflow-hidden shadow-sm transition-shadow hover:shadow-lg"
 													style="
 														{item.image
 														? `background-image: url('${item.image}'); background-size: cover; background-position: center;`
@@ -1365,7 +1728,7 @@
 													{/if}
 													<!-- Delete button -->
 													<button
-														class="absolute top-1 right-1 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white opacity-0 transition-opacity group-hover/item:opacity-100 hover:bg-red-600"
+														class="absolute top-1 right-1 z-20 flex h-6 w-6 items-center justify-center bg-red-500 text-white opacity-0 transition-opacity group-hover/item:opacity-100 hover:bg-red-600"
 														on:click|stopPropagation={() => deleteItem(item.id)}
 														title="Delete item"
 													>
@@ -1375,7 +1738,7 @@
 														<div class="absolute inset-0 z-10 flex items-center justify-center p-2">
 															<input
 																id="inline-edit-{item.id}"
-																class="w-full rounded border border-white/30 bg-black/50 px-2 py-1 text-center text-sm font-medium text-white outline-none"
+																class="w-full border border-white/30 bg-black/50 px-2 py-1 text-center text-sm font-medium text-white outline-none"
 																bind:value={inlineEditText}
 																on:blur={finishInlineEdit}
 																on:keydown={(e) => {
@@ -1402,7 +1765,7 @@
 											{#if isDragging}
 												<!-- End drop zone -->
 												<div
-													class="flex min-h-20 flex-1 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-gray-400 bg-gray-800/40 transition-colors hover:border-orange-400 hover:bg-orange-900/10"
+													class="flex min-h-20 flex-1 cursor-pointer items-center justify-center border-2 border-dashed border-gray-400 bg-gray-800/40 transition-colors hover:border-orange-400 hover:bg-orange-900/10"
 													style="
 														height: {itemsStyle.itemHeight};
 														min-width: 120px;
@@ -1442,9 +1805,9 @@
 						const rect = e.currentTarget.getBoundingClientRect();
 						const x = (e.clientX - rect.left) / rect.width;
 						const y = (e.clientY - rect.top) / rect.height;
-						openAddItemModal(null, y);
+						openAddItemModal(null, y, e);
 					}}
-					on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && openAddItemModal(null, 0.5)}
+					on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && openAddItemModal(null, 0.5, e)}
 					on:dragover={(e) => {
 						e.preventDefault();
 						if (tierList.type === 'dynamic' && draggedItem) {
@@ -1471,7 +1834,7 @@
 						>
 							<!-- Tier Controls -->
 							<div
-								class="group pointer-events-auto absolute top-0 right-4 flex h-full w-64 items-center justify-end"
+								class="group pointer-events-auto absolute top-0 right-4 z-20 flex h-full w-64 items-center justify-end"
 							>
 								<div class="flex flex-col items-end space-y-3" style="color: {tier.color};">
 									<input
@@ -1487,7 +1850,7 @@
 									>
 										{#each [{ icon: 'add', action: () => openAddItemModal(tier.id), title: 'Add item' }, { icon: 'settings', action: () => openColorPicker(tier.id), title: 'Settings' }, { icon: 'keyboard_arrow_down', action: () => addTierAtPosition(index + 1), title: 'Add tier below' }, { icon: 'keyboard_arrow_up', action: () => addTierAtPosition(index), title: 'Add tier above' }] as control}
 											<button
-												class="hover:bg-opacity-20 flex h-8 w-8 items-center justify-center rounded transition-colors hover:bg-black"
+												class="hover:bg-opacity-20 flex h-8 w-8 items-center justify-center transition-colors hover:bg-black"
 												style="color: {tier.color};"
 												on:click|stopPropagation={control.action}
 												title={control.title}
@@ -1497,7 +1860,7 @@
 										{/each}
 										{#if tierList.tiers.length > 1}
 											<button
-												class="hover:bg-opacity-20 flex h-8 w-8 items-center justify-center rounded transition-colors hover:bg-black"
+												class="hover:bg-opacity-20 flex h-8 w-8 items-center justify-center transition-colors hover:bg-black"
 												style="color: {tier.color};"
 												on:click|stopPropagation={() => removeTier(tier.id)}
 												title="Remove tier"
@@ -1512,7 +1875,7 @@
 					{/each}
 
 					<!-- All Dynamic Items -->
-					{#each [...tierList.unassignedItems, ...tierList.tiers.flatMap( (tier, tierIndex) => tier.items.map( (item) => ({ ...item, _defaultY: (tierIndex + 0.5) / tierList.tiers.length }) ) )] as item, i (item.id)}
+					{#each [...tierList.unassignedItems, ...tierList.tiers.flatMap( (tier: Tier, tierIndex: number) => tier.items.map( (item: TierItem) => ({ ...item, _defaultY: (tierIndex + 0.5) / tierList.tiers.length }) ) )] as item, i (item.id)}
 						{@const x = item.position?.x ?? 0.1 + (i % 8) * 0.1}
 						{@const y = item.position?.y ?? (item as any)._defaultY ?? 0.5}
 						{@const isEditing = editingItemId === item.id}
@@ -1521,7 +1884,7 @@
 
 						<!-- svelte-ignore a11y-no-static-element-interactions -->
 						<div
-							class="group/item absolute -translate-x-1/2 -translate-y-1/2 transform cursor-pointer overflow-hidden rounded-lg shadow-lg transition-all hover:shadow-xl {isDragged
+							class="group/item absolute -translate-x-1/2 -translate-y-1/2 transform cursor-pointer overflow-hidden shadow-lg transition-all hover:shadow-xl {isDragged
 								? 'opacity-50'
 								: ''}"
 							style="left: {x * 100}%; top: {y *
@@ -1549,7 +1912,7 @@
 
 							<!-- Delete button -->
 							<button
-								class="absolute top-1 right-1 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white opacity-0 transition-opacity group-hover/item:opacity-100 hover:bg-red-600"
+								class="absolute top-1 right-1 z-20 flex h-6 w-6 items-center justify-center bg-red-500 text-white opacity-0 transition-opacity group-hover/item:opacity-100 hover:bg-red-600"
 								on:click|stopPropagation={() => deleteItem(item.id)}
 								title="Delete item"
 							>
@@ -1568,7 +1931,7 @@
 								<div class="absolute inset-0 z-10 flex items-center justify-center p-2">
 									<input
 										id="inline-edit-{item.id}"
-										class="w-full rounded border border-white/30 bg-black/50 px-2 py-1 text-center text-sm font-medium text-white outline-none"
+										class="w-full border border-white/30 bg-black/50 px-2 py-1 text-center text-sm font-medium text-white outline-none"
 										bind:value={inlineEditText}
 										on:blur={finishInlineEdit}
 										on:keydown={(e) => {
@@ -1578,7 +1941,7 @@
 									/>
 								</div>
 							{:else if item.type === 'text' && !item.image}
-								<!-- Text items - centered text with responsive sizing -->
+								<!-- Text items -->
 								<div class="absolute inset-0 z-10 flex items-center justify-center p-2">
 									<div
 										class="text-center text-sm leading-tight font-medium text-white"
@@ -1588,7 +1951,7 @@
 									</div>
 								</div>
 							{:else}
-								<!-- Image items - text in bottom right -->
+								<!-- Image items -->
 								<div class="absolute right-1 bottom-1 z-10">
 									<div
 										class="text-right text-xs leading-tight font-medium text-white drop-shadow-lg"
@@ -1600,11 +1963,11 @@
 						</div>
 					{/each}
 
-					{#if tierList.unassignedItems.length === 0 && tierList.tiers.every((t) => t.items.length === 0)}
+					{#if tierList.unassignedItems.length === 0 && tierList.tiers.every((t: Tier) => t.items.length === 0)}
 						<div
 							class="pointer-events-none absolute inset-0 flex items-center justify-center text-white"
 						>
-							<div class="bg-opacity-30 rounded-lg bg-black p-6 text-center">
+							<div class="bg-opacity-30 bg-black p-6 text-center">
 								<div class="mb-2 text-3xl opacity-60">+</div>
 								<div class="opacity-80">Click anywhere to add your first item</div>
 							</div>
@@ -1626,7 +1989,7 @@
 			tabindex="-1"
 		></div>
 		<div
-			class="fixed z-50 min-w-48 rounded-lg border border-gray-600 bg-gray-800 py-2 shadow-lg"
+			class="fixed z-50 min-w-48 border border-gray-600 bg-gray-800 py-2 shadow-lg"
 			style="left: {contextMenuX}px; top: {contextMenuY}px;"
 		>
 			<!-- Main Actions -->
@@ -1647,7 +2010,6 @@
 							closeContextMenu();
 						} }, { icon: 'swap_horiz', text: 'Change Type', action: () => {
 						if (!contextMenuItem) return;
-						// Cycle type: text -> image -> search -> text
 						let nextType: 'text' | 'image' | 'search';
 						if (contextMenuItem.type === 'text') nextType = 'image';
 						else if (contextMenuItem.type === 'image') nextType = 'search';
@@ -1703,7 +2065,7 @@
 	<!-- Add Item Modal -->
 	{#if showAddItemModal}
 		<div
-			class="fixed z-50 rounded-lg border border-gray-800 bg-black shadow-2xl"
+			class="fixed z-50 border border-gray-800 bg-black shadow-2xl"
 			style="left: {addItemModalX}px; top: {addItemModalY}px; min-width: 320px; max-width: 95vw; width: auto;"
 			role="dialog"
 			aria-modal="true"
@@ -1721,29 +2083,19 @@
 					highlightedAISuggestionIdx = Math.max(highlightedAISuggestionIdx - 1, 0);
 					e.preventDefault();
 				}
-				if (e.key === 'Enter' && newItemText.trim()) {
-					if (e.repeat) return;
-					if (highlightedAISuggestionIdx >= 0 && filteredAISuggestions.length > 0) {
-						addSuggestedItem(filteredAISuggestions[highlightedAISuggestionIdx]);
-					} else if (highlightedImageIdx >= 0 && searchResults.length > 0) {
-						addSearchResult(searchResults[highlightedImageIdx]);
-					} else {
-						addTextItem();
-					}
-				}
 			}}
 		>
 			<div class="flex w-auto max-w-[95vw] min-w-[320px] flex-col items-stretch p-4">
 				<!-- AI Suggestions -->
-				{#if filteredAISuggestions.length > 0}
+				{#if aiEnabled && filteredAISuggestions.length > 0}
 					<div class="mb-3">
 						<div class="mb-1 text-xs text-gray-400">Suggestions</div>
 						<div
 							class="flex max-h-32 max-w-[420px] flex-wrap gap-2 overflow-x-hidden overflow-y-auto pr-2"
 						>
-							{#each filteredAISuggestions as suggestion, idx (suggestion.name)}
+							{#each filteredAISuggestions as suggestion, idx (`${suggestion.name}-${idx}`)}
 								<button
-									class="animate-fadein-suggestion translate-y-2 rounded bg-gray-800 px-3 py-1 text-sm text-white opacity-0 transition-colors hover:bg-orange-500 focus:outline-none {highlightedAISuggestionIdx ===
+									class="animate-fadein-suggestion translate-y-2 bg-gray-800 px-3 py-1 text-sm text-white opacity-0 transition-colors hover:bg-orange-500 focus:outline-none {highlightedAISuggestionIdx ===
 									idx
 										? 'ring-2 ring-orange-500'
 										: ''}"
@@ -1758,7 +2110,7 @@
 										<img
 											src={prefetchedImages[suggestion.name]}
 											alt={suggestion.name}
-											class="ml-2 inline-block h-5 w-5 rounded object-cover"
+											class="ml-2 inline-block h-5 w-5 object-cover"
 										/>
 									{/if}
 								</button>
@@ -1771,7 +2123,7 @@
 				<div class="flex items-center gap-2">
 					<input
 						id="quick-add-input"
-						class="flex-1 rounded-lg border border-gray-600 bg-[#191919] px-4 py-3 text-white placeholder-gray-400 focus:ring-2 focus:ring-orange-500 focus:outline-none"
+						class="flex-1 border border-gray-600 bg-[#191919] px-4 py-3 text-white placeholder-gray-400 focus:ring-2 focus:ring-orange-500 focus:outline-none"
 						type="text"
 						bind:value={newItemText}
 						placeholder="Type to add item or search images..."
@@ -1801,9 +2153,7 @@
 									addTextItem();
 								}
 							}
-							if (e.key === 'Escape') {
-								closeAddItemModal();
-							}
+							if (e.key === 'Escape') closeAddItemModal();
 							if (e.key === 'ArrowDown' && filteredAISuggestions.length > 0) {
 								highlightedAISuggestionIdx = Math.min(
 									highlightedAISuggestionIdx + 1,
@@ -1817,17 +2167,18 @@
 							}
 						}}
 						aria-label="Add item or search images"
+						on:paste={handlePasteImage}
 					/>
 					<label
-						class="flex h-10 w-10 cursor-pointer items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
+						class="flex h-10 w-10 cursor-pointer items-center justify-center text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
 						title="Upload Image"
-						for="bannerImageInput"
+						on:click={() => document.getElementById('add-modal-file-input')?.click()}
 					>
 						<span class="material-symbols-outlined text-lg">upload</span>
-						<input type="file" accept="image/*" class="hidden" on:change={handleFileUpload} />
+						<input id="add-modal-file-input" type="file" accept="image/*" class="hidden" on:change={handleFileUpload} />
 					</label>
 					<button
-						class="flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
+						class="flex h-8 w-8 items-center justify-center text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
 						on:click={closeAddItemModal}
 						title="Close"
 						tabindex="0"
@@ -1845,7 +2196,7 @@
 						>
 							{#each searchResults as result, idx}
 								<button
-									class="group animate-fadein-image overflow-hidden rounded-lg border border-gray-600 opacity-0 transition-colors hover:border-orange-400 hover:bg-gray-700 focus:outline-none {highlightedImageIdx ===
+									class="group animate-fadein-image overflow-hidden border border-gray-600 opacity-0 transition-colors hover:border-orange-400 hover:bg-gray-700 focus:outline-none {highlightedImageIdx ===
 									idx
 										? 'ring-2 ring-orange-500'
 										: ''}"
@@ -1874,19 +2225,16 @@
 							{#if searching && searchResults.length === 0}
 								{#each Array(6) as _, i}
 									<div
-										class="animate-pulse overflow-hidden rounded-lg border border-gray-600"
+										class="animate-pulse overflow-hidden border border-gray-600"
 										style="animation-delay: {i * 0.1}s"
 									>
 										<div class="aspect-square bg-gray-700"></div>
 										<div class="p-2">
 											<div
-												class="mb-1 h-3 rounded bg-gray-700"
+												class="mb-1 h-3 bg-gray-700"
 												style="width: {60 + Math.random() * 30}%"
 											></div>
-											<div
-												class="h-2 rounded bg-gray-600"
-												style="width: {40 + Math.random() * 40}%"
-											></div>
+											<div class="h-2 bg-gray-600" style="width: {40 + Math.random() * 40}%"></div>
 										</div>
 									</div>
 								{/each}
@@ -1896,9 +2244,7 @@
 				{/if}
 				{#if searching}
 					<div class="mt-2 flex items-center space-x-2 text-gray-400">
-						<div
-							class="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-orange-500"
-						></div>
+						<div class="h-4 w-4 animate-spin border-2 border-gray-400 border-t-orange-500"></div>
 						<span class="text-sm">Searching...</span>
 					</div>
 				{/if}
@@ -1916,16 +2262,12 @@
 				<div class="text-sm text-gray-400">Search Results</div>
 				{#if searching}
 					<div class="flex items-center space-x-2 text-blue-400">
-						<div
-							class="h-3 w-3 animate-spin rounded-full border-2 border-blue-400 border-t-transparent"
-						></div>
+						<div class="h-3 w-3 animate-spin border-2 border-blue-400 border-t-transparent"></div>
 						<span class="text-xs">Searching...</span>
 					</div>
 				{:else if loadingMore}
 					<div class="flex items-center space-x-2 text-blue-400">
-						<div
-							class="h-3 w-3 animate-spin rounded-full border-2 border-blue-400 border-t-transparent"
-						></div>
+						<div class="h-3 w-3 animate-spin border-2 border-blue-400 border-t-transparent"></div>
 						<span class="text-xs">Loading more...</span>
 					</div>
 				{:else if searchResults.length > 0}
@@ -1947,18 +2289,7 @@
 						const isNearBottom =
 							target.scrollTop + target.clientHeight >= target.scrollHeight - scrollThreshold;
 
-						console.log('Scroll event:', {
-							scrollTop: target.scrollTop,
-							clientHeight: target.clientHeight,
-							scrollHeight: target.scrollHeight,
-							isNearBottom,
-							loadingMore,
-							hasMoreResults,
-							searchResultsLength: searchResults.length
-						});
-
 						if (isNearBottom) {
-							console.log('Triggering load more images...');
 							loadMoreImages();
 						}
 					}
@@ -1970,7 +2301,7 @@
 				>
 					{#each searchResults as result}
 						<button
-							class="group overflow-hidden rounded-lg border border-gray-600 transition-colors hover:border-orange-400 hover:bg-gray-700"
+							class="group overflow-hidden border border-gray-600 transition-colors hover:border-orange-400 hover:bg-gray-700"
 							on:click={() => addSearchResult(result)}
 							title={result.title}
 						>
@@ -1995,19 +2326,13 @@
 					{#if searching && searchResults.length === 0}
 						{#each Array(10) as _, i}
 							<div
-								class="animate-pulse overflow-hidden rounded-lg border border-gray-600"
+								class="animate-pulse overflow-hidden border border-gray-600"
 								style="animation-delay: {i * 0.1}s"
 							>
 								<div class="aspect-square bg-gray-700"></div>
 								<div class="p-2">
-									<div
-										class="mb-1 h-3 rounded bg-gray-700"
-										style="width: {60 + Math.random() * 30}%"
-									></div>
-									<div
-										class="h-2 rounded bg-gray-600"
-										style="width: {40 + Math.random() * 40}%"
-									></div>
+									<div class="mb-1 h-3 bg-gray-700" style="width: {60 + Math.random() * 30}%"></div>
+									<div class="h-2 bg-gray-600" style="width: {40 + Math.random() * 40}%"></div>
 								</div>
 							</div>
 						{/each}
@@ -2017,19 +2342,13 @@
 					{#if loadingMore && searchResults.length > 0}
 						{#each Array(6) as _, i}
 							<div
-								class="animate-pulse overflow-hidden rounded-lg border border-gray-600"
+								class="animate-pulse overflow-hidden border border-gray-600"
 								style="animation-delay: {i * 0.1}s"
 							>
 								<div class="aspect-square bg-gray-700"></div>
 								<div class="p-2">
-									<div
-										class="mb-1 h-3 rounded bg-gray-700"
-										style="width: {60 + Math.random() * 30}%"
-									></div>
-									<div
-										class="h-2 rounded bg-gray-600"
-										style="width: {40 + Math.random() * 40}%"
-									></div>
+									<div class="mb-1 h-3 bg-gray-700" style="width: {60 + Math.random() * 30}%"></div>
+									<div class="h-2 bg-gray-600" style="width: {40 + Math.random() * 40}%"></div>
 								</div>
 							</div>
 						{/each}
@@ -2040,7 +2359,7 @@
 				{#if searchResults.length > 0 && hasMoreResults && !loadingMore}
 					<div class="mt-4 text-center">
 						<button
-							class="rounded-lg bg-gray-700 px-4 py-2 text-sm text-gray-300 transition-colors hover:bg-gray-600"
+							class="bg-gray-700 px-4 py-2 text-sm text-gray-300 transition-colors hover:bg-gray-600"
 							on:click={loadMoreImages}
 						>
 							Load More Images
@@ -2055,9 +2374,7 @@
 	{#if addItemType === 'search' && searching}
 		<div class="border-t border-gray-600 p-4 text-center">
 			<div class="inline-flex items-center space-x-2 text-gray-400">
-				<div
-					class="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-orange-500"
-				></div>
+				<div class="h-4 w-4 animate-spin border-2 border-gray-400 border-t-orange-500"></div>
 				<span class="text-sm">Searching...</span>
 			</div>
 		</div>
@@ -2065,10 +2382,10 @@
 
 	<!-- Color Picker Modal -->
 	{#if showColorPicker && colorPickerTierId}
-		{@const currentTier = tierList.tiers.find((t) => t.id === colorPickerTierId)}
+		{@const currentTier = tierList.tiers.find((t: Tier) => t.id === colorPickerTierId)}
 		{#if currentTier}
 			<div class="bg-opacity-75 fixed inset-0 z-50 flex items-center justify-center bg-black">
-				<div class="w-full max-w-md rounded-lg border border-gray-600 bg-gray-800 p-6">
+				<div class="w-full max-w-md border border-gray-600 bg-gray-800 p-6">
 					<div class="mb-6 flex items-center justify-between">
 						<h2 class="text-xl font-bold text-white">Tier Settings</h2>
 						<button
@@ -2087,7 +2404,7 @@
 						>
 						<input
 							id="tier-name-input"
-							class="w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 text-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-orange-500 focus:outline-none"
+							class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-orange-500 focus:outline-none"
 							type="text"
 							bind:value={currentTier.name}
 							placeholder="Enter tier name..."
@@ -2100,8 +2417,7 @@
 						<div class="mb-4 grid grid-cols-5 gap-3">
 							{#each tierColors as color}
 								<button
-									class="h-12 w-12 rounded-lg border-2 transition-colors {currentTier.color ===
-									color
+									class="h-12 w-12 border-2 transition-colors {currentTier.color === color
 										? 'border-white'
 										: 'border-gray-600 hover:border-white'}"
 									style="background-color: {color};"
@@ -2119,7 +2435,7 @@
 							<input
 								id="custom-color-input"
 								type="color"
-								class="h-12 w-full rounded-lg border border-gray-600 bg-gray-700"
+								class="h-12 w-full border border-gray-600 bg-gray-700"
 								bind:value={currentTier.color}
 								on:change={(e) => {
 									const target = e.target as HTMLInputElement;
@@ -2135,7 +2451,7 @@
 					<div class="space-y-3">
 						{#if tierList.tiers.length > 1}
 							<button
-								class="w-full rounded bg-red-600 px-4 py-2 font-bold text-white transition-colors hover:bg-red-700"
+								class="w-full bg-red-600 px-4 py-2 font-bold text-white transition-colors hover:bg-red-700"
 								on:click={() => {
 									if (colorPickerTierId) {
 										removeTier(colorPickerTierId);
@@ -2147,7 +2463,7 @@
 							</button>
 						{/if}
 						<button
-							class="w-full rounded bg-orange-500 px-4 py-2 font-bold text-white transition-colors hover:bg-orange-600"
+							class="w-full bg-orange-500 px-4 py-2 font-bold text-white transition-colors hover:bg-orange-600"
 							on:click={closeColorPicker}
 						>
 							Done
@@ -2161,7 +2477,7 @@
 	<!-- Item Editor Modal -->
 	{#if showItemEditor && editingItem}
 		<div class="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black">
-			<div class="mx-4 w-full max-w-md rounded-lg bg-gray-800 p-6 shadow-xl">
+			<div class="mx-4 w-full max-w-md bg-gray-800 p-6 shadow-xl">
 				<!-- Header -->
 				<div class="mb-6 flex items-center justify-between">
 					<h3 class="text-xl font-bold text-white">Edit Item</h3>
@@ -2183,7 +2499,7 @@
 						>
 						<input
 							id="item-text-input"
-							class="w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:ring-2 focus:ring-orange-500 focus:outline-none"
+							class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:ring-2 focus:ring-orange-500 focus:outline-none"
 							type="text"
 							bind:value={editingItem.text}
 							placeholder="Enter item text..."
@@ -2191,9 +2507,13 @@
 					</div>
 					<!-- Type Selector -->
 					<div>
-						<label class="mb-2 block text-sm font-medium text-gray-300">Item Type</label>
+						<label for="item-type-selector" class="mb-2 block text-sm font-medium text-gray-300">
+							Item Type
+							<span class="ml-1 text-xs text-gray-500">(change anytime)</span>
+						</label>
 						<select
-							class="w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 text-white focus:ring-2 focus:ring-orange-500 focus:outline-none"
+							id="item-type-selector"
+							class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white focus:ring-2 focus:ring-orange-500 focus:outline-none"
 							bind:value={editingItem.type}
 						>
 							<option value="text">Text</option>
@@ -2209,10 +2529,10 @@
 								<img
 									src={editingItem.image}
 									alt={editingItem.text}
-									class="h-16 w-16 rounded object-cover"
+									class="h-16 w-16 object-cover"
 								/>
 								<button
-									class="rounded bg-red-600 px-3 py-1 text-sm text-white transition-colors hover:bg-red-700"
+									class="bg-red-600 px-3 py-1 text-sm text-white transition-colors hover:bg-red-700"
 									on:click={() => {
 										if (editingItem) {
 											editingItem.image = undefined;
@@ -2231,7 +2551,7 @@
 							{editingItem.image ? 'Replace Image' : 'Add Image'}
 						</div>
 						<label
-							class="flex cursor-pointer flex-col items-center rounded-lg border-2 border-dashed border-gray-600 p-4 transition-colors hover:border-orange-400"
+							class="flex cursor-pointer flex-col items-center border-2 border-dashed border-gray-600 p-4 transition-colors hover:border-orange-400"
 						>
 							<span class="material-symbols-outlined mb-2 text-2xl text-gray-400">upload</span>
 							<div class="text-sm font-medium text-gray-300">Click to upload image</div>
@@ -2261,7 +2581,7 @@
 					>
 					<select
 						id="tier-select"
-						class="w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 text-white focus:ring-2 focus:ring-orange-500 focus:outline-none"
+						class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white focus:ring-2 focus:ring-orange-500 focus:outline-none"
 						on:change={(e) => {
 							const target = e.target as HTMLSelectElement;
 							if (editingItem) {
@@ -2280,7 +2600,7 @@
 			<!-- Action Buttons -->
 			<div class="mt-6 flex space-x-3">
 				<button
-					class="flex-1 rounded bg-red-600 px-4 py-2 font-bold text-white transition-colors hover:bg-red-700"
+					class="flex-1 bg-red-600 px-4 py-2 font-bold text-white transition-colors hover:bg-red-700"
 					on:click={() => {
 						if (editingItem) {
 							deleteItem(editingItem.id);
@@ -2290,7 +2610,7 @@
 					Delete Item
 				</button>
 				<button
-					class="flex-1 rounded bg-orange-500 px-4 py-2 font-bold text-white transition-colors hover:bg-orange-600"
+					class="flex-1 bg-orange-500 px-4 py-2 font-bold text-white transition-colors hover:bg-orange-600"
 					on:click={updateItem}
 				>
 					Save Changes
@@ -2303,7 +2623,7 @@
 <!-- Gemini Debug Modal -->
 {#if showGeminiDebugModal}
 	<div class="bg-opacity-80 fixed inset-0 z-50 flex items-center justify-center bg-black">
-		<div class="relative mx-4 w-full max-w-2xl rounded-lg bg-gray-900 p-8 shadow-2xl">
+		<div class="relative mx-4 w-full max-w-2xl bg-gray-900 p-8 shadow-2xl">
 			<button
 				class="absolute top-4 right-4 text-2xl text-gray-400 hover:text-white"
 				on:click={() => (showGeminiDebugModal = false)}
@@ -2315,15 +2635,17 @@
 			<div class="mb-6">
 				<div class="mb-2 text-sm font-semibold text-gray-300">Prompt Sent to Gemini:</div>
 				<pre
-					class="overflow-x-auto rounded bg-gray-800 p-4 text-xs whitespace-pre-wrap text-gray-200"
+					class="overflow-x-auto bg-gray-800 p-4 text-xs whitespace-pre-wrap text-gray-200"
 					style="max-height: 200px;">{lastGeminiPrompt}</pre>
 			</div>
 			<div>
 				<div class="mb-2 text-sm font-semibold text-gray-300">Raw Gemini Response:</div>
 				<pre
-					class="overflow-x-auto rounded bg-gray-800 p-4 text-xs whitespace-pre-wrap text-gray-200"
+					class="overflow-x-auto bg-gray-800 p-4 text-xs whitespace-pre-wrap text-gray-200"
 					style="max-height: 300px;">{lastGeminiRawResponse}</pre>
 			</div>
 		</div>
 	</div>
 {/if}
+
+<Toast />

@@ -1,100 +1,51 @@
-// api client for backend, will be replaced later with a proper url once hosted
+import { firebaseFallbackClient } from './firebase-fallback';
+
+export type {
+	PollCreate,
+	PollResponse,
+	VoteCreate,
+	PollStats,
+	TierCreate,
+	TierItem,
+	ItemPlacement,
+	TierListCreate,
+	TierListUpdate,
+	TierListResponse
+} from './types';
+
 const API_BASE_URL = 'http://localhost:8000';
-
-// Type definitions matching backend models
-export interface PollCreate {
-	title: string;
-	description?: string;
-	response_type: number;
-	options: string[];
-}
-
-export interface VoteCreate {
-	poll_id: string;
-	position: number;
-}
-
-export interface PollStats {
-	average: number;
-	std_dev: number;
-	total_votes: number;
-	vote_positions: number[];
-	average_2d?: [number, number];
-}
-
-export interface PollResponse {
-	id: string;
-	title: string;
-	description?: string;
-	response_type: number;
-	options: string[];
-	stats: PollStats;
-	user_vote?: number;
-	created_at: string;
-	gradients?: {
-		colors: string[];
-		enabled: boolean;
-	};
-}
-
-export interface TierCreate {
-	name: string;
-	position: number;
-	color?: string;
-	items?: TierItem[];
-}
-
-export interface TierItem {
-	id: string;
-	text: string;
-	image?: string;
-	type: 'text' | 'image' | 'search';
-	position?: { x: number; y: number };
-	size?: { width: number; height: number };
-	naturalSize?: { width: number; height: number };
-}
-
-export interface ItemPlacement {
-	item_id: string;
-	tier_position: number;
-	position?: { x: number; y: number };
-	size?: { width: number; height: number };
-}
-
-export interface TierListCreate {
-	title: string;
-	description?: string;
-	list_type?: 'classic' | 'dynamic';
-	tiers: TierCreate[];
-	items: TierItem[];
-}
-
-export interface TierListUpdate {
-	item_placements: ItemPlacement[];
-}
-
-export interface TierListResponse {
-	id: string;
-	title: string;
-	description?: string;
-	list_type: string;
-	tiers: TierCreate[];
-	items: TierItem[];
-	item_placements: ItemPlacement[];
-	created_at: string;
-	unassignedItems?: TierItem[];
-	owner_displayName?: string;
-	type?: string;
-}
 
 class ApiClient {
 	private baseUrl: string;
+	private isBackendAvailable: boolean | null = null;
 
 	constructor(baseUrl: string = API_BASE_URL) {
 		this.baseUrl = baseUrl;
 	}
 
+	private async checkBackendAvailability(): Promise<boolean> {
+		try {
+			const response = await fetch(`${this.baseUrl}/health`, {
+				method: 'GET',
+				headers: { 'Content-Type': 'application/json' },
+				signal: AbortSignal.timeout(5000) // 5 second timeout
+			});
+			return response.ok;
+		} catch (error) {
+			console.warn('Backend unavailable, using Firebase fallback:', error);
+			return false;
+		}
+	}
+
 	private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+		if (this.isBackendAvailable === null) {
+			this.isBackendAvailable = await this.checkBackendAvailability();
+		}
+
+		if (!this.isBackendAvailable) {
+			throw new Error('Backend unavailable - use Firebase fallback');
+		}
+
 		const url = `${this.baseUrl}${endpoint}`;
 		const config: RequestInit = {
 			headers: {
@@ -108,88 +59,161 @@ class ApiClient {
 			const response = await fetch(url, config);
 
 			if (!response.ok) {
+				if (response.status >= 500) {
+					this.isBackendAvailable = false;
+				}
 				const errorData = await response.json().catch(() => ({}));
 				throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
 			}
 
 			return await response.json();
 		} catch (error) {
-			console.error('API request failed:', error);
+			this.isBackendAvailable = false;
+			console.error('API request failed, marking backend unavailable:', error);
 			throw error;
 		}
 	}
 
-	// Health check
+
+
+
+
 	async healthCheck() {
-		return this.request('/health');
+		try {
+			return await this.request('/health');
+		} catch (error) {
+			return await firebaseFallbackClient.healthCheck();
+		}
 	}
 
-	// Polls API
-	async getPolls(): Promise<PollResponse[]> {
-		return this.request('/api/polls');
+
+
+
+	async getPolls(): Promise<import('./types').PollResponse[]> {
+		try {
+			return await this.request('/api/polls');
+		} catch (error) {
+			console.warn('Using Firebase fallback for getPolls');
+			return await firebaseFallbackClient.getPolls();
+		}
 	}
 
-	async getPoll(id: string): Promise<PollResponse> {
-		return this.request(`/api/polls/${id}`);
+	async getPoll(id: string): Promise<import('./types').PollResponse> {
+		try {
+			return await this.request(`/api/polls/${id}`);
+		} catch (error) {
+			console.warn('Using Firebase fallback for getPoll');
+			return await firebaseFallbackClient.getPoll(id);
+		}
 	}
 
-	async createPoll(poll: PollCreate): Promise<PollResponse> {
-		return this.request('/api/polls', {
-			method: 'POST',
-			body: JSON.stringify(poll)
-		});
+	async createPoll(poll: import('./types').PollCreate): Promise<import('./types').PollResponse> {
+		try {
+			return await this.request('/api/polls', {
+				method: 'POST',
+				body: JSON.stringify(poll)
+			});
+		} catch (error) {
+			console.warn('Using Firebase fallback for createPoll');
+			return await firebaseFallbackClient.createPoll(poll);
+		}
 	}
 
 	async vote(
 		pollId: string,
 		position: number,
-		additionalData?: VoteCreate | Record<string, unknown>
-	): Promise<PollResponse> {
-		const voteData = additionalData || { position };
-		return this.request(`/api/polls/${pollId}/vote`, {
-			method: 'POST',
-			body: JSON.stringify(voteData)
-		});
+		additionalData?: import('./types').VoteCreate | Record<string, unknown>
+	): Promise<import('./types').PollResponse> {
+		try {
+			const voteData = additionalData || { position };
+			return await this.request(`/api/polls/${pollId}/vote`, {
+				method: 'POST',
+				body: JSON.stringify(voteData)
+			});
+		} catch (error) {
+			console.warn('Using Firebase fallback for vote');
+			return await firebaseFallbackClient.vote(pollId, position, additionalData);
+		}
 	}
 
 	async deletePoll(pollId: string): Promise<void> {
-		return this.request(`/api/polls/${pollId}`, {
-			method: 'DELETE'
-		});
+		try {
+			return await this.request(`/api/polls/${pollId}`, {
+				method: 'DELETE'
+			});
+		} catch (error) {
+			console.warn('Using Firebase fallback for deletePoll');
+			return await firebaseFallbackClient.deletePoll(pollId);
+		}
 	}
 
-	// Tier Lists API
-	async getTierLists(): Promise<TierListResponse[]> {
-		return this.request('/api/tierlists');
+
+
+
+
+	async getTierLists(): Promise<import('./types').TierListResponse[]> {
+		try {
+			return await this.request('/api/tierlists');
+		} catch (error) {
+			console.warn('Using Firebase fallback for getTierLists');
+			return await firebaseFallbackClient.getTierLists();
+		}
 	}
 
-	async getTierList(id: string): Promise<TierListResponse> {
-		return this.request(`/api/tierlists/${id}`);
+	async getTierList(id: string): Promise<import('./types').TierListResponse> {
+		try {
+			console.log('API getTierList - trying main API first for ID:', id);
+			return await this.request(`/api/tierlists/${id}`);
+		} catch (error) {
+			console.warn('API getTierList - main API failed, using Firebase fallback for ID:', id);
+			console.warn('API error was:', error);
+			console.log('About to call firebaseFallbackClient.getTierList');
+			const result = await firebaseFallbackClient.getTierList(id);
+			console.log('API getTierList - Firebase fallback returned:', result);
+			return result;
+		}
 	}
 
-	async createTierList(tierList: TierListCreate): Promise<TierListResponse> {
-		return this.request('/api/tierlists', {
-			method: 'POST',
-			body: JSON.stringify(tierList)
-		});
+	async createTierList(
+		tierList: import('./types').TierListCreate
+	): Promise<import('./types').TierListResponse> {
+		try {
+			return await this.request('/api/tierlists', {
+				method: 'POST',
+				body: JSON.stringify(tierList)
+			});
+		} catch (error) {
+			console.warn('Using Firebase fallback for createTierList');
+			return await firebaseFallbackClient.createTierList(tierList);
+		}
 	}
 
 	async updateTierListPlacements(
 		tierListId: string,
-		update: TierListUpdate
-	): Promise<TierListResponse> {
-		return this.request(`/api/tierlists/${tierListId}/placements`, {
-			method: 'PUT',
-			body: JSON.stringify(update)
-		});
+		update: import('./types').TierListUpdate
+	): Promise<import('./types').TierListResponse> {
+		try {
+			return await this.request(`/api/tierlists/${tierListId}/placements`, {
+				method: 'PUT',
+				body: JSON.stringify(update)
+			});
+		} catch (error) {
+			console.warn('Using Firebase fallback for updateTierListPlacements');
+			return await firebaseFallbackClient.updateTierList(tierListId, update);
+		}
 	}
 
 	async deleteTierList(tierListId: string): Promise<void> {
-		return this.request(`/api/tierlists/${tierListId}`, {
-			method: 'DELETE'
-		});
+		try {
+			return await this.request(`/api/tierlists/${tierListId}`, {
+				method: 'DELETE'
+			});
+		} catch (error) {
+			console.warn('Delete tierlist not supported in Firebase fallback');
+			throw new Error('Delete tierlist operation requires backend server');
+		}
 	}
 }
 
 export const apiClient = new ApiClient();
-export default apiClient;
+export { apiClient as default };
