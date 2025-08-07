@@ -507,9 +507,9 @@
 		</div>
 		<h1 class="mb-4 text-2xl font-bold break-words">{title || 'UNTITLED TIER LIST'}</h1>
 
-<div class="mb-6 text-sm text-orange-300">
-	{formatDateSafe(tierListData?.created_at)}
-</div>
+		<div class="mb-6 text-sm text-orange-300">
+			{formatDateSafe(tierListData?.created_at)}
+		</div>
 
 		<!-- Tier List Statistics Section -->
 		{#if tierListData}

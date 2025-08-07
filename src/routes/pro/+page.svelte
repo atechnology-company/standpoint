@@ -9,8 +9,6 @@
 	let error = '';
 	let purchased = false;
 
-
-
 	onMount(() => {
 		const auth = getAuth();
 		const unsubscribe = onAuthStateChanged(auth, async (u) => {
@@ -21,25 +19,25 @@
 	});
 
 	async function handlePurchase() {
-	if (!user) {
-		error = 'You must be signed in to purchase the Pro plan.';
-		return;
-	}
-	try {
-		const res = await fetch('/api/create-stripe-session', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ uid: user.uid })
-		});
-		const data = await res.json();
-		if (data.url) {
-			window.location.href = data.url;
-		} else {
-			error = data.error || 'Failed to start checkout.';
+		if (!user) {
+			error = 'You must be signed in to purchase the Pro plan.';
+			return;
 		}
-	} catch (e) {
-		error = 'An error occurred while starting checkout.';
-	}
+		try {
+			const res = await fetch('/api/create-stripe-session', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ uid: user.uid })
+			});
+			const data = await res.json();
+			if (data.url) {
+				window.location.href = data.url;
+			} else {
+				error = data.error || 'Failed to start checkout.';
+			}
+		} catch (e) {
+			error = 'An error occurred while starting checkout.';
+		}
 	}
 
 	onMount(async () => {

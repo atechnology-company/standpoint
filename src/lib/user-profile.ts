@@ -23,8 +23,8 @@ export interface UserProfile {
 	bio?: string;
 	location?: string;
 	website?: string;
-	twitter?: string; 
-	instagram?: string; 
+	twitter?: string;
+	instagram?: string;
 	createdAt: number;
 	aura: number;
 	pro: boolean;
@@ -291,7 +291,7 @@ export async function resolveUid(uid: string): Promise<string> {
 		return uid;
 	} catch (error) {
 		console.error('Error resolving UID:', error);
-		return uid; 
+		return uid;
 	}
 }
 

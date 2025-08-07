@@ -17,7 +17,7 @@
 	let userProfile = data.userProfile;
 	let saving = false;
 	let activeSection = 'profile';
-	let hasInitialized = false; 
+	let hasInitialized = false;
 
 	// Form state variables
 	let profileForm = {

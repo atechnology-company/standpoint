@@ -87,9 +87,6 @@ _i want to sleep so bad_
 - revised google images fetching to work with this project
 - seperated sidebars for tierlist and polls
 
-
-
-
 ## im drowning
 
 ### things i need done

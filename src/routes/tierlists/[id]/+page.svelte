@@ -153,20 +153,17 @@
 					}
 				});
 			} else {
-				console.log('No item placements found - creating default placements');
+				console.log('No item placements found - processing items directly');
 				allItems.forEach((item, index) => {
-					const tierIndex = index % transformedTiers.length;
-					const tier = transformedTiers[tierIndex];
-					if (tier) {
-						if (response.list_type === 'dynamic') {
-							item.position = {
-								x: 0.1 + Math.random() * 0.8,
-								y: (tierIndex + 0.2 + Math.random() * 0.6) / transformedTiers.length
-							};
-							item.size = { width: 120, height: 120 };
+					if (response.list_type === 'dynamic') {
+						console.log(`✅ Using existing position for item "${item.text}":`, item.position);
+					} else {
+						const tierIndex = index % transformedTiers.length;
+						const tier = transformedTiers[tierIndex];
+						if (tier) {
+							tier.items.push(item);
+							console.log(`✅ Auto-placed item "${item.text}" in tier "${tier.name}"`);
 						}
-						tier.items.push(item);
-						console.log(`✅ Auto-placed item "${item.text}" in tier "${tier.name}"`);
 					}
 				});
 			}
@@ -175,7 +172,13 @@
 			transformedTiers.forEach((tier) => {
 				tier.items.forEach((item) => assignedItemIds.add(item.id));
 			});
-			const unassignedItems = allItems.filter((item) => !assignedItemIds.has(item.id));
+
+			let unassignedItems;
+			if (response.list_type === 'dynamic') {
+				unassignedItems = allItems.filter((item) => !assignedItemIds.has(item.id));
+			} else {
+				unassignedItems = allItems.filter((item) => !assignedItemIds.has(item.id));
+			}
 
 			tierList = {
 				id: response.id,
@@ -318,7 +321,7 @@
 		// Available width (accounting for tier label area - 320px and sidebar - 320px and padding)
 		const availableWidth = windowWidth - 320 - 320 - 64;
 
-		// Try full height first 
+		// Try full height first
 		let itemHeight = Math.max(80, tierContainerHeight - gap * 2);
 		let itemWidth = itemHeight;
 
@@ -538,9 +541,9 @@
 
 						<!-- All Dynamic Items -->
 						{#if tierList && tierList.tiers}
-							{#each [...(tierList.unassignedItems || []), ...tierList.tiers.flatMap( (tier, tierIndex) => (tier.items || []).map( (item) => ({ ...item, _defaultY: (tierIndex + 0.5) / tierList!.tiers.length }) ) )] as item, i (item.id)}
+							{#each [...(tierList.unassignedItems || []), ...tierList.tiers.flatMap( (tier, tierIndex) => (tier.items || []).map( (item) => ({ ...item, _tierIndex: tierIndex }) ) )] as item, i (item.id)}
 								{@const x = item.position?.x ?? 0.1 + (i % 8) * 0.1}
-								{@const y = item.position?.y ?? (item as any)._defaultY ?? 0.5}
+								{@const y = item.position?.y ?? 0.5}
 								{@const itemSize = getItemSize(item)}
 
 								<!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -596,20 +599,20 @@
 
 		<!-- Sidebar -->
 		<div class="w-80 border-l border-gray-600 bg-gray-900">
-			   <TierlistSidebar
-				   title={tierList.title}
-				   author={tierList.owner_displayName || 'Anonymous'}
-				   shareUrl={`${typeof window !== 'undefined' ? window.location.origin : ''}/tierlists/${tierList.id}`}
-				   id={tierList.id}
-				   tierListData={{
-					   ...tierList,
-					   items: tierList.tiers
-						   .flatMap((tier) => tier.items || [])
-						   .concat(tierList.unassignedItems || []),
-					   item_placements: []
-				   } as any}
-				   on:delete={handleSidebarDelete}
-			   />
+			<TierlistSidebar
+				title={tierList.title}
+				author={tierList.owner_displayName || 'Anonymous'}
+				shareUrl={`${typeof window !== 'undefined' ? window.location.origin : ''}/tierlists/${tierList.id}`}
+				id={tierList.id}
+				tierListData={{
+					...tierList,
+					items: tierList.tiers
+						.flatMap((tier) => tier.items || [])
+						.concat(tierList.unassignedItems || []),
+					item_placements: []
+				} as any}
+				on:delete={handleSidebarDelete}
+			/>
 		</div>
 	{:else}
 		<!-- Debug: No tierList data -->

@@ -354,7 +354,7 @@
 			vote_positions: [],
 			vote_positions_2d: [],
 			average: 0,
-			average_2d: null, 
+			average_2d: null,
 			std_dev: 0,
 			total_votes: 0,
 			median_x: 0,

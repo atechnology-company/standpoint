@@ -1002,7 +1002,9 @@
 				const file = item.getAsFile();
 				if (file) {
 					try {
-						const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
+						const { getStorage, ref, uploadBytes, getDownloadURL } = await import(
+							'firebase/storage'
+						);
 						const storage = getStorage();
 						const fileRef = ref(storage, `tierlist-items/${Date.now()}_${file.name}`);
 						await uploadBytes(fileRef, file);
@@ -1351,7 +1353,7 @@
 					})
 					.catch((error) => {
 						console.error('Error loading user profile:', error);
-						aiEnabled = true; 
+						aiEnabled = true;
 					});
 			}
 
@@ -2175,7 +2177,13 @@
 						on:click={() => document.getElementById('add-modal-file-input')?.click()}
 					>
 						<span class="material-symbols-outlined text-lg">upload</span>
-						<input id="add-modal-file-input" type="file" accept="image/*" class="hidden" on:change={handleFileUpload} />
+						<input
+							id="add-modal-file-input"
+							type="file"
+							accept="image/*"
+							class="hidden"
+							on:change={handleFileUpload}
+						/>
 					</label>
 					<button
 						class="flex h-8 w-8 items-center justify-center text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"

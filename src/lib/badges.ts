@@ -17,10 +17,10 @@ export interface UserStats {
 	totalVotes: number;
 	pro: boolean;
 	dev: boolean;
-	accountAge: number; 
+	accountAge: number;
 }
 
-// Available badges 
+// Available badges
 export const BADGES: Badge[] = [
 	{
 		id: 'pro',

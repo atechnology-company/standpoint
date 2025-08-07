@@ -10,11 +10,7 @@ export async function searchTierlists(searchQuery: string): Promise<TierlistData
 	try {
 		const searchTerm = searchQuery.toLowerCase();
 
-		const q = query(
-			collection(db, 'tierlists'),
-			orderBy('created_at', 'desc'),
-			limit(100) 
-		);
+		const q = query(collection(db, 'tierlists'), orderBy('created_at', 'desc'), limit(100));
 
 		const snapshot = await getDocs(q);
 		const allTierlists = snapshot.docs.map((doc) => ({

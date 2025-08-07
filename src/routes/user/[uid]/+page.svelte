@@ -187,8 +187,8 @@
 			event.preventDefault();
 			cancelEdit();
 		}
-	} 
-	
+	}
+
 	// User badges calculation
 	$: userBadges = userProfile
 		? getUserBadges({
@@ -482,9 +482,9 @@
 
 										<!-- Content -->
 										<div class="absolute right-0 bottom-0 left-0 p-4 text-white">
-										<div class="font-instrument mb-1 text-xs text-gray-300">
-											{formatDateFull(tierlist.created_at)}
-										</div>
+											<div class="font-instrument mb-1 text-xs text-gray-300">
+												{formatDateFull(tierlist.created_at)}
+											</div>
 											<h3 class="font-chivo mb-2 line-clamp-2 text-sm font-bold text-white">
 												{tierlist.title}
 											</h3>

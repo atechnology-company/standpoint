@@ -95,7 +95,7 @@ export async function getPollsFromFirestore() {
 // Tierlists
 export async function saveTierlistToFirestore(tierlist: Record<string, unknown>) {
 	// Always resolve the owner UID to the canonical one
-	if (tierlist.owner) {
+	if (typeof tierlist.owner === 'string' && tierlist.owner) {
 		tierlist.owner = await resolveUid(tierlist.owner);
 	}
 

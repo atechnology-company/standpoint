@@ -14,8 +14,7 @@
 	const onboardingSteps = [
 		{
 			title: 'Welcome to Standpoint! 🎉',
-			content:
-				"We're so glad you're here. Let's get you started!",
+			content: "We're so glad you're here. Let's get you started!",
 			action: 'Get Started',
 			highlight: 'welcome'
 		},
@@ -28,8 +27,7 @@
 		},
 		{
 			title: 'AI-Powered Suggestions ✨',
-			content:
-				"Stop wasting hours looking for items, we've got AI, AI and AI. (Pro users only)",
+			content: "Stop wasting hours looking for items, we've got AI, AI and AI. (Pro users only)",
 			action: 'Amazing!',
 			highlight: 'ai'
 		},
@@ -42,8 +40,7 @@
 		},
 		{
 			title: 'Ready? 🚀',
-			content:
-				"Well what are you waiting for? I want to hear what you've got to say!",
+			content: "Well what are you waiting for? I want to hear what you've got to say!",
 			action: 'Start Creating',
 			highlight: 'start'
 		}

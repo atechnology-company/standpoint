@@ -272,13 +272,20 @@ export class FirebaseFallbackClient {
 				}
 			}
 
+			// Ensure items preserve their position data
+			const items = (data.items || []).map((item: any) => ({
+				...item,
+				position: item.position || null,
+				size: item.size || null
+			}));
+
 			const result = {
 				id: tierListDoc.id,
 				title: data.title || '',
 				description: data.description || '',
 				list_type: data.list_type || 'classic',
 				tiers: data.tiers || [],
-				items: data.items || [],
+				items,
 				created_at: data.created_at?.toDate?.()?.toISOString() || new Date().toISOString(),
 				updated_at: data.updated_at?.toDate?.()?.toISOString() || new Date().toISOString(),
 				owner: data.owner || 'anonymous',

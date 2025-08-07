@@ -74,10 +74,6 @@ class ApiClient {
 		}
 	}
 
-
-
-
-
 	async healthCheck() {
 		try {
 			return await this.request('/health');
@@ -85,9 +81,6 @@ class ApiClient {
 			return await firebaseFallbackClient.healthCheck();
 		}
 	}
-
-
-
 
 	async getPolls(): Promise<import('./types').PollResponse[]> {
 		try {
@@ -146,10 +139,6 @@ class ApiClient {
 			return await firebaseFallbackClient.deletePoll(pollId);
 		}
 	}
-
-
-
-
 
 	async getTierLists(): Promise<import('./types').TierListResponse[]> {
 		try {
