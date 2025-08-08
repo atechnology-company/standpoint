@@ -227,10 +227,15 @@ export class FirebaseFallbackClient {
 					created_at: data.created_at?.toDate?.()?.toISOString() || new Date().toISOString(),
 					updated_at: data.updated_at?.toDate?.()?.toISOString() || new Date().toISOString(),
 					owner: data.owner || 'anonymous',
+					redirectUids: data.redirectUids || [],
 					item_placements: data.item_placements || [],
 					likes: data.likes || 0,
 					comments: data.comments || 0,
-					forks: data.forks || 0
+					forks: data.forks || 0,
+					banner_image: data.banner_image || null,
+					isForked: data.isForked || false,
+					originalId: data.originalId || null,
+					author: data.author || data.owner_displayName
 				} as TierListResponse;
 			});
 		} catch (error) {
@@ -290,10 +295,15 @@ export class FirebaseFallbackClient {
 				updated_at: data.updated_at?.toDate?.()?.toISOString() || new Date().toISOString(),
 				owner: data.owner || 'anonymous',
 				owner_displayName,
+				redirectUids: data.redirectUids || [],
 				item_placements: data.item_placements || [],
 				likes: data.likes || 0,
 				comments: data.comments || 0,
-				forks: data.forks || 0
+				forks: data.forks || 0,
+				banner_image: data.banner_image || null,
+				isForked: data.isForked || false,
+				originalId: data.originalId || null,
+				author: data.author || owner_displayName
 			} as TierListResponse;
 
 			console.log('Firebase processed tier list result:', result);
@@ -341,10 +351,21 @@ export class FirebaseFallbackClient {
 	async updateTierList(id: string, tierList: TierListUpdate): Promise<TierListResponse> {
 		try {
 			const tierListRef = doc(db, 'tierlists', id);
-			const updateData = {
+			
+			// Ensure items preserve their position data during updates
+			const updateData: any = {
 				...tierList,
 				updated_at: serverTimestamp()
 			};
+
+			// Only include items if they exist in the update
+			if ('items' in tierList && tierList.items) {
+				updateData.items = tierList.items.map((item: any) => ({
+					...item,
+					position: item.position || null,
+					size: item.size || null
+				}));
+			}
 
 			await updateDoc(tierListRef, updateData);
 
@@ -355,13 +376,20 @@ export class FirebaseFallbackClient {
 				throw new Error('Failed to fetch updated tier list');
 			}
 
+			// Ensure items preserve their position data in response
+			const items = (data.items || []).map((item: any) => ({
+				...item,
+				position: item.position || null,
+				size: item.size || null
+			}));
+
 			return {
 				id: updatedDoc.id,
 				title: data.title,
 				description: data.description,
 				list_type: data.list_type,
 				tiers: data.tiers,
-				items: data.items || [],
+				items,
 				created_at: data.created_at?.toDate?.()?.toISOString() || new Date().toISOString(),
 				updated_at: data.updated_at?.toDate?.()?.toISOString() || new Date().toISOString(),
 				owner: data.owner || 'anonymous',

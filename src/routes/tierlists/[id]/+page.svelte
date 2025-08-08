@@ -6,8 +6,9 @@
 	import TierlistSidebar from '../../../components/tierlist-sidebar.svelte';
 	import Toast from '../../../components/toast.svelte';
 	import LoadingIndicator from '../../../components/loading-indicator.svelte';
-	import { apiClient, type TierListResponse, type TierItem, type TierCreate } from '$lib/api';
-	import { currentUser } from '$lib/stores';
+	import { apiClient } from '$lib/api';
+	import type { TierListResponse, TierItem, TierCreate } from '$lib/types';
+	import { currentUser, userGroup } from '$lib/stores';
 	import { addToast } from '$lib/toast';
 	import {
 		likeTierlist,
@@ -15,8 +16,11 @@
 		hasUserLikedTierlist
 	} from '$lib/firestore-polls-tierlists.js';
 
-	interface DisplayTier extends TierCreate {
+	interface DisplayTier {
 		id: string;
+		name: string;
+		color: string;
+		position: number;
 		items: TierItem[];
 	}
 
@@ -30,6 +34,8 @@
 		owner_displayName?: string;
 		banner_image?: string;
 		author?: string;
+		owner?: string;
+		description?: string;
 	}
 
 	let tierList: DisplayTierList | null = null;
@@ -267,10 +273,43 @@
 
 		try {
 			interacting = true;
+			
+			// Prepare complete tierlist data for forking
+			const forkData = {
+				title: `${tierList.title} (Fork)`,
+				description: tierList.description || '',
+				list_type: tierList.list_type,
+				tiers: tierList.tiers.map(tier => ({
+					name: tier.name,
+					color: tier.color,
+					position: tier.position
+				})),
+				// Combine all items from tiers and unassigned items
+				items: [
+					...(tierList.unassignedItems || []),
+					...tierList.tiers.flatMap(tier => tier.items || [])
+				].map(item => ({
+					id: item.id,
+					text: item.text,
+					type: item.type,
+					image: item.image,
+					position: item.position,
+					size: item.size,
+					naturalSize: item.naturalSize
+				})),
+				owner: $currentUser.uid,
+				item_placements: []
+			};
+
+			console.log('Fork data being passed:', forkData);
+			
 			forks++;
 			addToast('Tierlist forked! Redirecting to editor...', 'success');
 
-			// Navigate to create page with the current tierlist as a template
+			// Store fork data in sessionStorage for the create page
+			sessionStorage.setItem('forkData', JSON.stringify(forkData));
+			
+			// Navigate to create page with fork parameter
 			setTimeout(() => {
 				if (tierList) {
 					goto(`/tierlists/create?fork=${tierList.id}`);
@@ -281,6 +320,70 @@
 			addToast('Failed to fork tierlist', 'error');
 		} finally {
 			interacting = false;
+		}
+	}
+
+	async function editTierlist() {
+		if (!$currentUser || !tierList) {
+			addToast('Please sign in to edit tierlists', 'error');
+			return;
+		}
+
+		// Check if user owns this tierlist (including redirect UIDs)
+		const isOriginalOwner = tierList.owner === $currentUser.uid;
+		const redirectUids = (tierList as any).redirectUids || [];
+		const hasRedirectAccess = redirectUids.includes($currentUser.uid);
+		const isDevUser = $userGroup === 'dev';
+		const displayNameMatch = tierList.author === $currentUser.displayName;
+
+		if (!isOriginalOwner && !hasRedirectAccess && !isDevUser && !displayNameMatch) {
+			addToast('You can only edit your own tierlists', 'error');
+			return;
+		}
+
+		try {
+			// Prepare complete tierlist data for editing
+			const editData = {
+				id: tierList.id,
+				title: tierList.title,
+				description: tierList.description || '',
+				list_type: tierList.list_type,
+				tiers: tierList.tiers.map(tier => ({
+					name: tier.name,
+					color: tier.color,
+					position: tier.position || 0
+				})),
+				items: [
+					...(tierList.unassignedItems || []),
+					...tierList.tiers.flatMap(tier => tier.items || [])
+				].map(item => ({
+					id: item.id,
+					text: item.text,
+					type: item.type,
+					image: item.image,
+					position: item.position,
+					size: item.size,
+					naturalSize: item.naturalSize
+				})),
+				owner: tierList.owner
+			};
+
+			console.log('Edit data being prepared:', editData);
+			
+			// Store edit data in sessionStorage for the create page
+			sessionStorage.setItem('editData', JSON.stringify(editData));
+			
+			addToast('Redirecting to editor...', 'success');
+			
+			// Navigate to create page with edit parameter
+			setTimeout(() => {
+				if (tierList) {
+					goto(`/tierlists/create?edit=${tierList.id}`);
+				}
+			}, 500);
+		} catch (error) {
+			console.error('Error preparing edit:', error);
+			addToast('Failed to prepare edit', 'error');
 		}
 	}
 
@@ -599,20 +702,21 @@
 
 		<!-- Sidebar -->
 		<div class="w-80 border-l border-gray-600 bg-gray-900">
-			<TierlistSidebar
-				title={tierList.title}
-				author={tierList.owner_displayName || 'Anonymous'}
-				shareUrl={`${typeof window !== 'undefined' ? window.location.origin : ''}/tierlists/${tierList.id}`}
-				id={tierList.id}
-				tierListData={{
-					...tierList,
-					items: tierList.tiers
-						.flatMap((tier) => tier.items || [])
-						.concat(tierList.unassignedItems || []),
-					item_placements: []
-				} as any}
-				on:delete={handleSidebarDelete}
-			/>
+			   <TierlistSidebar
+				   title={tierList.title}
+				   shareUrl={`${typeof window !== 'undefined' ? window.location.origin : ''}/tierlists/${tierList.id}`}
+				   id={tierList.id}
+				   tierListData={{
+					   ...tierList,
+					   items: tierList.tiers
+						   .flatMap((tier) => tier.items || [])
+						   .concat(tierList.unassignedItems || []),
+					   item_placements: []
+				   } as any}
+				   on:delete={handleSidebarDelete}
+				   on:fork={forkTierlist}
+				   on:edit={editTierlist}
+			   />
 		</div>
 	{:else}
 		<!-- Debug: No tierList data -->
@@ -633,4 +737,5 @@
 	{/if}
 </div>
 
+<Toast />
 <Toast />

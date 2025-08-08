@@ -38,18 +38,22 @@ module.exports = {
 				900: '#9a3412'
 			}
 		},
-		fontFamily: {
-			sans: [
-				'Instrument Sans',
-				'Space Grotesk',
-				'-apple-system',
-				'BlinkMacSystemFont',
-				'Segoe UI',
-				'Roboto',
-				'sans-serif'
-			]
-		},
-		extend: {}
+		extend: {
+			fontFamily: {
+				sans: [
+					'Mozilla Text',
+					'ui-sans-serif',
+					'system-ui',
+					'-apple-system',
+					'BlinkMacSystemFont',
+					'Segoe UI',
+					'Roboto',
+					'Arial',
+					'Noto Sans',
+					'sans-serif'
+				]
+			}
+		}
 	},
 	plugins: []
 };

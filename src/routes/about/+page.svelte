@@ -22,7 +22,7 @@
 		<div
 			class="flex flex-col justify-center border-r border-white/20 bg-white/10 p-8 backdrop-blur"
 		>
-			<h1 class="mb-4 text-4xl font-bold text-white">This is Standpoint</h1>
+			<h1 class="mb-4 text-4xl font-bold text-white">This is Standpoint v0.3.2-prealpha</h1>
 			<p class="text-lg text-white/70">
 				Standpoint is an opinion-based platform, where you can share your opinions on various
 				topics. Engage in discussions, vote on public polls, and explore tier lists created by the

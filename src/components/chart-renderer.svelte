@@ -402,7 +402,6 @@
 			label.setAttribute('dominant-baseline', 'middle');
 			label.setAttribute('fill', 'white');
 			label.setAttribute('font-size', '0.04');
-			label.setAttribute('font-family', 'system-ui, -apple-system, sans-serif');
 			label.setAttribute('font-weight', '400');
 			label.textContent = point.label;
 			svgRef.appendChild(label);
@@ -480,7 +479,6 @@
 					fill="white"
 					font-size="0.04"
 					text-anchor="middle"
-					font-family="system-ui, -apple-system, sans-serif"
 					font-weight="400"
 				>
 					{chartData.poll.options[0]}
@@ -491,7 +489,6 @@
 					fill="white"
 					font-size="0.04"
 					text-anchor="middle"
-					font-family="system-ui, -apple-system, sans-serif"
 					font-weight="400"
 				>
 					{chartData.poll.options[1]}

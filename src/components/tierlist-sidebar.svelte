@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount, onDestroy } from 'svelte';
-	import type { TierListResponse, TierCreate, TierItem } from '../lib/api';
+	import type { TierListResponse, TierCreate, TierItem } from '$lib/types';
 	import { currentUser, userGroup } from '$lib/stores';
 	import { getUserProfile } from '$lib/user-profile';
 	import { addToast } from '$lib/toast';
@@ -27,8 +27,6 @@
 	} from '$lib/firestore-polls-tierlists.js';
 
 	export let title: string = '';
-	export let author: string = 'Anonymous';
-	export let authorUid: string = '';
 	export let shareUrl: string = '';
 	export let id: string | number = '';
 	export let tierListData: TierListResponse | null = null;
@@ -60,9 +58,9 @@
 	let unsubscribeForks: (() => void) | null = null;
 
 	$: resolvedAuthorName =
-		tierListData && typeof tierListData.author === 'string' && tierListData.author.trim()
-			? tierListData.author
-			: 'Anonymous';
+		tierListData && typeof tierListData.owner_displayName === 'string' && tierListData.owner_displayName.trim()
+			? tierListData.owner_displayName
+			: tierListData?.author || 'Anonymous';
 
 	function normalizeDate(input: any): Date | null {
 		if (!input) return null;
@@ -426,13 +424,16 @@
 		}
 	});
 
-	let canDelete = false;
+	let isOwner = false;
 
 	$: if ($currentUser && tierListData) {
-		canDelete =
-			$currentUser.uid === tierListData.owner ||
-			$currentUser.displayName === tierListData.owner_displayName ||
-			$userGroup === 'dev';
+		const isOriginalOwner = $currentUser.uid === tierListData.owner;
+		const redirectUids = tierListData.redirectUids || [];
+		const hasRedirectAccess = redirectUids.includes($currentUser.uid);
+		const isDevUser = $userGroup === 'dev';
+		const displayNameMatch = $currentUser.displayName === tierListData.owner_displayName;
+
+		isOwner = isOriginalOwner || hasRedirectAccess || isDevUser || displayNameMatch;
 	}
 
 	function handleLike(event: Event) {
@@ -461,6 +462,10 @@
 		} else {
 			addToast('Clipboard not available', 'error');
 		}
+	}
+
+	function handleEdit() {
+		dispatch('edit');
 	}
 </script>
 
@@ -522,7 +527,7 @@
 					</div>
 					<div class=" bg-orange-800/30 p-3 text-center">
 						<div class="text-lg font-bold text-white">
-							{getTierListTypeName(tierListData?.list_type || tierListData?.type || 'classic')}
+							{getTierListTypeName(tierListData?.list_type || 'classic')}
 						</div>
 						<div class="text-xs text-orange-300">List Type</div>
 					</div>
@@ -707,7 +712,7 @@
 			{/if}
 		</div>
 
-		<!-- Bottom section with link and delete -->
+		<!-- Bottom section with link, edit and delete -->
 		<div class="mt-auto border-t border-orange-700 pt-4">
 			<div class="flex items-center justify-between">
 				<!-- Copyable link at bottom left -->
@@ -719,16 +724,25 @@
 					{shareUrl}
 				</button>
 
-				<!-- Delete icon at bottom right -->
-				{#if canDelete}
-					<button
-						class="flex h-10 w-10 flex-shrink-0 items-center justify-center bg-red-600 text-white transition-colors duration-200 hover:bg-red-700"
-						on:click={handleDelete}
-						title="Delete tierlist"
-					>
-						<span class="material-symbols-outlined text-xl">delete</span>
-					</button>
-				{/if}
+				<!-- Edit and Delete buttons at bottom right -->
+				<div class="flex items-center space-x-2">
+					{#if isOwner}
+						<button
+							class="flex h-10 w-10 flex-shrink-0 items-center justify-center bg-blue-600 text-white transition-colors duration-200 hover:bg-blue-700"
+							on:click={handleEdit}
+							title="Edit tierlist"
+						>
+							<span class="material-symbols-outlined text-xl">edit</span>
+						</button>
+						<button
+							class="flex h-10 w-10 flex-shrink-0 items-center justify-center bg-red-600 text-white transition-colors duration-200 hover:bg-red-700"
+							on:click={handleDelete}
+							title="Delete tierlist"
+						>
+							<span class="material-symbols-outlined text-xl">delete</span>
+						</button>
+					{/if}
+				</div>
 			</div>
 		</div>
 	</div>

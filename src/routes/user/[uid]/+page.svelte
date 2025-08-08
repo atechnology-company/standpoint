@@ -452,7 +452,7 @@
 				{:else}
 					{#if userTierlists.length > 0}
 						<div class="mb-8">
-							<h3 class="font-chivo mb-4 px-6 text-xl font-bold text-white">Tierlists</h3>
+							<h3 class="mb-4 px-6 text-xl font-bold text-white">Tierlists</h3>
 							<div class="grid grid-cols-1 gap-4 px-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
 								{#each userTierlists as tierlist}
 									<div
@@ -482,10 +482,10 @@
 
 										<!-- Content -->
 										<div class="absolute right-0 bottom-0 left-0 p-4 text-white">
-											<div class="font-instrument mb-1 text-xs text-gray-300">
+											<div class="mb-1 text-xs text-gray-300">
 												{formatDateFull(tierlist.created_at)}
 											</div>
-											<h3 class="font-chivo mb-2 line-clamp-2 text-sm font-bold text-white">
+											<h3 class="mb-2 line-clamp-2 text-sm font-bold text-white">
 												{tierlist.title}
 											</h3>
 
@@ -538,7 +538,7 @@
 					<!-- Polls -->
 					{#if userPolls.length > 0}
 						<div>
-							<h3 class="font-chivo mb-4 px-6 text-xl font-bold text-white">Polls</h3>
+							<h3 class="mb-4 px-6 text-xl font-bold text-white">Polls</h3>
 							<div class="grid grid-cols-1 gap-4 px-6 md:grid-cols-2 lg:grid-cols-3">
 								{#each userPolls as poll}
 									<a
@@ -548,10 +548,10 @@
 										<!-- Content -->
 										<div class="flex aspect-video flex-col justify-between p-5">
 											<div>
-												<div class="font-instrument mb-1 text-xs text-gray-400">
+												<div class="mb-1 text-xs text-gray-400">
 													{formatDateFull(poll.created_at)}
 												</div>
-												<h3 class="font-chivo mb-2 line-clamp-2 text-lg font-bold text-white">
+												<h3 class="mb-2 line-clamp-2 text-lg font-bold text-white">
 													{poll.title}
 												</h3>
 											</div>
@@ -598,10 +598,10 @@
 							>
 								<div class="flex aspect-video flex-col justify-between p-5">
 									<div>
-										<div class="font-instrument mb-1 text-xs text-gray-400">
+										<div class="mb-1 text-xs text-gray-400">
 											{new Date(poll.created_at).toLocaleDateString()}
 										</div>
-										<h3 class="font-chivo mb-2 line-clamp-2 text-lg font-bold text-white">
+										<h3 class="mb-2 line-clamp-2 text-lg font-bold text-white">
 											{poll.title}
 										</h3>
 									</div>
@@ -634,8 +634,8 @@
 	{:else}
 		<div class="flex h-screen items-center justify-center">
 			<div class="text-center">
-				<div class="font-chivo mb-4 text-xl text-red-400">User not found</div>
-				<a href="/" class="font-instrument text-orange-400 hover:text-orange-300">← Go Home</a>
+				<div class="mb-4 text-xl text-red-400">User not found</div>
+				<a href="/" class="text-orange-400 hover:text-orange-300">← Go Home</a>
 			</div>
 		</div>
 	{/if}

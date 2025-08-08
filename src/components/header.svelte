@@ -4,13 +4,8 @@
 	import { goto } from '$app/navigation';
 	import { getContext } from 'svelte';
 	import Modal from './login-modal.svelte';
-	import {
-		currentUser,
-		userGroup,
-		signInWithGoogle,
-		signOutUser,
-		hasProAccessStore
-	} from '../lib/stores';
+	import { currentUser, userGroup, signInWithGoogle, signOutUser, hasProAccessStore } from '../lib/stores';
+	import { onMount } from 'svelte';
 
 	const navHoverStore = getContext<Writable<boolean>>('navHover');
 
@@ -73,6 +68,45 @@
 			handleSearch();
 		}
 	}
+
+	let userProfile: any = null;
+
+	// Load user profile data
+	onMount(async () => {
+		if ($currentUser) {
+			try {
+				const { getDoc, doc } = await import('firebase/firestore');
+				const { db } = await import('../lib/firebase');
+
+				const userDoc = await getDoc(doc(db, 'users', $currentUser.uid));
+				if (userDoc.exists()) {
+					userProfile = userDoc.data();
+				}
+			} catch (error) {
+				console.warn('Could not load user profile:', error);
+			}
+		}
+	});
+
+	// Reactive statement to update profile when user changes
+	$: if ($currentUser) {
+		(async () => {
+			try {
+				const { getDoc, doc } = await import('firebase/firestore');
+				const { db } = await import('../lib/firebase');
+
+				const userDoc = await getDoc(doc(db, 'users', $currentUser.uid));
+				if (userDoc.exists()) {
+					userProfile = userDoc.data();
+				}
+			} catch (error) {
+				console.warn('Could not load user profile:', error);
+			}
+		})();
+	}
+
+	// Get the avatar URL (prioritize avatarURL from Firebase, fallback to photoURL)
+	$: avatarUrl = $currentUser?.photoURL || userProfile?.avatarURL;
 </script>
 
 <div class="justify center flex h-20 items-start gap-4">
@@ -255,9 +289,9 @@
 						class="group/avatar h-full w-[80px] cursor-pointer overflow-hidden bg-gray-300 transition-all duration-300 hover:shadow-lg hover:ring-10 hover:shadow-orange-500/30 hover:ring-orange-400"
 						title={$currentUser.displayName || $currentUser.email}
 					>
-						{#if $currentUser.photoURL}
+						{#if avatarUrl}
 							<img
-								src={$currentUser.photoURL}
+								src={avatarUrl}
 								alt="Profile"
 								class="h-full w-full object-cover transition-transform duration-300 group-hover/avatar:scale-105"
 							/>
@@ -274,23 +308,17 @@
 			</div>
 		{:else}
 			<div class="flex h-full items-center" role="group">
-				<!-- Login Button -->
-				<button
-					class="h-full bg-gray-200 px-4 py-2 font-medium text-gray-700 transition-colors hover:bg-gray-300"
-					on:click={handleGoogleLogin}
-				>
-					Login
-				</button>
-
-				<!-- Sign Up Button -->
-				<button
-					class="h-full bg-gradient-to-r from-orange-500 to-pink-500 px-4 py-2 font-medium text-white transition-colors hover:from-orange-600 hover:to-pink-600"
-					on:click={openLoginModal}
-				>
-					Sign Up
-				</button>
+				<div class="flex h-full items-center" role="group">
+					<!-- Google Login Button -->
+					<button
+						class="flex h-full items-center gap-2 bg-white border border-gray-300 px-4 py-2 font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-100"
+						on:click={handleGoogleLogin}
+						aria-label="Sign in with Google"
+					>
+						Sign in with Google
+					</button>
+				</div>
 			</div>
-			<Modal open={showLoginModal} on:close={closeLoginModal} on:login={handleGoogleLogin} />
 		{/if}
 	</div>
 </div>

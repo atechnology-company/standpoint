@@ -42,6 +42,14 @@ source src-sanic/bin/activate && python3 src-sanic/main.py
 
 ## Version History
 
+### v0.3.2
+- updated font to mozilla text
+- refined login design and styling
+- various optimizations
+
+### v0.3.1
+- fixed dynamic tierlists and various typing issues
+
 ### v0.3.0 - pre-alpha
 
 _i want to sleep so bad_
@@ -56,6 +64,7 @@ _i want to sleep so bad_
 - settings page
 - profile page
 - stripe integration (i have no idea whether my payments are gonna work)
+- paste to upload
 - critical bug fixes
 
 ### v0.2.0 - Firebase Integration
@@ -87,6 +96,9 @@ _i want to sleep so bad_
 - revised google images fetching to work with this project
 - seperated sidebars for tierlist and polls
 
+
+
+
 ## im drowning
 
 ### things i need done
@@ -114,6 +126,8 @@ _i want to sleep so bad_
 - gradients in wrong position for polls
 - image cropping after placing and more tools
 - item colors
+- on hover parse items to gemini to explain them
+- ai powered pattern analysis in polls and tierlists
 
 ### things i wanna do
 

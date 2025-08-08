@@ -1,16 +1,15 @@
 import { firebaseFallbackClient } from './firebase-fallback';
 
-export type {
+import type {
 	PollCreate,
 	PollResponse,
 	VoteCreate,
-	PollStats,
-	TierCreate,
-	TierItem,
-	ItemPlacement,
 	TierListCreate,
+	TierListResponse,
 	TierListUpdate,
-	TierListResponse
+	TierItem,
+	TierCreate,
+	ItemPlacement
 } from './types';
 
 const API_BASE_URL = 'http://localhost:8000';
@@ -200,6 +199,19 @@ class ApiClient {
 		} catch (error) {
 			console.warn('Delete tierlist not supported in Firebase fallback');
 			throw new Error('Delete tierlist operation requires backend server');
+		}
+	}
+
+	async updateTierList(id: string, tierList: any): Promise<TierListResponse> {
+		console.log('Updating tier list:', id, tierList);
+		try {
+			return await this.request(`/api/tierlists/${id}`, {
+				method: 'PUT',
+				body: JSON.stringify(tierList)
+			});
+		} catch (error) {
+			console.warn('Backend update failed, using Firebase fallback:', error);
+			return await firebaseFallbackClient.updateTierList(id, tierList);
 		}
 	}
 }

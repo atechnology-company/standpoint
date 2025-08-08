@@ -78,10 +78,6 @@ export interface TierListCreate {
 	items: TierItem[];
 }
 
-export interface TierListUpdate {
-	item_placements: ItemPlacement[];
-}
-
 export interface TierListResponse {
 	id: string;
 	title: string;
@@ -89,18 +85,27 @@ export interface TierListResponse {
 	list_type: string;
 	tiers: TierCreate[];
 	items: TierItem[];
-	item_placements: ItemPlacement[];
 	created_at: string;
-	updated_at: string;
+	updated_at?: string;
 	owner: string;
-	likes: number;
-	comments: number;
-	forks: number;
-	unassignedItems?: TierItem[];
 	owner_displayName?: string;
-	type?: string;
+	redirectUids?: string[];
+	item_placements: ItemPlacement[];
+	likes?: number;
+	comments?: number;
+	forks?: number;
 	banner_image?: string;
 	isForked?: boolean;
 	originalId?: string;
 	author?: string;
+}
+
+export interface TierListUpdate {
+	title?: string;
+	description?: string;
+	list_type?: string;
+	tiers?: TierCreate[];
+	items?: TierItem[];
+	item_placements?: ItemPlacement[];
+}
 }
