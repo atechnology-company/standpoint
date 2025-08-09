@@ -4,11 +4,6 @@
       "name": "frontend",
       "projectPath": ".",
       "startCommand": "pnpm run preview"
-    },
-    {
-      "name": "backend",
-      "projectPath": "../src-sanic",
-      "startCommand": "bin/python main.py"
     }
   ]
 }
