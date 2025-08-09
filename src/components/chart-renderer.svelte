@@ -57,37 +57,8 @@
 	let lastPosition2D: { x: number; y: number } | null = null;
 	function renderGradients(responseType: number) {
 		if (!chartData?.poll?.gradients?.enabled) return [];
-
-		const gradientConfigs: Record<number, Array<{ cx: string; cy: string }>> = {
-			// Line has just two endpoints
-			2: [
-				{ cx: '5%', cy: '50%' },
-				{ cx: '95%', cy: '50%' }
-			],
-			// Triangle corners
-			3: [
-				{ cx: '50%', cy: '5%' },
-				{ cx: '5%', cy: '85%' },
-				{ cx: '95%', cy: '85%' }
-			],
-			// Square corners
-			4: [
-				{ cx: '5%', cy: '5%' },
-				{ cx: '95%', cy: '5%' },
-				{ cx: '95%', cy: '95%' },
-				{ cx: '5%', cy: '95%' }
-			],
-			// Pentagon corners
-			5: [
-				{ cx: '50%', cy: '5%' },
-				{ cx: '90%', cy: '30%' },
-				{ cx: '80%', cy: '85%' },
-				{ cx: '20%', cy: '85%' },
-				{ cx: '10%', cy: '30%' }
-			]
-		};
-
-		return gradientConfigs[responseType] || [];
+		const pts = getShapePoints(1, 0);
+		return pts.map((p) => ({ cx: `${p.x * 100}%`, cy: `${p.y * 100}%` }));
 	}
 
 	function getShapePoints(scale = 1, rotation = 0): Array<{ x: number; y: number; label: string }> {
@@ -159,10 +130,19 @@
 			const x = (e.clientX - rect.left) / rect.width;
 			const y = (e.clientY - rect.top) / rect.height;
 
-			dragging2DPosition = {
-				x: Math.max(0, Math.min(1, x)),
-				y: Math.max(0, Math.min(1, y))
-			};
+			let pos = { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
+			// Proximity snapping: if near an option vertex, bias toward it
+			const points = getShapePoints();
+			const SNAP_DIST = 0.08; // normalized distance threshold
+			let closest = { d: Infinity, x: pos.x, y: pos.y };
+			for (const p of points) {
+				const dx = p.x - pos.x;
+				const dy = p.y - pos.y;
+				const d = Math.sqrt(dx * dx + dy * dy);
+				if (d < closest.d) closest = { d, x: p.x, y: p.y };
+			}
+			if (closest.d < SNAP_DIST) pos = { x: closest.x, y: closest.y };
+			dragging2DPosition = pos;
 		}
 	}
 
@@ -172,10 +152,18 @@
 			const x = (e.clientX - rect.left) / rect.width;
 			const y = (e.clientY - rect.top) / rect.height;
 
-			dragging2DPosition = {
-				x: Math.max(0, Math.min(1, x)),
-				y: Math.max(0, Math.min(1, y))
-			};
+			let pos = { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
+			const points = getShapePoints();
+			const SNAP_DIST = 0.08;
+			let closest = { d: Infinity, x: pos.x, y: pos.y };
+			for (const p of points) {
+				const dx = p.x - pos.x;
+				const dy = p.y - pos.y;
+				const d = Math.sqrt(dx * dx + dy * dy);
+				if (d < closest.d) closest = { d, x: p.x, y: p.y };
+			}
+			if (closest.d < SNAP_DIST) pos = { x: closest.x, y: closest.y };
+			dragging2DPosition = pos;
 		}
 	}
 
@@ -186,10 +174,18 @@
 			const x = (e.clientX - rect.left) / rect.width;
 			const y = (e.clientY - rect.top) / rect.height;
 
-			lastPosition2D = {
-				x: Math.max(0, Math.min(1, x)),
-				y: Math.max(0, Math.min(1, y))
-			};
+			let pos = { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
+			const points = getShapePoints();
+			const SNAP_DIST = 0.08;
+			let closest = { d: Infinity, x: pos.x, y: pos.y };
+			for (const p of points) {
+				const dx = p.x - pos.x;
+				const dy = p.y - pos.y;
+				const d = Math.sqrt(dx * dx + dy * dy);
+				if (d < closest.d) closest = { d, x: p.x, y: p.y };
+			}
+			if (closest.d < SNAP_DIST) pos = { x: closest.x, y: closest.y };
+			lastPosition2D = pos;
 			dragging2DPosition = null;
 			submitVote();
 		}
@@ -473,24 +469,10 @@
 					<circle cx={chartData.poll.user_vote} cy="0.5" r="0.015" fill="rgb(249, 115, 22)" />
 				{/if}
 
-				<text
-					x="0.05"
-					y="0.4"
-					fill="white"
-					font-size="0.04"
-					text-anchor="middle"
-					font-weight="400"
-				>
+				<text x="0.05" y="0.4" fill="white" font-size="0.04" text-anchor="middle" font-weight="400">
 					{chartData.poll.options[0]}
 				</text>
-				<text
-					x="0.95"
-					y="0.4"
-					fill="white"
-					font-size="0.04"
-					text-anchor="middle"
-					font-weight="400"
-				>
+				<text x="0.95" y="0.4" fill="white" font-size="0.04" text-anchor="middle" font-weight="400">
 					{chartData.poll.options[1]}
 				</text>
 			</svg>

@@ -8,7 +8,7 @@
 </script>
 
 <script lang="ts">
-	import type { PollResponse } from '../lib/api';
+	import type { PollResponse } from '$lib/types';
 
 	export let poll: PollResponse & {
 		customOptions: string[];

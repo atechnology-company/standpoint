@@ -3,8 +3,10 @@
 	import type { TierListResponse, TierCreate, TierItem } from '$lib/types';
 	import { currentUser, userGroup } from '$lib/stores';
 	import { getUserProfile } from '$lib/user-profile';
-	import { addToast } from '$lib/toast';
 	import { goto } from '$app/navigation';
+	import { addToast } from '$lib/toast';
+	import LoginModal from './login-modal.svelte';
+	import { signInWithGoogle } from '$lib/stores';
 	import confetti from 'canvas-confetti';
 	import {
 		collection,
@@ -31,7 +33,13 @@
 	export let id: string | number = '';
 	export let tierListData: TierListResponse | null = null;
 
-	// Track if this is a fork and the original data
+	let isLocal = false;
+	let showLoginModal = false;
+	if (typeof window !== 'undefined') {
+		const params = new URLSearchParams(window.location.search);
+		isLocal = params.get('local') === 'true';
+	}
+
 	let isForked = false;
 	let originalId = '';
 	let originalTitle = '';
@@ -58,7 +66,9 @@
 	let unsubscribeForks: (() => void) | null = null;
 
 	$: resolvedAuthorName =
-		tierListData && typeof tierListData.owner_displayName === 'string' && tierListData.owner_displayName.trim()
+		tierListData &&
+		typeof tierListData.owner_displayName === 'string' &&
+		tierListData.owner_displayName.trim()
 			? tierListData.owner_displayName
 			: tierListData?.author || 'Anonymous';
 
@@ -101,7 +111,16 @@
 
 	async function handleDeleteWithFallback() {
 		try {
-			await deleteDoc(doc(db, 'tierlists', id.toString()));
+			if (isLocal) {
+				// Remove from local storage instead
+				const raw = localStorage.getItem('standpoint_local_tierlists');
+				if (raw) {
+					const arr = JSON.parse(raw).filter((t: any) => String(t.id) !== String(id));
+					localStorage.setItem('standpoint_local_tierlists', JSON.stringify(arr));
+				}
+			} else {
+				await deleteDoc(doc(db, 'tierlists', id.toString()));
+			}
 			addToast('Tierlist deleted!', 'success');
 			goto('/tierlists');
 		} catch (error) {
@@ -111,7 +130,7 @@
 
 	async function toggleLike(event?: Event) {
 		if (!$currentUser) {
-			addToast('Please sign in to like tierlists', 'error');
+			if (!isLocal) addToast('Please sign in to like tierlists', 'error');
 			return;
 		}
 
@@ -142,7 +161,6 @@
 						ticks: 100
 					});
 				} else {
-					// Fallback to center
 					confetti({
 						particleCount: 50,
 						spread: 60,
@@ -190,6 +208,7 @@
 
 	function loadComments() {
 		if (!id) return;
+		if (isLocal) return;
 
 		const commentsQuery = query(
 			collection(db, 'comments'),
@@ -220,6 +239,7 @@
 
 	async function loadLikes() {
 		if (!id) return;
+		if (isLocal) return;
 
 		const likesQuery = query(collection(db, 'tierlists', id.toString(), 'likes'));
 
@@ -242,6 +262,7 @@
 
 	function loadForks() {
 		if (!id) return;
+		if (isLocal) return;
 
 		const forksQuery = query(collection(db, 'forks'), where('tierlistId', '==', id.toString()));
 
@@ -265,9 +286,10 @@
 		try {
 			interacting = true;
 
-			const allItems: TierItem[] = [];
-
-			if (tierListData?.tiers) {
+			let allItems: TierItem[] = [];
+			if (tierListData?.list_type === 'dynamic' && Array.isArray(tierListData.items)) {
+				allItems = [...tierListData.items];
+			} else if (tierListData?.tiers) {
 				tierListData.tiers.forEach((tier: TierCreate & { items?: TierItem[] }) => {
 					if (tier.items) {
 						allItems.push(...tier.items);
@@ -281,8 +303,16 @@
 				items: allItems,
 				timestamp: Date.now()
 			};
-
 			localStorage.setItem('standpoint_fork_data', JSON.stringify(forkData));
+
+			const aiSuggestions = allItems.map((item) => ({
+				name: item.text || item.name,
+				image: !!item.image,
+				imageUrl:
+					typeof item.image === 'string' && item.image.startsWith('http') ? item.image : null
+			}));
+			localStorage.setItem('standpoint_ai_suggestions', JSON.stringify(aiSuggestions));
+			localStorage.setItem('standpoint_ai_suggestions_enabled', 'true');
 
 			await addDoc(collection(db, 'forks'), {
 				tierlistId: id.toString(),
@@ -426,13 +456,14 @@
 
 	let isOwner = false;
 
-	$: if ($currentUser && tierListData) {
+	$: if (isLocal) {
+		isOwner = true;
+	} else if ($currentUser && tierListData) {
 		const isOriginalOwner = $currentUser.uid === tierListData.owner;
 		const redirectUids = tierListData.redirectUids || [];
 		const hasRedirectAccess = redirectUids.includes($currentUser.uid);
 		const isDevUser = $userGroup === 'dev';
 		const displayNameMatch = $currentUser.displayName === tierListData.owner_displayName;
-
 		isOwner = isOriginalOwner || hasRedirectAccess || isDevUser || displayNameMatch;
 	}
 
@@ -446,7 +477,17 @@
 
 	function promptLogin() {
 		addToast('Please sign in to interact with tierlists', 'info');
-		goto('/login');
+		showLoginModal = true;
+	}
+
+	async function handleLogin() {
+		await signInWithGoogle();
+		showLoginModal = false;
+		location.reload();
+	}
+
+	function handleCloseLogin() {
+		showLoginModal = false;
 	}
 
 	function copyShareUrl() {
@@ -469,46 +510,52 @@
 	}
 </script>
 
+{#if showLoginModal}
+	<LoginModal open={showLoginModal} on:close={handleCloseLogin} on:login={handleLogin} />
+{/if}
+
 <div class="flex h-full flex-col overflow-y-auto bg-orange-900 p-6 text-white">
 	<!-- Header section -->
 	<div class="mb-6">
 		<div class="mb-4 flex items-center justify-between">
 			<span class="text-sm text-orange-300">{resolvedAuthorName}</span>
-			<!-- Interaction buttons -->
-			<div class="flex items-center space-x-2">
-				{#if $currentUser}
-					<!-- Like button -->
-					<button
-						class="flex h-10 w-10 items-center justify-center transition-colors duration-200 {liked
-							? 'bg-red-600 text-white hover:bg-red-700'
-							: 'bg-orange-700 text-orange-300 hover:bg-orange-600'}"
-						on:click={handleLike}
-						title={liked ? 'Unlike' : 'Like'}
-					>
-						<span class="material-symbols-outlined text-lg"
-							>{liked ? 'favorite' : 'favorite_border'}</span
+			<!-- Interaction buttons (hidden for local tierlists) -->
+			{#if !isLocal}
+				<div class="flex items-center space-x-2">
+					{#if $currentUser}
+						<!-- Like button -->
+						<button
+							class="flex h-10 w-10 items-center justify-center transition-colors duration-200 {liked
+								? 'bg-red-600 text-white hover:bg-red-700'
+								: 'bg-orange-700 text-orange-300 hover:bg-orange-600'}"
+							on:click={handleLike}
+							title={liked ? 'Unlike' : 'Like'}
 						>
-					</button>
+							<span class="material-symbols-outlined text-lg"
+								>{liked ? 'favorite' : 'favorite_border'}</span
+							>
+						</button>
 
-					<!-- Fork button -->
-					<button
-						class="flex h-10 w-10 items-center justify-center bg-orange-700 text-orange-300 transition-colors duration-200 hover:bg-orange-600"
-						on:click={handleFork}
-						title="Fork this tierlist"
-						aria-label="Fork this tierlist"
-					>
-						<span class="material-symbols-outlined text-lg">call_split</span>
-					</button>
-				{:else}
-					<!-- Login prompt for guests -->
-					<button
-						class=" bg-blue-600 px-3 py-1 text-xs text-white transition-colors duration-200 hover:bg-blue-700"
-						on:click={promptLogin}
-					>
-						Login to interact
-					</button>
-				{/if}
-			</div>
+						<!-- Fork button -->
+						<button
+							class="flex h-10 w-10 items-center justify-center bg-orange-700 text-orange-300 transition-colors duration-200 hover:bg-orange-600"
+							on:click={handleFork}
+							title="Fork this tierlist"
+							aria-label="Fork this tierlist"
+						>
+							<span class="material-symbols-outlined text-lg">call_split</span>
+						</button>
+					{:else}
+						<!-- Login prompt for guests -->
+						<button
+							class=" bg-blue-600 px-3 py-1 text-xs text-white transition-colors duration-200 hover:bg-blue-700"
+							on:click={promptLogin}
+						>
+							Login to interact
+						</button>
+					{/if}
+				</div>
+			{/if}
 		</div>
 		<h1 class="mb-4 text-2xl font-bold break-words">{title || 'UNTITLED TIER LIST'}</h1>
 
@@ -516,20 +563,24 @@
 			{formatDateSafe(tierListData?.created_at)}
 		</div>
 
-		<!-- Tier List Statistics Section -->
+		<!-- Tier List Statistics Section (shown for all including local) -->
 		{#if tierListData}
 			<div class="mb-6 bg-orange-800/50 p-4">
 				<!-- Basic Stats Grid -->
-				<div class="mb-6 grid grid-cols-2 gap-4">
+				<div class="mb-6 grid grid-cols-3 gap-4">
 					<div class=" bg-orange-800/30 p-3 text-center">
 						<div class="text-2xl font-bold text-white">{totalItems}</div>
-						<div class="text-xs text-orange-300">Total Items</div>
+						<div class="text-xs text-orange-300">Items</div>
+					</div>
+					<div class=" bg-orange-800/30 p-3 text-center">
+						<div class="text-lg font-bold text-white">{tierListData.tiers?.length || 0}</div>
+						<div class="text-xs text-orange-300">Tiers</div>
 					</div>
 					<div class=" bg-orange-800/30 p-3 text-center">
 						<div class="text-lg font-bold text-white">
 							{getTierListTypeName(tierListData?.list_type || 'classic')}
 						</div>
-						<div class="text-xs text-orange-300">List Type</div>
+						<div class="text-xs text-orange-300">Type</div>
 					</div>
 				</div>
 
@@ -661,79 +712,87 @@
 			</div>
 		{/if}
 
+		<!-- Local tierlist notice -->
+		{#if isLocal}
+			<div class="mb-6 bg-orange-800/50 p-4 text-sm text-orange-200">
+				This tierlist exists only in your browser.
+			</div>
+		{/if}
+
 		<!-- Comments Section -->
-		<div class="mb-6 bg-orange-800/50 p-4">
-			<h3 class="mb-4 text-lg font-semibold text-orange-200">Comments ({comments})</h3>
+		{#if !isLocal}
+			<div class="mb-6 bg-orange-800/50 p-4">
+				<h3 class="mb-4 text-lg font-semibold text-orange-200">Comments ({comments})</h3>
 
-			<!-- Add Comment Form -->
-			{#if $currentUser}
-				<div class="mb-4">
-					<textarea
-						bind:value={commentText}
-						placeholder="Add a comment..."
-						class="w-full border border-orange-700 bg-orange-800/30 px-3 py-2 text-white placeholder-orange-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
-						rows="3"
-					></textarea>
-					<div class="mt-2 flex justify-end">
-						<button
-							on:click={addComment}
-							disabled={!commentText.trim() || interacting}
-							class=" bg-orange-500 px-3 py-1 text-sm font-medium text-white hover:bg-orange-600 disabled:opacity-50"
-						>
-							{interacting ? 'Posting...' : 'Post'}
-						</button>
-					</div>
-				</div>
-			{:else}
-				<div class="mb-4 text-center">
-					<p class="text-sm text-orange-300">Please sign in to add comments</p>
-				</div>
-			{/if}
-
-			<!-- Comments List -->
-			{#if commentsList.length > 0}
-				<div class="space-y-3">
-					{#each commentsList as comment (comment.id)}
-						<div class=" bg-orange-800/30 p-3">
-							<div class="mb-1 flex items-center space-x-2">
-								<span class="text-sm font-medium text-orange-100">{comment.author}</span>
-								<span class="text-xs text-orange-300"
-									>{new Date(comment.timestamp).toLocaleDateString()}</span
-								>
-							</div>
-							<p class="text-sm text-orange-200">{comment.text}</p>
+				<!-- Add Comment Form -->
+				{#if $currentUser}
+					<div class="mb-4">
+						<textarea
+							bind:value={commentText}
+							placeholder="Add a comment..."
+							class="w-full border border-orange-700 bg-orange-800/30 px-3 py-2 text-white placeholder-orange-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
+							rows="3"
+						></textarea>
+						<div class="mt-2 flex justify-end">
+							<button
+								on:click={addComment}
+								disabled={!commentText.trim() || interacting}
+								class=" bg-orange-500 px-3 py-1 text-sm font-medium text-white hover:bg-orange-600 disabled:opacity-50"
+							>
+								{interacting ? 'Posting...' : 'Post'}
+							</button>
 						</div>
-					{/each}
-				</div>
-			{:else}
-				<div class="text-center text-orange-300">
-					<p class="text-sm">No comments yet. Be the first to comment!</p>
-				</div>
-			{/if}
-		</div>
+					</div>
+				{:else}
+					<div class="mb-4 text-center">
+						<p class="text-sm text-orange-300">Please sign in to add comments</p>
+					</div>
+				{/if}
 
-		<!-- Bottom section with link, edit and delete -->
+				<!-- Comments List -->
+				{#if commentsList.length > 0}
+					<div class="space-y-3">
+						{#each commentsList as comment (comment.id)}
+							<div class=" bg-orange-800/30 p-3">
+								<div class="mb-1 flex items-center space-x-2">
+									<span class="text-sm font-medium text-orange-100">{comment.author}</span>
+									<span class="text-xs text-orange-300"
+										>{new Date(comment.timestamp).toLocaleDateString()}</span
+									>
+								</div>
+								<p class="text-sm text-orange-200">{comment.text}</p>
+							</div>
+						{/each}
+					</div>
+				{:else}
+					<div class="text-center text-orange-300">
+						<p class="text-sm">No comments yet. Be the first to comment!</p>
+					</div>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- Bottom section with link, edit and delete (share link hidden for local) -->
 		<div class="mt-auto border-t border-orange-700 pt-4">
 			<div class="flex items-center justify-between">
-				<!-- Copyable link at bottom left -->
-				<button
-					class="flex-1 truncate pr-4 text-left text-sm text-orange-300 transition-colors hover:text-orange-200"
-					on:click={copyShareUrl}
-					title="Click to copy link"
-				>
-					{shareUrl}
-				</button>
+				{#if !isLocal}
+					<!-- Copyable link at bottom left -->
+					<button
+						class="flex-1 truncate pr-4 text-left text-sm text-orange-300 transition-colors hover:text-orange-200"
+						on:click={copyShareUrl}
+						title="Click to copy link"
+					>
+						{shareUrl}
+					</button>
+				{:else}
+					<div class="flex-1 pr-4 text-left text-xs text-orange-400">
+						Local draft (not shareable)
+					</div>
+				{/if}
 
 				<!-- Edit and Delete buttons at bottom right -->
 				<div class="flex items-center space-x-2">
 					{#if isOwner}
-						<button
-							class="flex h-10 w-10 flex-shrink-0 items-center justify-center bg-blue-600 text-white transition-colors duration-200 hover:bg-blue-700"
-							on:click={handleEdit}
-							title="Edit tierlist"
-						>
-							<span class="material-symbols-outlined text-xl">edit</span>
-						</button>
 						<button
 							class="flex h-10 w-10 flex-shrink-0 items-center justify-center bg-red-600 text-white transition-colors duration-200 hover:bg-red-700"
 							on:click={handleDelete}

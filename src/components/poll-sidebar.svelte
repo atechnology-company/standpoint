@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { PollResponse } from '../lib/api';
+	import type { PollResponse } from '$lib/types';
 	import { createEventDispatcher, onMount, onDestroy } from 'svelte';
 	import confetti from 'canvas-confetti';
 	import { currentUser, userGroup } from '$lib/stores';
@@ -18,6 +18,8 @@
 		doc
 	} from 'firebase/firestore';
 	import { addToast } from '$lib/toast';
+	import LoginModal from '../components/login-modal.svelte';
+	import { signInWithGoogle } from '$lib/stores';
 
 	let likeBtn: HTMLButtonElement | null = null;
 
@@ -29,8 +31,9 @@
 	export let pollData: PollResponse | null = null;
 	export let likes: number = 0;
 	export let liked: boolean = false;
-	export let showComments: boolean = true;
+	export const showComments: boolean = true;
 
+	let showLogin = false;
 	let likeLoading = false;
 	let copied = false;
 	let commentText = '';
@@ -45,7 +48,22 @@
 	let comments = 0;
 	let unsubscribeComments: (() => void) | null = null;
 
-	// Fetch initial like count and liked state on mount
+	function openLogin() {
+		showLogin = true;
+	}
+	function promptLogin() {
+		addToast('Please sign in to interact with polls', 'info');
+		showLogin = true;
+	}
+	function handleClose() {
+		showLogin = false;
+	}
+	async function handleLogin() {
+		await signInWithGoogle();
+		showLogin = false;
+		location.reload();
+	}
+
 	onMount(async () => {
 		try {
 			const res = await fetch(`/api/interactions/poll/${id}/likes`);
@@ -56,13 +74,10 @@
 		} catch {
 			likes = 0;
 		}
-
-		// Load comments when component mounts
 		loadComments();
 	});
 
 	onDestroy(() => {
-		// Cleanup comment subscription
 		if (unsubscribeComments) {
 			unsubscribeComments();
 		}
@@ -80,7 +95,6 @@
 			if (res.ok) {
 				const data = await res.json();
 				likes = data.likes;
-				// Only animate on like
 				if (!liked && likeBtn) {
 					const rect = likeBtn.getBoundingClientRect();
 					const x = (rect.left + rect.width / 2) / window.innerWidth;
@@ -98,13 +112,11 @@
 				liked = !liked;
 			}
 		} catch {
-			// Optionally handle error
 		} finally {
 			likeLoading = false;
 		}
 	}
 
-	// Robust date normalization/formatting utility
 	function normalizeDate(input: any): Date | null {
 		if (!input) return null;
 		if (typeof input === 'string' || typeof input === 'number') {
@@ -126,12 +138,6 @@
 
 	const dispatch = createEventDispatcher();
 
-	function handleDelete() {
-		if (confirm(`Are you sure you want to delete this poll? This action cannot be undone.`)) {
-			dispatch('delete', { id, type: 'poll' });
-		}
-	}
-
 	function getResponseTypeName(responseType: number) {
 		const names: Record<number, string> = {
 			2: 'Line Scale',
@@ -141,6 +147,73 @@
 		};
 		return names[responseType] || 'Unknown';
 	}
+
+	function compute2DOptionProximity() {
+		if (!pollData || pollData.response_type < 3 || !pollData.stats?.vote_positions_2d) return null;
+		const pts = pollData.stats.vote_positions_2d as Array<{ x: number; y: number }>;
+		const optionCount = pollData.options.length;
+		const centerX = 0.5,
+			centerY = 0.5;
+		const verts: Array<{ x: number; y: number }> = [];
+		if (pollData.response_type === 3) {
+			// triangle
+			const radius = 0.35;
+			for (let i = 0; i < 3; i++) {
+				const angle = (i * 2 * Math.PI) / 3 - Math.PI / 2;
+				verts.push({
+					x: centerX + radius * Math.cos(angle),
+					y: centerY + radius * Math.sin(angle)
+				});
+			}
+		} else if (pollData.response_type === 4) {
+			// square (rotated)
+			const radius = 0.3;
+			for (let i = 0; i < 4; i++) {
+				const angle = (i * Math.PI) / 2 + Math.PI / 4;
+				verts.push({
+					x: centerX + radius * Math.cos(angle),
+					y: centerY + radius * Math.sin(angle)
+				});
+			}
+		} else if (pollData.response_type === 5) {
+			// pentagon
+			const radius = 0.35;
+			for (let i = 0; i < 5; i++) {
+				const angle = (i * 2 * Math.PI) / 5 - Math.PI / 2;
+				verts.push({
+					x: centerX + radius * Math.cos(angle),
+					y: centerY + radius * Math.sin(angle)
+				});
+			}
+		} else {
+			return null;
+		}
+		const sums = new Array(optionCount).fill(0);
+		const EPS = 0.001;
+		pts.forEach((p) => {
+			let localWeights: number[] = [];
+			let weightSum = 0;
+			verts.forEach((v, idx) => {
+				const dx = v.x - p.x;
+				const dy = v.y - p.y;
+				const d = Math.sqrt(dx * dx + dy * dy);
+				const w = 1 / (d + EPS);
+				localWeights[idx] = w;
+				weightSum += w;
+			});
+			if (weightSum === 0) return;
+			localWeights.forEach((w, idx) => {
+				sums[idx] += w / weightSum;
+			});
+		});
+		const totalVotes = pts.length || 1;
+		return sums.map((v) => v / totalVotes);
+	}
+	$: derivedOptionProximity =
+		pollData?.stats?.option_proximity &&
+		pollData.stats.option_proximity.length === pollData.options.length
+			? pollData.stats.option_proximity
+			: compute2DOptionProximity();
 
 	function calculateConfidenceInterval(average: number, stdDev: number, totalVotes: number) {
 		if (totalVotes === 0) return { lower: 0, upper: 0 };
@@ -279,10 +352,6 @@
 	let variabilityThreshold = 0.3;
 	let engagementThreshold = 10;
 
-	// Determine if current user can delete this poll (owner or dev role)
-	$: canDelete =
-		$currentUser && pollData && ($currentUser.uid === pollData.owner || $userGroup === 'dev');
-
 	// Determine if user can create polls (pro users only)
 	$: canCreatePolls = $userGroup === 'pro' || $userGroup === 'dev';
 </script>
@@ -309,17 +378,6 @@
 						>{liked ? 'favorite' : 'favorite_border'}</span
 					>
 				</button>
-
-				<!-- Delete button -->
-				{#if canDelete}
-					<button
-						class="flex h-10 w-10 items-center justify-center bg-red-600 text-white transition-colors duration-200 hover:bg-red-700"
-						on:click={handleDelete}
-						title="Delete poll"
-					>
-						<span class="material-symbols-outlined text-lg">delete</span>
-					</button>
-				{/if}
 			</div>
 		</div>
 		<h1 class="mb-4 text-2xl font-bold break-words">{pollData?.title || title}</h1>
@@ -384,9 +442,17 @@
 						<div class="mb-2 text-sm font-semibold text-orange-200">Vote Distribution</div>
 						<div class=" bg-orange-800/30 p-3">
 							<div class="mb-2 text-sm font-bold text-white">
-								{pollData.stats.average !== undefined
-									? (pollData.stats.average * 100).toFixed(1)
-									: '0'}% Average
+								{#if pollData.response_type === 2}
+									{pollData.stats.average !== undefined
+										? (pollData.stats.average * 100).toFixed(1)
+										: '0'}% Average
+								{:else}
+									{pollData.stats.average_2d?.[0] !== undefined
+										? (pollData.stats.average_2d[0] * 100).toFixed(1)
+										: '0'}% X · {pollData.stats.average_2d?.[1] !== undefined
+										? (pollData.stats.average_2d[1] * 100).toFixed(1)
+										: '0'}% Y
+								{/if}
 							</div>
 							<div class="mb-2 text-xs text-orange-300">
 								Total Votes: {pollData.stats.total_votes}
@@ -399,19 +465,26 @@
 						</div>
 					</div>
 
-					<!-- Proximity to Options -->
+					<!-- Options -->
 					<div class="mb-4">
-						<div class="mb-2 text-sm text-orange-200">Proximity to Options</div>
+						<div class="mb-2 text-sm text-orange-200">Options</div>
 						<div class="space-y-2">
 							{#each pollData.options as option, i (option)}
 								{@const proximity =
-									pollData.stats.option_proximity &&
-									pollData.stats.option_proximity[i] !== undefined
-										? pollData.stats.option_proximity[i] * 100
+									derivedOptionProximity && derivedOptionProximity[i] !== undefined
+										? derivedOptionProximity[i] * 100
 										: 0}
 								<div class=" bg-orange-800/30 p-3">
 									<div class="mb-1 flex items-center justify-between">
-										<span class="text-sm break-words text-orange-100">{option}</span>
+										<span class="flex items-center gap-2 text-sm break-words text-orange-100">
+											{#if pollData.gradients && pollData.gradients.colors && pollData.gradients.colors[i]}
+												<div
+													class="h-4 w-4 flex-shrink-0 border border-orange-300"
+													style="background-color: {pollData.gradients.colors[i]}"
+												></div>
+											{/if}
+											{option}
+										</span>
 										<span class="text-sm font-bold">{proximity.toFixed(1)}%</span>
 									</div>
 									<div class="relative h-2 w-full bg-orange-900">
@@ -528,24 +601,6 @@
 						</div>
 					{/if}
 				{/if}
-
-				<!-- Poll Options-->
-				<div class="mb-4">
-					<div class="mb-2 text-sm text-orange-200">Response Options</div>
-					<div class="space-y-2">
-						{#each pollData.options as option, i (option)}
-							<div class="flex items-center space-x-2 bg-orange-800/30 p-2">
-								{#if pollData.gradients && pollData.gradients.colors && pollData.gradients.colors[i]}
-									<div
-										class="h-4 w-4 flex-shrink-0 border border-orange-300"
-										style="background-color: {pollData.gradients.colors[i]}"
-									></div>
-								{/if}
-								<span class="text-sm break-words text-orange-100">{option}</span>
-							</div>
-						{/each}
-					</div>
-				</div>
 			</div>
 		{/if}
 

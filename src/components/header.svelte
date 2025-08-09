@@ -4,7 +4,13 @@
 	import { goto } from '$app/navigation';
 	import { getContext } from 'svelte';
 	import Modal from './login-modal.svelte';
-	import { currentUser, userGroup, signInWithGoogle, signOutUser, hasProAccessStore } from '../lib/stores';
+	import {
+		currentUser,
+		userGroup,
+		signInWithGoogle,
+		signOutUser,
+		hasProAccessStore
+	} from '../lib/stores';
 	import { onMount } from 'svelte';
 
 	const navHoverStore = getContext<Writable<boolean>>('navHover');
@@ -311,7 +317,7 @@
 				<div class="flex h-full items-center" role="group">
 					<!-- Google Login Button -->
 					<button
-						class="flex h-full items-center gap-2 bg-white border border-gray-300 px-4 py-2 font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-100"
+						class="flex h-full items-center gap-2 border border-gray-300 bg-white px-4 py-2 font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-100"
 						on:click={handleGoogleLogin}
 						aria-label="Sign in with Google"
 					>

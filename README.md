@@ -42,12 +42,29 @@ source src-sanic/bin/activate && python3 src-sanic/main.py
 
 ## Version History
 
+### v0.4.0 - alpha
+
+- made sure non users dont have access to ai tools
+- redid heading for creating tierlists without being logged in
+- fixed polls with proximity to items and mistmatch between colors and titles
+- fixed comment count outside of tierlists
+- removed deleting polls (paving future for preserving polls indefinitely and removing voting after x time)
+- added unlisted tierlists that are hidden from mainpage
+- added local tierlists for users that arent logged in
+- fixed a bug where dragging an item over near the tier name and buttons made it impossible to interact with
+- spacebar no longer triggers add item modal so you can now edit names
+- forking dynamic tierlists now works and you can add items
+- cleaned redundant comments
+- new version number
+
 ### v0.3.2
+
 - updated font to mozilla text
 - refined login design and styling
 - various optimizations
 
 ### v0.3.1
+
 - fixed dynamic tierlists and various typing issues
 
 ### v0.3.0 - pre-alpha
@@ -66,6 +83,7 @@ _i want to sleep so bad_
 - stripe integration (i have no idea whether my payments are gonna work)
 - paste to upload
 - critical bug fixes
+- non logged in users have tierlists that only save to their device
 
 ### v0.2.0 - Firebase Integration
 
@@ -96,9 +114,6 @@ _i want to sleep so bad_
 - revised google images fetching to work with this project
 - seperated sidebars for tierlist and polls
 
-
-
-
 ## im drowning
 
 ### things i need done
@@ -113,17 +128,13 @@ _i want to sleep so bad_
 - make search more efficient with a firebase searching service
 - fix half baked mobile ui
 - finish accent color implementation and theming and update settings display
-- pressing space while editing an item name opens add modal
 - uploading indicators
 - file size limits
-- dynamic tierlists not displaying positions proper;y
 - editing tierlists after publishing
 - validity checking file uploads (only images)
 - xss prevention
 - notifications
 - image logic after transferring to new implementation is cooked
-- polls proximity logic
-- gradients in wrong position for polls
 - image cropping after placing and more tools
 - item colors
 - on hover parse items to gemini to explain them

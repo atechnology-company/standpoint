@@ -9,6 +9,7 @@
 	import LoadingIndicator from '../../components/loading-indicator.svelte';
 	import { fade } from 'svelte/transition';
 	import { goto } from '$app/navigation';
+	const LOCAL_STORAGE_TIERLISTS_KEY = 'standpoint_local_tierlists';
 
 	let tierLists: any[] = [];
 	let loading = true;
@@ -36,11 +37,34 @@
 		try {
 			loading = true;
 			error = '';
-			tierLists = await getTierlistsFromFirestore();
+			const remote = await getTierlistsFromFirestore();
+			// Load local tierlists
+			let local: any[] = [];
+			if (typeof window !== 'undefined') {
+				const raw = localStorage.getItem(LOCAL_STORAGE_TIERLISTS_KEY);
+				if (raw) {
+					try {
+						local = JSON.parse(raw).map((t: any) => ({
+							...t,
+							id: t.id,
+							ownerDisplayName: 'Local',
+							_created_local: true,
+							likes: 0,
+							comments: 0,
+							forks: 0,
+							items: t.items || t.items?.length ? t.items : t.item_placements ? t.items : t.items,
+							created_at: t.created_at
+								? { toDate: () => new Date(t.created_at) }
+								: { toDate: () => new Date() }
+						}));
+					} catch {}
+				}
+			}
+			tierLists = [...local, ...remote];
 
-			// Load interaction counts for all tierlists
+			// Load interaction counts only for remote tierlists
 			await Promise.all(
-				tierLists.map(async (tierList) => {
+				remote.map(async (tierList) => {
 					const counts = await loadInteractions(tierList.id);
 					tierList.likes = counts.likes;
 					tierList.comments = counts.comments;
@@ -73,7 +97,26 @@
 	}
 
 	function navigateToTierList(tierList: any) {
-		goto(`/tierlists/${tierList.id}`);
+		goto(`/tierlists/${tierList.id}${tierList._created_local ? '?local=true' : ''}`);
+	}
+
+	function deleteLocalTierlist(tierList: any, e: Event) {
+		e.stopPropagation();
+		if (!tierList._created_local) return;
+		if (!confirm('Delete this local tierlist?')) return;
+		const raw = localStorage.getItem(LOCAL_STORAGE_TIERLISTS_KEY);
+		if (raw) {
+			try {
+				let arr = JSON.parse(raw);
+				arr = arr.filter((t: any) => String(t.id) !== String(tierList.id));
+				localStorage.setItem(LOCAL_STORAGE_TIERLISTS_KEY, JSON.stringify(arr));
+				// Remove from in-memory list and refresh hero slides
+				tierLists = tierLists.filter((t) => t !== tierList);
+				if (heroSlides.some((s) => s.tierlist.id === tierList.id)) {
+					heroSlides = heroSlides.filter((s) => s.tierlist.id !== tierList.id);
+				}
+			} catch {}
+		}
 	}
 </script>
 
@@ -165,19 +208,29 @@
 										>{/if}
 								</div>
 								<div class="flex items-center gap-2 opacity-80">
-									<span class="flex items-center gap-1">
-										<span class="material-symbols-outlined align-middle text-base">favorite</span>
-										{tierList.likes || 0}
-									</span>
-									<span class="flex items-center gap-1">
-										<span class="material-symbols-outlined align-middle text-base">chat_bubble</span
+									{#if tierList._created_local}
+										<span
+											class="flex items-center gap-1 rounded bg-orange-600/70 px-2 py-0.5 text-[10px] font-semibold tracking-wide"
+											>LOCAL</span
 										>
-										{tierList.comments || 0}
-									</span>
-									<span class="flex items-center gap-1">
-										<span class="material-symbols-outlined align-middle text-base">call_split</span>
-										{tierList.forks || 0}
-									</span>
+									{:else}
+										<span class="flex items-center gap-1">
+											<span class="material-symbols-outlined align-middle text-base">favorite</span>
+											{tierList.likes || 0}
+										</span>
+										<span class="flex items-center gap-1">
+											<span class="material-symbols-outlined align-middle text-base"
+												>chat_bubble</span
+											>
+											{tierList.comments || 0}
+										</span>
+										<span class="flex items-center gap-1">
+											<span class="material-symbols-outlined align-middle text-base"
+												>call_split</span
+											>
+											{tierList.forks || 0}
+										</span>
+									{/if}
 								</div>
 							</div>
 
@@ -194,7 +247,13 @@
 							<!-- Bottom stats -->
 							<div class="flex items-center justify-between text-xs opacity-80">
 								<span>{tierList.tiers?.length || 4} tiers</span>
-								<span>{tierList.items?.length || 0} items</span>
+								<span>{tierList.items?.length ?? tierList.item_count ?? 0} items</span>
+								{#if tierList._created_local}
+									<button
+										class="ml-2 rounded bg-red-600/70 px-2 py-0.5 text-[10px] font-semibold hover:bg-red-600"
+										on:click={(e) => deleteLocalTierlist(tierList, e)}>Delete</button
+									>
+								{/if}
 								<span
 									class="px-2 py-1 text-white"
 									style="background-color: {tierList.list_type === 'dynamic'

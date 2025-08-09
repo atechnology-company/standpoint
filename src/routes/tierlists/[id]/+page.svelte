@@ -58,8 +58,98 @@
 
 	$: tierListId = $page.params.id;
 
+	const LOCAL_STORAGE_TIERLISTS_KEY = 'standpoint_local_tierlists';
 	$: if (tierListId) {
-		loadTierList();
+		const urlParams =
+			typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+		const isLocal = urlParams?.get('local') === 'true';
+		if (isLocal) {
+			loadLocalTierList(tierListId);
+		} else {
+			loadTierList();
+		}
+	}
+
+	function loadLocalTierList(localId: string) {
+		try {
+			const raw =
+				typeof window !== 'undefined' ? localStorage.getItem(LOCAL_STORAGE_TIERLISTS_KEY) : null;
+			if (!raw) return;
+			const arr = JSON.parse(raw);
+			const found = arr.find((t: any) => String(t.id) === String(localId));
+			if (!found) return;
+
+			const defaultColors = [
+				'#ff7f7f',
+				'#ffbf7f',
+				'#ffff7f',
+				'#bfff7f',
+				'#7fff7f',
+				'#7fffff',
+				'#7fbfff',
+				'#7f7fff',
+				'#bf7fff',
+				'#ff7fff'
+			];
+
+			const transformedTiers: DisplayTier[] = (found.tiers || []).map(
+				(tier: any, index: number) => ({
+					id: tier.name || tier.id || `tier-${index}`,
+					name: tier.name || `Tier ${index + 1}`,
+					color: tier.color || defaultColors[index % defaultColors.length],
+					position: tier.position ?? index / Math.max(1, (found.tiers || []).length),
+					items: []
+				})
+			);
+
+			const allItems: TierItem[] = (found.items || []).map((item: any) => ({
+				id: item.id,
+				text: item.text || item.name,
+				image: item.image,
+				type: item.type || (item.image ? 'image' : 'text'),
+				position: item.position,
+				size: item.size,
+				naturalSize: item.naturalSize
+			}));
+
+			if (found.item_placements && found.item_placements.length > 0) {
+				found.item_placements.forEach((placement: any) => {
+					const item = allItems.find((it) => it.id === placement.item_id);
+					const tierByPosition = transformedTiers[placement.tier_position];
+					if (item && tierByPosition) {
+						if (found.list_type === 'dynamic' && placement.position)
+							item.position = placement.position;
+						if (found.list_type === 'dynamic' && placement.size) item.size = placement.size;
+						tierByPosition.items.push(item);
+					}
+				});
+			} else {
+				if ((found.list_type || found.type) !== 'dynamic') {
+					allItems.forEach((item: any, index: number) => {
+						const tierIdx = index % transformedTiers.length;
+						transformedTiers[tierIdx]?.items.push(item);
+					});
+				}
+			}
+
+			const assignedIds = new Set<string>();
+			transformedTiers.forEach((t) => t.items.forEach((it) => assignedIds.add(it.id)));
+			const unassignedItems = allItems.filter((it) => !assignedIds.has(it.id));
+
+			tierList = {
+				id: String(found.id),
+				title: found.title || 'Untitled Tier List',
+				list_type: found.list_type || found.type || 'classic',
+				tiers: transformedTiers,
+				unassignedItems,
+				author: 'Local',
+				created_at: found.created_at || new Date().toISOString(),
+				owner_displayName: 'Local'
+			};
+			loading = false;
+		} catch (e) {
+			console.error('Failed to load local tier list', e);
+		}
 	}
 
 	onMount(() => {
@@ -273,22 +363,20 @@
 
 		try {
 			interacting = true;
-			
-			// Prepare complete tierlist data for forking
+
 			const forkData = {
 				title: `${tierList.title} (Fork)`,
 				description: tierList.description || '',
 				list_type: tierList.list_type,
-				tiers: tierList.tiers.map(tier => ({
+				tiers: tierList.tiers.map((tier) => ({
 					name: tier.name,
 					color: tier.color,
 					position: tier.position
 				})),
-				// Combine all items from tiers and unassigned items
 				items: [
 					...(tierList.unassignedItems || []),
-					...tierList.tiers.flatMap(tier => tier.items || [])
-				].map(item => ({
+					...tierList.tiers.flatMap((tier) => tier.items || [])
+				].map((item) => ({
 					id: item.id,
 					text: item.text,
 					type: item.type,
@@ -302,14 +390,12 @@
 			};
 
 			console.log('Fork data being passed:', forkData);
-			
+
 			forks++;
 			addToast('Tierlist forked! Redirecting to editor...', 'success');
 
-			// Store fork data in sessionStorage for the create page
 			sessionStorage.setItem('forkData', JSON.stringify(forkData));
-			
-			// Navigate to create page with fork parameter
+
 			setTimeout(() => {
 				if (tierList) {
 					goto(`/tierlists/create?fork=${tierList.id}`);
@@ -329,7 +415,6 @@
 			return;
 		}
 
-		// Check if user owns this tierlist (including redirect UIDs)
 		const isOriginalOwner = tierList.owner === $currentUser.uid;
 		const redirectUids = (tierList as any).redirectUids || [];
 		const hasRedirectAccess = redirectUids.includes($currentUser.uid);
@@ -348,15 +433,15 @@
 				title: tierList.title,
 				description: tierList.description || '',
 				list_type: tierList.list_type,
-				tiers: tierList.tiers.map(tier => ({
+				tiers: tierList.tiers.map((tier) => ({
 					name: tier.name,
 					color: tier.color,
 					position: tier.position || 0
 				})),
 				items: [
 					...(tierList.unassignedItems || []),
-					...tierList.tiers.flatMap(tier => tier.items || [])
-				].map(item => ({
+					...tierList.tiers.flatMap((tier) => tier.items || [])
+				].map((item) => ({
 					id: item.id,
 					text: item.text,
 					type: item.type,
@@ -369,12 +454,12 @@
 			};
 
 			console.log('Edit data being prepared:', editData);
-			
+
 			// Store edit data in sessionStorage for the create page
 			sessionStorage.setItem('editData', JSON.stringify(editData));
-			
+
 			addToast('Redirecting to editor...', 'success');
-			
+
 			// Navigate to create page with edit parameter
 			setTimeout(() => {
 				if (tierList) {
@@ -702,21 +787,21 @@
 
 		<!-- Sidebar -->
 		<div class="w-80 border-l border-gray-600 bg-gray-900">
-			   <TierlistSidebar
-				   title={tierList.title}
-				   shareUrl={`${typeof window !== 'undefined' ? window.location.origin : ''}/tierlists/${tierList.id}`}
-				   id={tierList.id}
-				   tierListData={{
-					   ...tierList,
-					   items: tierList.tiers
-						   .flatMap((tier) => tier.items || [])
-						   .concat(tierList.unassignedItems || []),
-					   item_placements: []
-				   } as any}
-				   on:delete={handleSidebarDelete}
-				   on:fork={forkTierlist}
-				   on:edit={editTierlist}
-			   />
+			<TierlistSidebar
+				title={tierList.title}
+				shareUrl={`${typeof window !== 'undefined' ? window.location.origin : ''}/tierlists/${tierList.id}`}
+				id={tierList.id}
+				tierListData={{
+					...tierList,
+					items: tierList.tiers
+						.flatMap((tier) => tier.items || [])
+						.concat(tierList.unassignedItems || []),
+					item_placements: []
+				} as any}
+				on:delete={handleSidebarDelete}
+				on:fork={forkTierlist}
+				on:edit={editTierlist}
+			/>
 		</div>
 	{:else}
 		<!-- Debug: No tierList data -->

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import type { TierListResponse } from '../lib/api';
+	import type { TierListResponse } from '$lib/types';
 	import { goto } from '$app/navigation';
 
 	let pauseAutoplay = false;

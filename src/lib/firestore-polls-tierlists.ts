@@ -36,8 +36,8 @@ export interface TierlistData {
 	banner_image?: string;
 	owner: string;
 	ownerDisplayName?: string;
-	created_at: any; // Firebase Timestamp
-	updated_at?: any; // Firebase Timestamp
+	created_at: any;
+	updated_at?: any;
 	likes?: number;
 	comments?: number;
 	forks?: number;
@@ -45,9 +45,9 @@ export interface TierlistData {
 	status?: 'draft' | 'published';
 	items?: any[];
 	tiers?: any[];
-	originalId?: string; // Reference to original tierlist if this is a fork
+	originalId?: string;
 	isForked?: boolean;
-	isGuest?: boolean; // Flag for tierlists created by non-signed-in users
+	isGuest?: boolean;
 }
 
 export interface PollData {
@@ -77,7 +77,7 @@ export interface Poll {
 export async function savePollToFirestore(poll: Poll): Promise<string> {
 	const cleanedPoll = cleanUndefinedValues({
 		...poll,
-		status: 'published', // Mark as published by default
+		status: 'published',
 		created_at: serverTimestamp()
 	});
 	const docRef = await addDoc(collection(db, 'polls'), cleanedPoll);
@@ -88,31 +88,45 @@ export async function getPollsFromFirestore() {
 	const snap = await getDocs(collection(db, 'polls'));
 	const allPolls = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as PollData[];
 
-	// Filter to show published + legacy (no status field) but not drafts
 	return allPolls.filter((poll) => !poll.status || poll.status === 'published');
 }
 
 // Tierlists
 export async function saveTierlistToFirestore(tierlist: Record<string, unknown>) {
-	// Always resolve the owner UID to the canonical one
 	if (typeof tierlist.owner === 'string' && tierlist.owner) {
 		tierlist.owner = await resolveUid(tierlist.owner);
 	}
 
 	const isGuest = tierlist.owner === 'anonymous' || !tierlist.owner;
 
-	// Preserve fork information if present
 	const isForked = tierlist.isForked || false;
 	const originalId = tierlist.originalId || null;
 
 	const cleanedTierlist = cleanUndefinedValues({
 		...tierlist,
-		status: 'published', // Mark as published by default
+		status: 'published',
 		created_at: serverTimestamp(),
 		isGuest: isGuest,
 		isForked: isForked,
 		originalId: originalId,
-		banner_image: tierlist.bannerImage || null // Use tierlist banner
+		banner_image: tierlist.bannerImage || null
+	});
+	const docRef = await addDoc(collection(db, 'tierlists'), cleanedTierlist);
+	return docRef.id;
+}
+
+export async function saveTierlistUnlisted(tierlist: Record<string, unknown>, asDraft = false) {
+	if (typeof tierlist.owner === 'string' && tierlist.owner) {
+		tierlist.owner = await resolveUid(tierlist.owner);
+	}
+	const isGuest = tierlist.owner === 'anonymous' || !tierlist.owner;
+	const cleanedTierlist = cleanUndefinedValues({
+		...tierlist,
+		status: asDraft ? 'draft' : 'published',
+		visibility: 'unlisted',
+		created_at: serverTimestamp(),
+		isGuest: isGuest,
+		banner_image: tierlist.bannerImage || null
 	});
 	const docRef = await addDoc(collection(db, 'tierlists'), cleanedTierlist);
 	return docRef.id;
@@ -122,14 +136,13 @@ export async function getTierlistsFromFirestore(limitCount = 20) {
 	const q = query(collection(db, 'tierlists'), orderBy('created_at', 'desc'), limit(limitCount));
 	const snap = await getDocs(q);
 	const tierlists = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as TierlistData[];
-
-	// Filter to show published + legacy (no status field) but not drafts
-	// Also filter out guest tierlists
 	const publishedTierlists = tierlists.filter(
-		(tierlist) => (!tierlist.status || tierlist.status === 'published') && !tierlist.isGuest
+		(tierlist) =>
+			(!tierlist.status || tierlist.status === 'published') &&
+			!tierlist.isGuest &&
+			tierlist.visibility !== 'unlisted'
 	);
 
-	// Fetch owner display names
 	const ownerIds = [...new Set(publishedTierlists.map((tierlist) => tierlist.owner))].filter(
 		Boolean
 	);
@@ -146,7 +159,6 @@ export async function getTierlistsFromFirestore(limitCount = 20) {
 		}
 	}
 
-	// Add displayName to tierlists
 	return publishedTierlists.map((tierlist) => ({
 		...tierlist,
 		ownerDisplayName:
@@ -163,7 +175,6 @@ export async function getTierlist(tierlistId: string): Promise<TierlistData | nu
 		if (docSnap.exists()) {
 			const tierlist = { id: docSnap.id, ...docSnap.data() } as TierlistData;
 
-			// Fetch owner display name
 			if (tierlist.owner) {
 				try {
 					const userDoc = await getDoc(doc(db, 'users', tierlist.owner));
@@ -185,9 +196,8 @@ export async function getTierlist(tierlistId: string): Promise<TierlistData | nu
 	}
 }
 
-// Get user's tierlists (published + legacy without status)
+// Get user's tierlists (published + without status)
 export async function getUserTierlists(userId: string): Promise<TierlistData[]> {
-	// Get all tierlists for user, then filter client-side for published + legacy
 	const q = query(
 		collection(db, 'tierlists'),
 		where('owner', '==', userId),
@@ -196,28 +206,24 @@ export async function getUserTierlists(userId: string): Promise<TierlistData[]> 
 	const snap = await getDocs(q);
 	const allTierlists = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as TierlistData[];
 
-	// Filter to show published + legacy (no status field) but not drafts
 	return allTierlists.filter(
-		(tierlist) => (!tierlist.status || tierlist.status === 'published') && !tierlist.isGuest // Exclude guest tierlists
+		(tierlist) => (!tierlist.status || tierlist.status === 'published') && !tierlist.isGuest
 	);
 }
 
-// Get user's polls (published + legacy without status)
+// Get user's polls (published + without status)
 export async function getUserPolls(userId: string): Promise<PollData[]> {
 	try {
-		// Get all polls for user without ordering to avoid index requirement
 		const q = query(collection(db, 'polls'), where('owner', '==', userId));
 		const snap = await getDocs(q);
 		const allPolls = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as PollData[];
 
-		// Filter to show published + legacy (no status field) but not drafts
-		// Sort client-side by created_at
 		return allPolls
 			.filter((poll) => !poll.status || poll.status === 'published')
 			.sort((a, b) => {
 				const aDate = a.created_at ? new Date(a.created_at).getTime() : 0;
 				const bDate = b.created_at ? new Date(b.created_at).getTime() : 0;
-				return bDate - aDate; // Descending order
+				return bDate - aDate;
 			});
 	} catch (error) {
 		console.error('Error fetching user polls:', error);
@@ -324,7 +330,7 @@ export async function updatePoll(pollId: string, updates: Record<string, unknown
 
 // Forking Functions
 
-// Fork a tierlist (create a copy for another user)
+// Fork a tierlist
 export async function forkTierlist(
 	originalTierlistId: string,
 	newOwnerId: string,
@@ -348,7 +354,7 @@ export async function forkTierlist(
 			owner: newOwnerId,
 			originalId: originalTierlistId,
 			isForked: true,
-			status: 'draft', // Forks start as drafts
+			status: 'draft',
 			created_at: serverTimestamp(),
 			updated_at: serverTimestamp(),
 			likes: 0,
@@ -356,13 +362,10 @@ export async function forkTierlist(
 			forks: 0
 		});
 
-		// Remove the original ID since this will be a new document
 		delete forkedTierlist.id;
 
-		// Create the fork
 		const docRef = await addDoc(collection(db, 'tierlists'), forkedTierlist);
 
-		// Increment fork count on original
 		await updateDoc(originalRef, {
 			forks: (originalData.forks || 0) + 1,
 			updated_at: serverTimestamp()
@@ -380,7 +383,7 @@ export async function getTierlistForks(originalTierlistId: string): Promise<Tier
 	const q = query(
 		collection(db, 'tierlists'),
 		where('originalId', '==', originalTierlistId),
-		where('status', '==', 'published'), // Only show published forks
+		where('status', '==', 'published'),
 		orderBy('created_at', 'desc')
 	);
 	const snap = await getDocs(q);
@@ -450,27 +453,22 @@ export async function getTierlistInteractions(
 
 export async function likeTierlist(tierlistId: string, userId: string): Promise<void> {
 	try {
-		// First, check if the tierlist exists
 		const tierlistDoc = await getDoc(doc(db, 'tierlists', tierlistId));
 		if (!tierlistDoc.exists()) {
 			throw new Error('Tierlist not found');
 		}
 
-		// Add the like entry
 		await setDoc(doc(db, 'tierlists', tierlistId, 'likes', userId), {
 			created_at: serverTimestamp()
 		});
 
-		// Get the total like count
 		const likesSnap = await getDocs(collection(db, 'tierlists', tierlistId, 'likes'));
 		const likeCount = likesSnap.size;
 
-		// Update the tierlist with the new like count
 		await updateDoc(doc(db, 'tierlists', tierlistId), {
 			likes: likeCount
 		});
 
-		// Update owner's aura
 		const tierlistData = tierlistDoc.data();
 		if (tierlistData.owner) {
 			try {
@@ -500,13 +498,11 @@ export async function unlikeTierlist(tierlistId: string, userId: string): Promis
 		const tierlistRef = doc(db, 'tierlists', tierlistId);
 		const userLikeRef = doc(db, 'tierlists', tierlistId, 'likes', userId);
 
-		// Check if user has liked
 		const likeDoc = await getDoc(userLikeRef);
 		if (!likeDoc.exists()) {
 			throw new Error('You have not liked this tierlist');
 		}
 
-		// Get tierlist data to find owner
 		const tierlistSnap = await getDoc(tierlistRef);
 		if (!tierlistSnap.exists()) {
 			throw new Error('Tierlist not found');
@@ -515,17 +511,14 @@ export async function unlikeTierlist(tierlistId: string, userId: string): Promis
 		const tierlistData = tierlistSnap.data();
 		const ownerId = tierlistData.owner;
 
-		// Remove like document
 		await deleteDoc(userLikeRef);
 
-		// Decrement like count
 		const currentLikes = tierlistData.likes || 0;
 		await updateDoc(tierlistRef, {
 			likes: Math.max(0, currentLikes - 1),
 			updated_at: serverTimestamp()
 		});
 
-		// Update owner's aura (remove aura when like is removed)
 		if (ownerId) {
 			const ownerRef = doc(db, 'users', ownerId);
 			const ownerSnap = await getDoc(ownerRef);
@@ -549,13 +542,11 @@ export async function likePoll(pollId: string, userId: string): Promise<void> {
 		const pollRef = doc(db, 'polls', pollId);
 		const userLikeRef = doc(db, 'polls', pollId, 'likes', userId);
 
-		// Check if user already liked
 		const likeDoc = await getDoc(userLikeRef);
 		if (likeDoc.exists()) {
 			throw new Error('You have already liked this poll');
 		}
 
-		// Get poll data to find owner
 		const pollSnap = await getDoc(pollRef);
 		if (!pollSnap.exists()) {
 			throw new Error('Poll not found');
@@ -564,20 +555,17 @@ export async function likePoll(pollId: string, userId: string): Promise<void> {
 		const pollData = pollSnap.data();
 		const ownerId = pollData.owner;
 
-		// Add like document
 		await setDoc(userLikeRef, {
 			likedAt: serverTimestamp(),
 			userId: userId
 		});
 
-		// Increment like count
 		const currentLikes = pollData.likes || 0;
 		await updateDoc(pollRef, {
 			likes: currentLikes + 1,
 			updated_at: serverTimestamp()
 		});
 
-		// Update owner's aura (likes on their content give them aura)
 		if (ownerId) {
 			const ownerRef = doc(db, 'users', ownerId);
 			const ownerSnap = await getDoc(ownerRef);
@@ -600,13 +588,11 @@ export async function unlikePoll(pollId: string, userId: string): Promise<void> 
 		const pollRef = doc(db, 'polls', pollId);
 		const userLikeRef = doc(db, 'polls', pollId, 'likes', userId);
 
-		// Check if user has liked
 		const likeDoc = await getDoc(userLikeRef);
 		if (!likeDoc.exists()) {
 			throw new Error('You have not liked this poll');
 		}
 
-		// Get poll data to find owner
 		const pollSnap = await getDoc(pollRef);
 		if (!pollSnap.exists()) {
 			throw new Error('Poll not found');
@@ -615,17 +601,14 @@ export async function unlikePoll(pollId: string, userId: string): Promise<void> 
 		const pollData = pollSnap.data();
 		const ownerId = pollData.owner;
 
-		// Remove like document
 		await deleteDoc(userLikeRef);
 
-		// Decrement like count
 		const currentLikes = pollData.likes || 0;
 		await updateDoc(pollRef, {
 			likes: Math.max(0, currentLikes - 1),
 			updated_at: serverTimestamp()
 		});
 
-		// Update owner's aura (remove aura when like is removed)
 		if (ownerId) {
 			const ownerRef = doc(db, 'users', ownerId);
 			const ownerSnap = await getDoc(ownerRef);
@@ -825,12 +808,10 @@ export async function updatePollStatistics(pollId: string): Promise<void> {
 				}
 			}
 
-			// Calculate range
 			range_x = Math.max(...x_values) - Math.min(...x_values);
 			range_y = Math.max(...y_values) - Math.min(...y_values);
 		}
 
-		// Update poll document with new statistics
 		const pollRef = doc(db, 'polls', pollId);
 		const statsUpdate: any = {
 			stats: {
@@ -862,14 +843,12 @@ export async function updatePollStatistics(pollId: string): Promise<void> {
 // Update interaction counts for a tierlist based on subcollections
 export async function updateTierlistInteractionCounts(tierlistId: string): Promise<void> {
 	try {
-		// Get counts from subcollections
 		const [likesSnap, commentsSnap, forksSnap] = await Promise.all([
 			getDocs(collection(db, 'tierlists', tierlistId, 'likes')),
 			getDocs(collection(db, 'tierlists', tierlistId, 'comments')),
 			getDocs(query(collection(db, 'tierlists'), where('originalId', '==', tierlistId)))
 		]);
 
-		// Update the tierlist document with counts
 		await updateDoc(doc(db, 'tierlists', tierlistId), {
 			likes: likesSnap.size,
 			comments: commentsSnap.size,

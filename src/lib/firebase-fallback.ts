@@ -351,7 +351,7 @@ export class FirebaseFallbackClient {
 	async updateTierList(id: string, tierList: TierListUpdate): Promise<TierListResponse> {
 		try {
 			const tierListRef = doc(db, 'tierlists', id);
-			
+
 			// Ensure items preserve their position data during updates
 			const updateData: any = {
 				...tierList,
