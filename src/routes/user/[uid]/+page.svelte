@@ -240,7 +240,7 @@
 						src={userProfile.photoURL ||
 							`https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile.displayName || 'Anonymous')}&size=200&background=ff5705&color=fff`}
 						alt="{userProfile.displayName || 'User'} Profile"
-						class="aspect-square h-full w-full border-4 border-black bg-gray-800 object-cover shadow-2xl"
+						class="aspect-square h-full w-full object-cover shadow-2xl"
 					/>
 				</div>
 				<!-- Info -->

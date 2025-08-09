@@ -42,6 +42,9 @@ source src-sanic/bin/activate && python3 src-sanic/main.py
 
 ## Version History
 
+### v0.4.1
+- things i forgot
+
 ### v0.4.0 - alpha
 
 - made sure non users dont have access to ai tools

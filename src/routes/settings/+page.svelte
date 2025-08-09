@@ -374,7 +374,6 @@
 		{#if !userProfile}
 			<!-- Loading State -->
 			<div class="flex items-center justify-center py-16">
-				<div class="h-8 w-8 animate-spin border-2 border-orange-500 border-t-transparent"></div>
 				<LoadingIndicator size="lg" />
 			</div>
 		{:else}
