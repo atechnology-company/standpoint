@@ -1,9 +1,9 @@
 {
-  "services": [
-    {
-      "name": "frontend",
-      "projectPath": ".",
-      "startCommand": "pnpm run preview"
-    }
-  ]
+	"services": [
+		{
+			"name": "frontend",
+			"projectPath": ".",
+			"startCommand": "pnpm run preview"
+		}
+	]
 }
