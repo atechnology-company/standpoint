@@ -17,7 +17,7 @@
 </script>
 
 <svelte:head>
-	<title>Standpoint - Create, Share, Discover</title>
+	<title>Standpoint - The Ultimate Platform for Sharing Standpoints</title>
 	<meta
 		name="description"
 		content="Create tier lists and polls, share your opinions, discover what others think."
