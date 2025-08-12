@@ -2144,7 +2144,7 @@
 						>
 							<!-- Tier Controls -->
 							<div
-								class="group pointer-events-none absolute top-2 right-2 z-20 flex h-[calc(100%-1rem)] w-40 items-center justify-end"
+								class="group pointer-events-none absolute top-2 right-2 z-10 flex h-[calc(100%-1rem)] w-40 items-center justify-end"
 							>
 								<div
 									class="pointer-events-auto flex flex-col items-end space-y-2"
@@ -2166,7 +2166,7 @@
 										{#each [{ icon: 'add', action: () => openAddItemModal(tier.id), title: 'Add item' }, { icon: 'settings', action: () => openColorPicker(tier.id), title: 'Settings' }, { icon: 'keyboard_arrow_down', action: () => addTierAtPosition(index + 1), title: 'Add tier below' }, { icon: 'keyboard_arrow_up', action: () => addTierAtPosition(index), title: 'Add tier above' }] as control}
 											<button
 												class="hover:bg-opacity-20 flex h-7 w-7 items-center justify-center transition-colors hover:bg-black/60"
-												style="color: {tier.color}; z-index:20;"
+												style="color: {tier.color}; z-index:10;"
 												on:click|stopPropagation={control.action}
 												title={control.title}
 											>
@@ -2360,7 +2360,7 @@
 							>
 								<!-- Tier Controls -->
 								<div
-									class="group pointer-events-auto absolute top-0 right-4 z-20 flex h-full w-64 items-center justify-end"
+									class="group pointer-events-auto absolute top-0 right-4 z-10 flex h-full w-64 items-center justify-end"
 								>
 									<div class="flex flex-col items-end space-y-3" style="color: {tier.color};">
 										<input
@@ -2383,7 +2383,7 @@
 											{#each [{ icon: 'add', action: () => openAddItemModal(tier.id), title: 'Add item' }, { icon: 'settings', action: () => openColorPicker(tier.id), title: 'Settings' }, { icon: 'keyboard_arrow_down', action: () => addTierAtPosition(index + 1), title: 'Add tier below' }, { icon: 'keyboard_arrow_up', action: () => addTierAtPosition(index), title: 'Add tier above' }] as control}
 												<button
 													class="hover:bg-opacity-20 flex h-8 w-8 items-center justify-center transition-colors hover:bg-black"
-													style="color: {tier.color};"
+													style="color: {tier.color}; z-index:10;"
 													on:click|stopPropagation={control.action}
 													title={control.title}
 												>

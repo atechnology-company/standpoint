@@ -42,6 +42,9 @@ source src-sanic/bin/activate && python3 src-sanic/main.py
 
 ## Version History
 
+### v0.5.1
+- weird z index issues (wasn't in my browser) on create page
+
 ### v0.5.0 - beta
 
 - bug fixes with tierlist creation
