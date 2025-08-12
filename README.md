@@ -144,7 +144,8 @@ _i want to sleep so bad_
 - fix half baked mobile ui
 - finish accent color implementation and theming and update settings display
 - uploading indicators
-- editing tierlists after publishing
+- **editing tierlists after publishing**
+- fix linking forking to its original tierlist
 - xss prevention
 - notifications
 - image logic after transferring to new implementation is cooked
@@ -158,10 +159,6 @@ _i want to sleep so bad_
 - hash checking as to not upload duplicate images
 - localisation in various languages
 
-- voting outside the svg should be banned
-- tierlist names had the same problem as name inputs for items
-- like doesnt refresh for polls
-- dynamic tierlist gradient doesnt update when adding a new tier (make the transition smooth)
 
 ### things i wanna do
 
