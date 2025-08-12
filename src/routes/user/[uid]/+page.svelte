@@ -40,6 +40,7 @@
 	import { currentUser, hasProAccessStore } from '$lib';
 	import { addToast } from '$lib/toast';
 	import { getUserBadges, type UserStats, type Badge } from '../../../lib/badges.js';
+	import { fadeImage } from '$lib/fadeImage';
 	import {
 		updateUserProfile,
 		type UserProfile,
@@ -82,6 +83,7 @@
 	// Authentication and permission checks
 	$: user = $currentUser;
 	$: isOwnProfile = user?.uid === userProfile?.uid;
+	$: isOwnRedirectedProfile = isOwnProfile || (isRedirectProfile && resolvedUid === user?.uid);
 
 	// Component state variables
 	let isFollowingUser = false;
@@ -111,6 +113,11 @@
 			const action = isFollowingUser ? unfollowUser : followUser;
 			await action(user.uid, userProfile.uid);
 			isFollowingUser = !isFollowingUser;
+			if (isFollowingUser) {
+				followerCount += 1;
+			} else if (followerCount > 0) {
+				followerCount -= 1;
+			}
 			addToast(isFollowingUser ? 'Following user' : 'Unfollowed user', 'success');
 		} catch (error) {
 			console.error('Error toggling follow:', error);
@@ -223,9 +230,10 @@
 				<div class="absolute inset-0 z-0 h-full w-full">
 					{#if userProfile.bannerURL}
 						<img
+							use:fadeImage
 							src={userProfile.bannerURL}
 							alt="Banner"
-							class="h-full w-full object-cover"
+							class="sp-fade-image h-full w-full object-cover"
 							style="opacity:0.5;"
 						/>
 					{:else}
@@ -237,10 +245,11 @@
 					style="margin:0;padding:0;width:15rem;min-width:15rem;"
 				>
 					<img
+						use:fadeImage
 						src={userProfile.photoURL ||
 							`https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile.displayName || 'Anonymous')}&size=200&background=ff5705&color=fff`}
 						alt="{userProfile.displayName || 'User'} Profile"
-						class="aspect-square h-full w-full object-cover shadow-2xl"
+						class="sp-fade-image aspect-square h-full w-full object-cover shadow-2xl"
 					/>
 				</div>
 				<!-- Info -->
@@ -389,6 +398,25 @@
 								</div>
 							{/if}
 						</div>
+						{#if !isOwnRedirectedProfile && userProfile}
+							<div class="mt-4 flex items-center gap-2">
+								<button
+									on:click={toggleFollow}
+									disabled={followLoading}
+									class="px-4 py-2 text-sm font-semibold tracking-wide transition-colors disabled:opacity-50 {isFollowingUser
+										? 'bg-gray-700 text-white hover:bg-gray-600'
+										: 'bg-orange-500 text-white hover:bg-orange-600'}"
+								>
+									{followLoading
+										? isFollowingUser
+											? 'UNFOLLOWING...'
+											: 'FOLLOWING...'
+										: isFollowingUser
+											? 'UNFOLLOW'
+											: 'FOLLOW'}
+								</button>
+							</div>
+						{/if}
 					</div>
 					<!-- Settings Button (Own Profile Only, stays top right) -->
 					{#if isOwnProfile}
@@ -424,19 +452,31 @@
 		</div>
 
 		<div class="mt-8 border-b border-gray-800 bg-black">
-			<div class="container mx-auto px-0">
-				<nav class="flex space-x-12 overflow-x-auto px-6">
-					{#each [{ id: 'creations', label: 'All Creations' }, { id: 'tierlists', label: `Tierlists ${stats.creations}` }, { id: 'polls', label: `Polls ${stats.polls}` }] as tab}
+			<div class="relative container mx-auto px-0">
+				<nav class="relative flex space-x-12 overflow-x-auto px-6">
+					{#each [{ id: 'creations', label: 'All Creations' }, { id: 'tierlists', label: `Tierlists ${stats.creations}` }, { id: 'polls', label: `Polls ${stats.polls}` }] as tab, i}
 						<button
-							class="py-4 text-sm font-bold tracking-wide whitespace-nowrap uppercase transition-colors {selectedTab ===
-							tab.id
-								? 'border-b-2 border-orange-500 text-white'
-								: 'text-gray-400 hover:text-white'}"
+							class="relative py-4 text-sm font-bold tracking-wide whitespace-nowrap uppercase transition-colors"
+							class:text-white={selectedTab === tab.id}
+							class:text-gray-500={selectedTab !== tab.id}
+							class:opacity-100={selectedTab === tab.id}
+							class:opacity-60={selectedTab !== tab.id}
 							on:click={() => (selectedTab = tab.id)}
 						>
-							{tab.label}
+							<span
+								class="transition-opacity duration-300"
+								style="opacity:{selectedTab === tab.id ? 1 : 0.6}">{tab.label}</span
+							>
 						</button>
 					{/each}
+					<div
+						class="absolute bottom-0 h-[2px] w-20 bg-orange-500 transition-all duration-500 ease-out"
+						style="left:{(() => {
+							const tabs = ['creations', 'tierlists', 'polls'];
+							const idx = tabs.indexOf(selectedTab);
+							return 24 + idx * (100 / tabs.length) + '%';
+						})()}"
+					></div>
 				</nav>
 			</div>
 		</div>

@@ -8,7 +8,8 @@ import {
 	onAuthStateChanged,
 	type User
 } from 'firebase/auth';
-import { getDoc, doc } from 'firebase/firestore';
+import { getDoc, doc, setDoc } from 'firebase/firestore';
+import { setAccent } from './accent';
 import { getUserGroup, setUserGroup } from './user-groups';
 
 export interface ImageResult {
@@ -22,6 +23,8 @@ export interface ImageResult {
 
 // Store for holding image search results
 export const resultImages = writable<ImageResult[]>([]);
+// Loading state for image searches
+export const imageSearchLoading = writable<boolean>(false);
 
 // Store for current user
 export const currentUser = firebaseUser;
@@ -50,10 +53,29 @@ onAuthStateChanged(auth, async (user) => {
 			await setUserGroup(user.uid, group);
 		}
 		userGroup.set(group);
+		// Load user preferences (accent/theme)
+		try {
+			const snap = await getDoc(doc(db, 'users', user.uid));
+			if (snap.exists()) {
+				const prefs = (snap.data() as any)?.preferences;
+				if (prefs?.accent) setAccent(prefs.accent);
+			}
+		} catch (e) {
+			console.warn('Failed loading user prefs', e);
+		}
 	} else {
 		userGroup.set(null);
 	}
 });
+
+// Helper to persist theme mode (light/dark) [unfinished]
+export async function persistThemeMode(mode: 'light' | 'dark') {
+	const user = auth.currentUser;
+	if (!user) return;
+	try {
+		await setDoc(doc(db, 'users', user.uid), { preferences: { theme: mode } }, { merge: true });
+	} catch {}
+}
 
 // Sign in with Google
 export async function signInWithGoogle() {

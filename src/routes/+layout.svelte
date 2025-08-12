@@ -49,9 +49,10 @@
 			transition:fade={{ duration: 300 }}
 		></div>
 	{/if}
-	{@render children()}
+	<div in:fade={{ duration: 250 }} out:fade={{ duration: 200 }} class="min-h-screen">
+		{@render children()}
+	</div>
 
-	<!-- Onboarding Component -->
 	<Onboarding bind:show={showOnboarding} on:complete={handleOnboardingComplete} />
 </main>
 
@@ -63,6 +64,8 @@
 		--font-sans:
 			'Mozilla Text', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
 			Roboto, Arial, 'Noto Sans', sans-serif;
+		--sidebar-bg: rgba(var(--primary-light, 255, 180, 120), 0.18);
+		--sidebar-bg-dark: rgba(var(--primary, 255, 120, 60), 0.85);
 	}
 	body,
 	html,

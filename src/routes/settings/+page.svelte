@@ -363,7 +363,7 @@
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
-<div class="min-h-screen bg-black text-white">
+<div class="min-h-screen bg-[#060606] text-white">
 	<div class="container mx-auto px-6 py-8">
 		<!-- Header -->
 		<div class="mb-8">
@@ -380,67 +380,34 @@
 			<!-- Sidebar Navigation -->
 			<div class="flex gap-5">
 				<div class="w-64 flex-shrink-0">
-					<nav class="space-y-2">
-						<button
-							on:click={() => (activeSection = 'profile')}
-							class="flex w-full items-center px-4 py-3 text-left transition-colors {activeSection ===
-							'profile'
-								? 'bg-orange-500 text-white'
-								: 'text-gray-300 hover:bg-gray-700'}"
-						>
-							<span class="material-symbols-outlined mr-3 text-sm">person</span>
-							Profile
-						</button>
-						<button
-							on:click={() => (activeSection = 'notifications')}
-							class="flex w-full items-center px-4 py-3 text-left transition-colors {activeSection ===
-							'notifications'
-								? 'bg-orange-500 text-white'
-								: 'text-gray-300 hover:bg-gray-700'}"
-						>
-							<span class="material-symbols-outlined mr-3 text-sm">notifications</span>
-							Notifications
-						</button>
-						<button
-							on:click={() => (activeSection = 'privacy')}
-							class="flex w-full items-center px-4 py-3 text-left transition-colors {activeSection ===
-							'privacy'
-								? 'bg-orange-500 text-white'
-								: 'text-gray-300 hover:bg-gray-700'}"
-						>
-							<span class="material-symbols-outlined mr-3 text-sm">privacy_tip</span>
-							Privacy
-						</button>
-						<button
-							on:click={() => (activeSection = 'theme')}
-							class="flex w-full items-center px-4 py-3 text-left transition-colors {activeSection ===
-							'theme'
-								? 'bg-orange-500 text-white'
-								: 'text-gray-300 hover:bg-gray-700'}"
-						>
-							<span class="material-symbols-outlined mr-3 text-sm">palette</span>
-							Theme
-							<span
-								class="ml-2 inline-flex items-center bg-gradient-to-r from-orange-500 to-purple-500 px-2 py-1 text-xs font-medium text-white"
+					<nav class="relative space-y-1 overflow-hidden p-1">
+						<div
+							class="absolute right-1 left-1 h-10 bg-[rgb(var(--primary))]/80 transition-all duration-400 ease-out"
+							style="top:{(() => {
+								const order = ['profile', 'notifications', 'privacy', 'theme', 'ai'];
+								const idx = order.indexOf(activeSection);
+								return 4 + idx * (40 + 4) + 'px';
+							})()}"
+						></div>
+						{#each [{ id: 'profile', icon: 'person', label: 'Profile' }, { id: 'notifications', icon: 'notifications', label: 'Notifications' }, { id: 'privacy', icon: 'privacy_tip', label: 'Privacy' }, { id: 'theme', icon: 'palette', label: 'Theme', pro: true }, { id: 'ai', icon: 'smart_toy', label: 'AI Features', pro: true }] as item}
+							<button
+								on:click={() => (activeSection = item.id)}
+								class="relative z-10 flex h-10 w-full items-center px-4 text-left text-sm font-medium tracking-wide transition-colors {activeSection ===
+								item.id
+									? 'text-white'
+									: 'text-gray-300 hover:text-white'}"
 							>
-								✨ PRO
-							</span>
-						</button>
-						<button
-							on:click={() => (activeSection = 'ai')}
-							class="flex w-full items-center px-4 py-3 text-left transition-colors {activeSection ===
-							'ai'
-								? 'bg-orange-500 text-white'
-								: 'text-gray-300 hover:bg-gray-700'}"
-						>
-							<span class="material-symbols-outlined mr-3 text-sm">smart_toy</span>
-							AI Features
-							<span
-								class="ml-2 inline-flex items-center bg-gradient-to-r from-orange-500 to-purple-500 px-2 py-1 text-xs font-medium text-white"
-							>
-								✨ PRO
-							</span>
-						</button>
+								<span class="material-symbols-outlined mr-3 text-sm">{item.icon}</span>
+								{item.label}
+								{#if item.pro}
+									<span
+										class="ml-2 inline-flex items-center px-2 py-1 text-[10px] font-semibold text-white"
+										style="background:linear-gradient(90deg,var(--pro-grad-stop-1),var(--pro-grad-stop-2),var(--pro-grad-stop-3));"
+										>✨ PRO</span
+									>
+								{/if}
+							</button>
+						{/each}
 					</nav>
 				</div>
 
@@ -474,7 +441,7 @@
 											<button
 												type="button"
 												on:click={() => avatarFileInput?.click()}
-												class="bg-orange-500 px-4 py-2 text-sm text-white transition-colors hover:bg-orange-600"
+												class="bg-[rgb(var(--primary))] px-4 py-2 text-sm text-white transition-colors hover:brightness-110"
 											>
 												Upload New Picture
 											</button>
@@ -488,7 +455,8 @@
 									<div class="mb-4 block text-sm font-medium text-gray-300">
 										Profile Banner
 										<span
-											class="ml-2 inline-flex items-center bg-gradient-to-r from-orange-500 to-purple-500 px-2 py-1 text-xs font-medium text-white"
+											class="ml-2 inline-flex items-center px-2 py-1 text-xs font-medium text-white"
+											style="background:linear-gradient(90deg,var(--pro-grad-stop-1),var(--pro-grad-stop-2),var(--pro-grad-stop-3));"
 										>
 											✨ PRO
 										</span>
@@ -507,7 +475,7 @@
 											></div>
 										{:else}
 											<div
-												class="flex h-32 w-full items-center justify-center border-2 border-gray-600 bg-gradient-to-r from-orange-600 to-red-600"
+												class="flex h-32 w-full items-center justify-center border-2 border-gray-600 bg-[rgb(var(--primary))/25]"
 											>
 												<span class="text-opacity-70 text-white">No banner image set</span>
 											</div>
@@ -539,7 +507,7 @@
 										</div>
 									</div>
 									{#if !$hasProAccessStore}
-										<p class="mt-2 text-xs text-orange-400">
+										<p class="text-accent/70 mt-2 text-xs">
 											🔒 Pro feature: Unlock custom profile banners
 										</p>
 									{/if}
@@ -553,7 +521,7 @@
 										id="displayName"
 										type="text"
 										bind:value={profileForm.displayName}
-										class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-transparent focus:ring-2 focus:ring-orange-500"
+										class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-transparent focus:ring-2 focus:ring-[rgb(var(--primary))]"
 										placeholder="Your display name"
 									/>
 								</div>
@@ -563,7 +531,8 @@
 										<label for="uid" class="mb-2 block text-sm font-medium text-gray-300">
 											UID (Custom Username)
 											<span
-												class="ml-2 inline-flex items-center bg-gradient-to-r from-orange-500 to-purple-500 px-2 py-1 text-xs font-medium text-white"
+												class="ml-2 inline-flex items-center px-2 py-1 text-xs font-medium text-white"
+												style="background:linear-gradient(90deg,var(--pro-grad-stop-1),var(--pro-grad-stop-2),var(--pro-grad-stop-3));"
 											>
 												✨ PRO
 											</span>
@@ -572,7 +541,7 @@
 											id="uid"
 											type="text"
 											bind:value={profileForm.uid}
-											class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-transparent focus:ring-2 focus:ring-orange-500"
+											class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-transparent focus:ring-2 focus:ring-[rgb(var(--primary))]"
 											placeholder="Your custom UID"
 											pattern="[a-zA-Z0-9_-]+"
 											title="UID can only contain letters, numbers, hyphens, and underscores"
@@ -592,7 +561,7 @@
 										id="bio"
 										bind:value={profileForm.bio}
 										rows="3"
-										class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-transparent focus:ring-2 focus:ring-orange-500"
+										class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-transparent focus:ring-2 focus:ring-[rgb(var(--primary))]"
 										placeholder="Tell us about yourself..."
 									></textarea>
 								</div>
@@ -605,7 +574,7 @@
 										id="location"
 										type="text"
 										bind:value={profileForm.location}
-										class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-transparent focus:ring-2 focus:ring-orange-500"
+										class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-transparent focus:ring-2 focus:ring-[rgb(var(--primary))]"
 										placeholder="Your location"
 									/>
 								</div>
@@ -618,7 +587,7 @@
 										id="website"
 										type="url"
 										bind:value={profileForm.website}
-										class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-transparent focus:ring-2 focus:ring-orange-500"
+										class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-transparent focus:ring-2 focus:ring-[rgb(var(--primary))]"
 										placeholder="https://your-website.com"
 									/>
 								</div>
@@ -635,7 +604,7 @@
 											id="twitter"
 											type="text"
 											bind:value={profileForm.twitter}
-											class="w-full border border-gray-600 bg-gray-700 px-4 py-3 pl-8 text-white placeholder-gray-400 focus:border-transparent focus:ring-2 focus:ring-orange-500"
+											class="w-full border border-gray-600 bg-gray-700 px-4 py-3 pl-8 text-white placeholder-gray-400 focus:border-transparent focus:ring-2 focus:ring-[rgb(var(--primary))]"
 											placeholder="username"
 										/>
 									</div>
@@ -653,7 +622,7 @@
 											id="instagram"
 											type="text"
 											bind:value={profileForm.instagram}
-											class="w-full border border-gray-600 bg-gray-700 px-4 py-3 pl-8 text-white placeholder-gray-400 focus:border-transparent focus:ring-2 focus:ring-orange-500"
+											class="w-full border border-gray-600 bg-gray-700 px-4 py-3 pl-8 text-white placeholder-gray-400 focus:border-transparent focus:ring-2 focus:ring-[rgb(var(--primary))]"
 											placeholder="username"
 										/>
 									</div>
@@ -662,7 +631,7 @@
 								<button
 									on:click={saveProfile}
 									disabled={saving}
-									class="bg-orange-500 px-6 py-3 text-white transition-colors hover:bg-orange-600 disabled:opacity-50"
+									class="bg-[rgb(var(--primary))] px-6 py-3 text-white transition-colors hover:brightness-110 disabled:opacity-50"
 								>
 									{saving ? 'Saving...' : 'Save Profile'}
 								</button>
@@ -760,7 +729,7 @@
 											class="peer sr-only"
 										/>
 										<div
-											class="peer h-6 w-11 bg-gray-700 peer-checked:bg-orange-500 peer-focus:ring-4 peer-focus:ring-orange-300 after:absolute after:top-0.5 after:left-[2px] after:h-5 after:w-5 after:after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"
+											class="peer h-6 w-11 bg-gray-700 peer-checked:bg-[rgb(var(--primary))] peer-focus:ring-4 peer-focus:ring-[rgb(var(--primary))]/40 after:absolute after:top-0.5 after:left-[2px] after:h-5 after:w-5 after:after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"
 										></div>
 									</label>
 								</div>
@@ -768,7 +737,7 @@
 								<button
 									on:click={saveNotifications}
 									disabled={saving}
-									class="bg-orange-500 px-6 py-3 text-white transition-colors hover:bg-orange-600 disabled:opacity-50"
+									class="bg-[rgb(var(--primary))] px-6 py-3 text-white transition-colors hover:brightness-110 disabled:opacity-50"
 								>
 									{saving ? 'Saving...' : 'Save Notifications'}
 								</button>
@@ -792,7 +761,7 @@
 									<select
 										id="profileVisibility"
 										bind:value={privacyForm.profileVisibility}
-										class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white focus:border-transparent focus:ring-2 focus:ring-orange-500"
+										class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white focus:border-transparent focus:ring-2 focus:ring-[rgb(var(--primary))]"
 									>
 										<option value="public">Public</option>
 										<option value="friends">Friends Only</option>
@@ -810,7 +779,7 @@
 									<select
 										id="tierlistVisibility"
 										bind:value={privacyForm.tierlistVisibility}
-										class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white focus:border-transparent focus:ring-2 focus:ring-orange-500"
+										class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white focus:border-transparent focus:ring-2 focus:ring-[rgb(var(--primary))]"
 									>
 										<option value="public">Public</option>
 										<option value="friends">Friends Only</option>
@@ -825,7 +794,7 @@
 									<select
 										id="pollVisibility"
 										bind:value={privacyForm.pollVisibility}
-										class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white focus:border-transparent focus:ring-2 focus:ring-orange-500"
+										class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white focus:border-transparent focus:ring-2 focus:ring-[rgb(var(--primary))]"
 									>
 										<option value="public">Public</option>
 										<option value="friends">Friends Only</option>
@@ -845,7 +814,7 @@
 											class="peer sr-only"
 										/>
 										<div
-											class="peer h-6 w-11 bg-gray-700 peer-checked:bg-orange-500 peer-focus:ring-4 peer-focus:ring-orange-300 after:absolute after:top-0.5 after:left-[2px] after:h-5 after:w-5 after:after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"
+											class="peer h-6 w-11 bg-gray-700 peer-checked:bg-[rgb(var(--primary))] peer-focus:ring-4 peer-focus:ring-[rgb(var(--primary))]/40 after:absolute after:top-0.5 after:left-[2px] after:h-5 after:w-5 after:after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"
 										></div>
 									</label>
 								</div>
@@ -862,7 +831,7 @@
 											class="peer sr-only"
 										/>
 										<div
-											class="peer h-6 w-11 bg-gray-700 peer-checked:bg-orange-500 peer-focus:ring-4 peer-focus:ring-orange-300 after:absolute after:top-0.5 after:left-[2px] after:h-5 after:w-5 after:after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"
+											class="peer h-6 w-11 bg-gray-700 peer-checked:bg-[rgb(var(--primary))] peer-focus:ring-4 peer-focus:ring-[rgb(var(--primary))]/40 after:absolute after:top-0.5 after:left-[2px] after:h-5 after:w-5 after:after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"
 										></div>
 									</label>
 								</div>
@@ -870,7 +839,7 @@
 								<button
 									on:click={savePrivacy}
 									disabled={saving}
-									class="bg-orange-500 px-6 py-3 text-white transition-colors hover:bg-orange-600 disabled:opacity-50"
+									class="bg-[rgb(var(--primary))] px-6 py-3 text-white transition-colors hover:brightness-110 disabled:opacity-50"
 								>
 									{saving ? 'Saving...' : 'Save Privacy'}
 								</button>
@@ -882,49 +851,58 @@
 					{#if activeSection === 'theme'}
 						<div class="border border-gray-700 bg-gray-800/50 p-8 backdrop-blur-sm">
 							<h2 class="mb-6 text-2xl font-bold">Theme & Appearance</h2>
-
 							{#if $hasProAccessStore}
 								<div class="space-y-6">
-									<div>
+									<!--<div>
 										<label for="theme" class="mb-2 block text-sm font-medium text-gray-300">
 											Theme
 										</label>
 										<select
 											id="theme"
 											bind:value={themeForm.theme}
-											class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white focus:border-transparent focus:ring-2 focus:ring-orange-500"
+											class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white focus:border-transparent focus:ring-2 focus:ring-[rgb(var(--primary))]"
 										>
 											<option value="dark">Dark</option>
 											<option value="light">Light</option>
 											<option value="auto">Auto</option>
 										</select>
-									</div>
+									</div>-->
 
 									<div>
 										<label for="colorScheme" class="mb-2 block text-sm font-medium text-gray-300">
 											Color Scheme
 										</label>
-										<select
-											id="colorScheme"
-											bind:value={themeForm.colorScheme}
-											class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white focus:border-transparent focus:ring-2 focus:ring-orange-500"
-										>
-											<option value="orange">Orange</option>
-											<option value="blue">Blue</option>
-											<option value="purple">Purple</option>
-											<option value="green">Green</option>
-											<option value="red">Red</option>
-										</select>
+										<div class="flex flex-wrap gap-2">
+											{#each [{ value: 'orange', label: 'Orange', hex: '#FF6B35' }, { value: 'red', label: 'Red', hex: '#FF356B' }, { value: 'lime', label: 'Lime', hex: '#C0FF05' }, { value: 'green', label: 'Green', hex: '#05FFAC' }, { value: 'blue', label: 'Blue', hex: '#00FFFF' }, { value: 'purple', label: 'Purple', hex: '#B400FF' }] as accent}
+												<button
+													type="button"
+													class="h-10 w-20 border-2 border-gray-700 font-semibold text-white transition-all duration-150 focus:ring-2 focus:ring-white focus:outline-none"
+													style="background: {accent.hex}; opacity: {themeForm.colorScheme ===
+													accent.value
+														? 1
+														: 0.7}; box-shadow: {themeForm.colorScheme === accent.value
+														? '0 0 0 2px white'
+														: 'none'};"
+													aria-label={accent.label}
+													on:click={() => {
+														themeForm.colorScheme = accent.value;
+														setAccent(accent.value);
+													}}
+												>
+													{accent.label}
+												</button>
+											{/each}
+										</div>
 									</div>
 
-									<div>
+									<!--<div>
 										<label for="fontSize" class="mb-2 block text-sm font-medium text-gray-300">
 											Font Size
 										</label>
 										<select
 											id="fontSize"
 											bind:value={themeForm.fontSize}
-											class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white focus:border-transparent focus:ring-2 focus:ring-orange-500"
+											class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white focus:border-transparent focus:ring-2 focus:ring-[rgb(var(--primary))]"
 										>
 											<option value="small">Small</option>
 											<option value="medium">Medium</option>
@@ -935,10 +913,10 @@
 									<button
 										on:click={saveTheme}
 										disabled={saving}
-										class="bg-orange-500 px-6 py-3 text-white transition-colors hover:bg-orange-600 disabled:opacity-50"
+										class="bg-[rgb(var(--primary))] px-6 py-3 text-white transition-colors hover:brightness-110 disabled:opacity-50"
 									>
 										{saving ? 'Saving...' : 'Save Theme'}
-									</button>
+									</button>-->
 								</div>
 							{:else}
 								<div class="py-12 text-center">
@@ -951,7 +929,8 @@
 									</p>
 									<a
 										href="/pro"
-										class="inline-flex items-center bg-gradient-to-r from-orange-500 to-purple-500 px-6 py-3 font-medium text-white transition-all hover:from-orange-600 hover:to-purple-600"
+										class="inline-flex items-center px-6 py-3 font-medium text-white transition-all"
+										style="background:linear-gradient(90deg,var(--pro-grad-stop-1),var(--pro-grad-stop-2),var(--pro-grad-stop-3));"
 									>
 										<span>✨</span>
 										<span class="ml-2">Upgrade to Pro</span>
@@ -976,7 +955,7 @@
 										<label class="relative inline-flex cursor-pointer items-center">
 											<input type="checkbox" bind:checked={aiForm.enableAI} class="peer sr-only" />
 											<div
-												class="peer h-6 w-11 bg-gray-700 peer-checked:bg-orange-500 peer-focus:ring-4 peer-focus:ring-orange-300 after:absolute after:top-0.5 after:left-[2px] after:h-5 after:w-5 after:after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"
+												class="peer h-6 w-11 bg-gray-700 peer-checked:bg-[rgb(var(--primary))] peer-focus:ring-4 peer-focus:ring-[rgb(var(--primary))]/40 after:absolute after:top-0.5 after:left-[2px] after:h-5 after:w-5 after:after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"
 											></div>
 										</label>
 									</div>
@@ -993,7 +972,7 @@
 												class="peer sr-only"
 											/>
 											<div
-												class="peer h-6 w-11 bg-gray-700 peer-checked:bg-orange-500 peer-focus:ring-4 peer-focus:ring-orange-300 after:absolute after:top-0.5 after:left-[2px] after:h-5 after:w-5 after:after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"
+												class="peer h-6 w-11 bg-gray-700 peer-checked:bg-[rgb(var(--primary))] peer-focus:ring-4 peer-focus:ring-[rgb(var(--primary))]/40 after:absolute after:top-0.5 after:left-[2px] after:h-5 after:w-5 after:after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"
 											></div>
 										</label>
 									</div>
@@ -1008,7 +987,7 @@
 									<button
 										on:click={saveAI}
 										disabled={saving}
-										class="bg-orange-500 px-6 py-3 text-white transition-colors hover:bg-orange-600 disabled:opacity-50"
+										class="bg-[rgb(var(--primary))] px-6 py-3 text-white transition-colors hover:brightness-110 disabled:opacity-50"
 									>
 										{saving ? 'Saving...' : 'Save AI Settings'}
 									</button>
@@ -1022,7 +1001,8 @@
 									<p class="mb-6 text-gray-400">Unlock AI-powered features with Standpoint Pro</p>
 									<a
 										href="/pro"
-										class="inline-flex items-center bg-gradient-to-r from-orange-500 to-purple-500 px-6 py-3 font-medium text-white transition-all hover:from-orange-600 hover:to-purple-600"
+										class="inline-flex items-center px-6 py-3 font-medium text-white transition-all"
+										style="background:linear-gradient(90deg,var(--pro-grad-stop-1),var(--pro-grad-stop-2),var(--pro-grad-stop-3));"
 									>
 										<span>✨</span>
 										<span class="ml-2">Upgrade to Pro</span>

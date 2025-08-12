@@ -1,4 +1,5 @@
 import { writable } from 'svelte/store';
+import { persistThemeMode } from './stores';
 import { browser } from '$app/environment';
 
 // Theme settings interface
@@ -36,6 +37,7 @@ if (browser) {
 	themeSettings.subscribe((theme) => {
 		localStorage.setItem('standpoint-theme', JSON.stringify(theme));
 		applyTheme(theme);
+		persistThemeMode(theme.theme).catch(() => {});
 	});
 }
 

@@ -27,12 +27,15 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ uid: user.uid })
 			});
-			const data = await res.json();
-			if (data.url) {
-				window.location.href = data.url;
-			} else {
-				error = data.error || 'Failed to start checkout.';
+			if (res.ok) {
+				const data = await res.json();
+				if (data.url) {
+					window.location.href = data.url;
+					return;
+				}
+				if (data.error) throw new Error(data.error);
 			}
+			throw new Error('Backend unavailable');
 		} catch (e) {
 			error = 'An error occurred while starting checkout.';
 		}

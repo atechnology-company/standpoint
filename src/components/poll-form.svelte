@@ -22,7 +22,10 @@
 	export let responseTypes: ResponseTypeOption[];
 
 	const colorSchemes = [
-		{ name: 'Warm/Cool', colors: ['#ff5705', '#0066cc', '#00ff88', '#ff4488', '#ffaa00'] },
+		{
+			name: 'Warm/Cool',
+			colors: ['rgb(var(--primary))', '#0066cc', '#00ff88', '#ff4488', '#ffaa00']
+		},
 		{ name: 'RGB Primary', colors: ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff'] },
 		{ name: 'Modern', colors: ['#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444'] },
 		{ name: 'Sunset', colors: ['#fbbf24', '#f59e0b', '#d97706', '#92400e', '#451a03'] }
@@ -52,10 +55,13 @@
 	<div class="space-y-3">
 		{#each responseTypes as type (type.value)}
 			<label
-				class="flex cursor-pointer items-center border p-4 transition-colors hover:bg-gray-700 {poll.responseType ===
+				class="flex cursor-pointer items-center border p-4 transition-colors {poll.responseType ===
 				type.value
-					? 'border-[#ff5705] bg-[#ff5705]/20'
+					? 'border-[color:var(--primary)] bg-[color:var(--primary)]/20'
 					: 'border-gray-600 bg-gray-700/50'}"
+				style={poll.responseType === type.value
+					? 'border-color: var(--primary); background: rgba(var(--primary), 0.12);'
+					: ''}
 			>
 				<input type="radio" bind:group={poll.responseType} value={type.value} class="sr-only" />
 				<div class="flex items-center space-x-4">
@@ -67,7 +73,10 @@
 				</div>
 				{#if poll.responseType === type.value}
 					<div class="ml-auto">
-						<div class="flex h-5 w-5 items-center justify-center bg-[#ff5705]">
+						<div
+							class="flex h-5 w-5 items-center justify-center"
+							style="background: var(--primary);"
+						>
 							<div class="h-2 w-2 bg-white"></div>
 						</div>
 					</div>
@@ -79,7 +88,9 @@
 
 <!-- Option Labels -->
 <fieldset class="mb-8">
-	<legend class="mb-4 block text-sm font-medium text-white/90">Option Labels *</legend>
+	<legend class="mb-4 block text-sm font-medium text-white/90"
+		>Option Labels (clockwise starting from the top) *</legend
+	>
 	<div class="space-y-3">
 		{#each poll.customOptions as option, index (index)}
 			<div class="flex items-center space-x-3">
@@ -91,7 +102,7 @@
 					title="Choose color for {option}"
 				/>
 				<input
-					class="flex-1 border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-transparent focus:ring-2 focus:ring-[#ff5705] focus:outline-none"
+					class="focus:ring-accent flex-1 border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-transparent focus:ring-2 focus:outline-none"
 					type="text"
 					value={option}
 					on:input={(e) => {
@@ -117,7 +128,7 @@
 				class="peer sr-only"
 			/>
 			<div
-				class="peer h-6 w-11 bg-gray-600 peer-checked:bg-[#ff5705] peer-focus:ring-4 peer-focus:ring-[#ff5705]/20 peer-focus:outline-none after:absolute after:top-[2px] after:left-[2px] after:h-5 after:w-5 after:after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"
+				class="peer h-6 w-11 bg-gray-700 peer-checked:bg-[rgb(var(--primary))] peer-focus:ring-4 peer-focus:ring-[rgb(var(--primary))]/40 after:absolute after:top-0.5 after:left-[2px] after:h-5 after:w-5 after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"
 			></div>
 		</label>
 	</div>

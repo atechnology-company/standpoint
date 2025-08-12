@@ -49,6 +49,7 @@
 
 	// Interaction states
 	let liked = false;
+	let likeHover = false;
 	let likes = 0;
 	let comments = 0;
 	let forks = 0;
@@ -355,7 +356,11 @@
 	}
 
 	function getTotalItems(): number {
-		if (!tierListData?.tiers) return 0;
+		if (!tierListData) return 0;
+		if (tierListData.list_type === 'dynamic' && Array.isArray(tierListData.items)) {
+			return tierListData.items.length;
+		}
+		if (!tierListData.tiers) return 0;
 		return tierListData.tiers.reduce(
 			(total: number, tier: TierCreate & { items?: TierItem[] }) =>
 				total + (tier.items?.length || 0),
@@ -364,48 +369,96 @@
 	}
 
 	function getItemsInTier(tierName: string): number {
-		if (!tierListData?.tiers) return 0;
-		const tier = tierListData.tiers.find(
-			(t: TierCreate & { items?: TierItem[] }) => t.name === tierName
-		);
-		return tier?.items?.length || 0;
+		// For classic tierlists
+		if (tierListData?.list_type !== 'dynamic') {
+			if (!tierListData?.tiers) return 0;
+			const tier = tierListData.tiers.find(
+				(t: TierCreate & { items?: TierItem[] }) => t.name === tierName
+			);
+			return tier?.items?.length || 0;
+		}
+		// For dynamic tierlists, items are in tierListData.items and assigned to tiers by y position
+		if (Array.isArray(tierListData?.items) && Array.isArray(tierListData?.tiers)) {
+			const tier = tierListData.tiers.find((t: TierCreate) => t.name === tierName);
+			if (!tier) return 0;
+			// Find the next tier below (for range)
+			const sortedTiers = [...tierListData.tiers].sort((a, b) => a.position - b.position);
+			const idx = sortedTiers.findIndex((t) => t.name === tierName);
+			const topY = tier.position;
+			const bottomY = idx < sortedTiers.length - 1 ? sortedTiers[idx + 1].position : 1.0;
+			// Items whose y position is >= topY and < bottomY are in this tier
+			return tierListData.items.filter((item: any) => {
+				const y = item.position?.y;
+				return typeof y === 'number' && y >= topY && y < bottomY;
+			}).length;
+		}
+		return 0;
 	}
 
 	function getMostPopulatedTier(): string {
-		if (!tierListData?.tiers) return 'None';
-		let maxItems = 0;
-		let mostPopulated = 'None';
-
-		tierListData.tiers.forEach((tier: TierCreate & { items?: TierItem[] }) => {
-			const itemCount = tier.items?.length || 0;
-			if (itemCount > maxItems) {
-				maxItems = itemCount;
-				mostPopulated = tier.name;
+		if (!tierListData) return 'None';
+		if (!tierListData.tiers || tierListData.tiers.length === 0) return 'None';
+		const counts: Record<string, number> = {};
+		if (tierListData.list_type === 'dynamic' && Array.isArray(tierListData.items)) {
+			const sortedTiers = [...tierListData.tiers].sort((a, b) => a.position - b.position);
+			tierListData.items.forEach((item: any) => {
+				const y = item.position?.y;
+				if (typeof y !== 'number') return;
+				for (let i = 0; i < sortedTiers.length; i++) {
+					const top = sortedTiers[i].position;
+					const bottom = i < sortedTiers.length - 1 ? sortedTiers[i + 1].position : 1.000001;
+					if (y >= top && y < bottom) {
+						counts[sortedTiers[i].name] = (counts[sortedTiers[i].name] || 0) + 1;
+						break;
+					}
+				}
+			});
+		} else {
+			tierListData.tiers.forEach((tier: TierCreate & { items?: TierItem[] }) => {
+				counts[tier.name] = tier.items?.length || 0;
+			});
+		}
+		let max = 0;
+		let chosen = 'None';
+		Object.entries(counts).forEach(([name, count]) => {
+			if (count > max) {
+				max = count;
+				chosen = name;
 			}
 		});
-
-		return maxItems > 0 ? mostPopulated : 'None';
+		return max > 0 ? chosen : 'None';
 	}
 
 	function getItemTypeBreakdown(): { text: number; image: number } {
-		if (!tierListData?.tiers) return { text: 0, image: 0 };
-
+		if (!tierListData) return { text: 0, image: 0 };
 		let textCount = 0;
 		let imageCount = 0;
-
+		if (tierListData.list_type === 'dynamic' && Array.isArray(tierListData.items)) {
+			tierListData.items.forEach((item: any) => {
+				if (item.image) imageCount++;
+				else textCount++;
+			});
+			return { text: textCount, image: imageCount };
+		}
+		if (!tierListData.tiers) return { text: 0, image: 0 };
 		tierListData.tiers.forEach((tier: TierCreate & { items?: TierItem[] }) => {
 			tier.items?.forEach((item: TierItem) => {
 				if (item.image) imageCount++;
 				else textCount++;
 			});
 		});
-
 		return { text: textCount, image: imageCount };
 	}
 
-	const totalItems = getTotalItems();
-	const itemBreakdown = getItemTypeBreakdown();
-	const mostPopulated = getMostPopulatedTier();
+	let totalItems = getTotalItems();
+	let itemBreakdown = getItemTypeBreakdown();
+	let mostPopulated = getMostPopulatedTier();
+
+	$: if (tierListData) {
+		totalItems = getTotalItems();
+		itemBreakdown = getItemTypeBreakdown();
+		mostPopulated = getMostPopulatedTier();
+	}
 
 	onMount(() => {
 		loadComments();
@@ -455,6 +508,8 @@
 	});
 
 	let isOwner = false;
+	let forkHover = false;
+	let commentPostHover = false;
 
 	$: if (isLocal) {
 		isOwner = true;
@@ -514,20 +569,31 @@
 	<LoginModal open={showLoginModal} on:close={handleCloseLogin} on:login={handleLogin} />
 {/if}
 
-<div class="flex h-full flex-col overflow-y-auto bg-orange-900 p-6 text-white">
+<div
+	class="flex h-full flex-col overflow-y-auto p-6 text-white"
+	style="background: rgba(var(--primary), 0.12);"
+>
 	<!-- Header section -->
 	<div class="mb-6">
 		<div class="mb-4 flex items-center justify-between">
-			<span class="text-sm text-orange-300">{resolvedAuthorName}</span>
+			<span class="text-sm" style="color: rgb(var(--primary-light-rgb));">{resolvedAuthorName}</span
+			>
 			<!-- Interaction buttons (hidden for local tierlists) -->
 			{#if !isLocal}
 				<div class="flex items-center space-x-2">
 					{#if $currentUser}
+						<!-- Like count -->
+						<span class="mr-2 text-sm font-bold text-white">{likes}</span>
 						<!-- Like button -->
 						<button
-							class="flex h-10 w-10 items-center justify-center transition-colors duration-200 {liked
-								? 'bg-red-600 text-white hover:bg-red-700'
-								: 'bg-orange-700 text-orange-300 hover:bg-orange-600'}"
+							class="flex h-10 w-10 items-center justify-center transition-colors duration-200"
+							style="background: {likeHover
+								? 'rgba(255,0,0,0.5)'
+								: liked
+									? 'rgba(255,0,0,1)'
+									: 'var(--primary)'}; color: {liked ? 'white' : 'var(--primary-light)'};"
+							on:mouseenter={() => (likeHover = true)}
+							on:mouseleave={() => (likeHover = false)}
 							on:click={handleLike}
 							title={liked ? 'Unlike' : 'Like'}
 						>
@@ -536,10 +602,14 @@
 							>
 						</button>
 
-						<!-- Fork button -->
 						<button
-							class="flex h-10 w-10 items-center justify-center bg-orange-700 text-orange-300 transition-colors duration-200 hover:bg-orange-600"
+							class="flex h-10 w-10 items-center justify-center transition-colors duration-200"
+							style="background: {forkHover
+								? 'rgba(var(--primary-light),0.5)'
+								: 'var(--primary)'}; color: var(--primary-light);"
 							on:click={handleFork}
+							on:mouseenter={() => (forkHover = true)}
+							on:mouseleave={() => (forkHover = false)}
 							title="Fork this tierlist"
 							aria-label="Fork this tierlist"
 						>
@@ -559,60 +629,108 @@
 		</div>
 		<h1 class="mb-4 text-2xl font-bold break-words">{title || 'UNTITLED TIER LIST'}</h1>
 
-		<div class="mb-6 text-sm text-orange-300">
+		<div class="mb-6 text-sm" style="color: rgb(var(--primary-light-rgb));">
 			{formatDateSafe(tierListData?.created_at)}
 		</div>
 
 		<!-- Tier List Statistics Section (shown for all including local) -->
 		{#if tierListData}
-			<div class="mb-6 bg-orange-800/50 p-4">
+			<div class="mb-6 p-4" style="background: rgba(var(--primary), 0.12);">
 				<!-- Basic Stats Grid -->
 				<div class="mb-6 grid grid-cols-3 gap-4">
-					<div class=" bg-orange-800/30 p-3 text-center">
+					<div class="p-3 text-center" style="background: rgba(var(--primary), 0.04);">
 						<div class="text-2xl font-bold text-white">{totalItems}</div>
-						<div class="text-xs text-orange-300">Items</div>
+						<div class="text-xs" style="color: rgb(var(--primary-light-rgb));">Items</div>
 					</div>
-					<div class=" bg-orange-800/30 p-3 text-center">
+					<div class="p-3 text-center" style="background: rgba(var(--primary), 0.04);">
 						<div class="text-lg font-bold text-white">{tierListData.tiers?.length || 0}</div>
-						<div class="text-xs text-orange-300">Tiers</div>
+						<div class="text-xs" style="color: rgb(var(--primary-light-rgb));">Tiers</div>
 					</div>
-					<div class=" bg-orange-800/30 p-3 text-center">
+					<div class="p-3 text-center" style="background: rgba(var(--primary), 0.04);">
 						<div class="text-lg font-bold text-white">
 							{getTierListTypeName(tierListData?.list_type || 'classic')}
 						</div>
-						<div class="text-xs text-orange-300">Type</div>
+						<div class="text-xs" style="color: rgb(var(--primary-light-rgb));">Type</div>
 					</div>
 				</div>
 
 				<!-- Item Type Breakdown -->
 				<div class="mb-4 grid grid-cols-2 gap-3">
-					<div class=" bg-orange-800/30 p-2 text-center">
+					<div class="p-2 text-center" style="background: rgba(var(--primary), 0.04);">
 						<div class="text-sm font-bold text-white">{itemBreakdown.text}</div>
-						<div class="text-xs text-orange-300">Text Items</div>
+						<div class="text-xs" style="color: rgb(var(--primary-light-rgb));">Text Items</div>
 					</div>
-					<div class=" bg-orange-800/30 p-2 text-center">
+					<div class="p-2 text-center" style="background: rgba(var(--primary), 0.04);">
 						<div class="text-sm font-bold text-white">{itemBreakdown.image}</div>
-						<div class="text-xs text-orange-300">Image Items</div>
+						<div class="text-xs" style="color: rgb(var(--primary-light-rgb));">Image Items</div>
 					</div>
 				</div>
 
 				<!-- Tier Breakdown -->
 				<div class="mb-4">
-					<div class="mb-2 text-sm text-orange-200">Tier Breakdown</div>
+					<div class="mb-2 text-sm" style="color: rgb(var(--primary-light-rgb));">Tiers</div>
 					<div class="space-y-2">
-						{#if tierListData.tiers}
-							{#each tierListData.tiers as tier (tier.name)}
-								<div class="flex items-center justify-between bg-orange-800/30 p-2">
+						{#if tierListData.tiers && tierListData.tiers.length > 0}
+							{@const tierPercents = tierListData.tiers.map((tier) => {
+								const count = getItemsInTier(tier.name);
+								return totalItems ? (count / totalItems) * 100 : 0;
+							})}
+							{@const minPercent = Math.min(...tierPercents.filter((p) => p > 0)) || 1}
+							{#each tierListData.tiers as tier, i (tier.name)}
+								{@const tierCount = getItemsInTier(tier.name)}
+								{@const percent = totalItems ? (tierCount / totalItems) * 100 : 0}
+								{@const barWidth = minPercent > 0 ? (percent / minPercent) * 100 : 100}
+								<div
+									class="tier-row flex items-center justify-between p-2 {tier.name === mostPopulated
+										? 'active-tier'
+										: ''}"
+									style="background: rgba(var(--primary), 0.04);"
+								>
 									<div class="flex items-center space-x-2">
 										<div
-											class="h-3 w-3 flex-shrink-0 border border-orange-300"
-											style="background-color: {tier.color || '#ff7f7f'}"
+											class="h-3 w-3 flex-shrink-0"
+											style="border: 1px solid rgb(var(--primary-light-rgb)); background-color: {tier.color ||
+												'#ff7f7f'};"
 										></div>
-										<span class="text-sm text-orange-100">{tier.name}</span>
+										<span class="max-w-1.5 text-sm" style="color: rgb(var(--primary-light-rgb));"
+											>{tier.name}</span
+										>
 									</div>
-									<span class="text-sm font-bold text-white">{getItemsInTier(tier.name)}</span>
+									<div class="tier-bar-wrap flex items-center gap-2">
+										<span class="min-w-[1.5rem] text-right text-sm font-bold text-white"
+											>{tierCount}</span
+										>
+										<span class="text-xs font-medium text-white">{percent.toFixed(1)}%</span>
+										<div class="tier-bar relative h-2 flex-1 overflow-hidden bg-white/10">
+											<div
+												class="h-2"
+												style="background: rgb(var(--primary-light-rgb)); width: {barWidth}%; transition: width 0.4s ease;"
+											></div>
+										</div>
+									</div>
 								</div>
 							{/each}
+						{:else if tierListData.list_type === 'dynamic' && Array.isArray(tierListData.items) && tierListData.items.length > 0}
+							<div
+								class="tier-row flex items-center justify-between p-2"
+								style="background: rgba(var(--primary), 0.04);"
+							>
+								<div class="flex items-center space-x-2">
+									<span class="text-sm" style="color: rgb(var(--primary-light-rgb));">Items</span>
+								</div>
+								<div class="tier-bar-wrap flex items-center gap-2">
+									<span class="min-w-[1.5rem] text-right text-sm font-bold text-white"
+										>{tierListData.items.length}</span
+									>
+									<span class="text-xs font-medium text-white">100.0%</span>
+									<div class="tier-bar relative h-2 flex-1 overflow-hidden bg-white/10">
+										<div
+											class="h-2"
+											style="background: rgb(var(--primary-light-rgb)); width: 100%; transition: width 0.4s ease;"
+										></div>
+									</div>
+								</div>
+							</div>
 						{/if}
 					</div>
 				</div>
@@ -620,7 +738,9 @@
 				<!-- Most Populated Tier -->
 				<div class="mb-4">
 					<div class="mb-2 flex items-center justify-between">
-						<span class="text-sm text-orange-200">Most Populated Tier</span>
+						<span class="text-sm" style="color: rgb(var(--primary-light-rgb));"
+							>Most Populated Tier</span
+						>
 						<span class="text-sm font-bold text-white">{mostPopulated}</span>
 					</div>
 				</div>
@@ -630,7 +750,8 @@
 					<div class="mt-4 mb-4">
 						<a
 							href="/tierlists/{originalId}"
-							class="block w-full bg-orange-600 px-4 py-2 text-center text-sm font-medium text-white transition-colors hover:bg-orange-700"
+							class="block w-full px-4 py-2 text-center text-sm font-medium text-white transition-colors"
+							style="background: var(--primary);"
 						>
 							<div class="flex items-center justify-center gap-2">
 								<svg
@@ -654,37 +775,16 @@
 					</div>
 				{/if}
 
-				<!-- Distribution Analysis -->
-				{#if totalItems > 0}
-					<div class="mb-4">
-						<div class="mb-2 text-sm text-orange-200">Distribution</div>
-						<div class="space-y-1">
-							{#if tierListData.tiers}
-								{#each tierListData.tiers as tier (tier.name)}
-									{@const percentage = ((getItemsInTier(tier.name) / totalItems) * 100).toFixed(1)}
-									<div class="flex items-center space-x-2">
-										<span class="w-8 text-xs text-orange-300">{tier.name}:</span>
-										<div class="h-2 flex-1 overflow-hidden bg-orange-900">
-											<div
-												class="h-full bg-orange-300 transition-all duration-300"
-												style="width: {percentage}%"
-											></div>
-										</div>
-										<span class="w-10 text-xs text-orange-300">{percentage}%</span>
-									</div>
-								{/each}
-							{/if}
-						</div>
-					</div>
-				{/if}
-
 				<!-- Original Tierlist Link (if this is a fork) -->
 				{#if isForked && originalId}
 					<div class="mt-6 mb-4">
-						<div class="mb-2 text-sm text-orange-200">Forked From</div>
+						<div class="mb-2 text-sm" style="color: rgb(var(--primary-light-rgb));">
+							Forked From
+						</div>
 						<a
 							href="/tierlists/{originalId}"
-							class="flex items-center gap-2 bg-orange-700/50 px-4 py-2 text-sm text-white transition-colors hover:bg-orange-700/80"
+							class="flex items-center gap-2 px-4 py-2 text-sm text-white transition-colors"
+							style="background: var(--primary); opacity: 0.5;"
 						>
 							<svg
 								xmlns="http://www.w3.org/2000/svg"
@@ -714,15 +814,20 @@
 
 		<!-- Local tierlist notice -->
 		{#if isLocal}
-			<div class="mb-6 bg-orange-800/50 p-4 text-sm text-orange-200">
+			<div
+				class="mb-6 p-4 text-sm"
+				style="background: rgba(var(--primary), 0.08); color: rgb(var(--primary-light-rgb));"
+			>
 				This tierlist exists only in your browser.
 			</div>
 		{/if}
 
 		<!-- Comments Section -->
 		{#if !isLocal}
-			<div class="mb-6 bg-orange-800/50 p-4">
-				<h3 class="mb-4 text-lg font-semibold text-orange-200">Comments ({comments})</h3>
+			<div class="mb-6 p-4" style="background: rgba(var(--primary), 0.08);">
+				<h3 class="mb-4 text-lg font-semibold" style="color: rgb(var(--primary-light-rgb));">
+					Comments ({comments})
+				</h3>
 
 				<!-- Add Comment Form -->
 				{#if $currentUser}
@@ -730,14 +835,21 @@
 						<textarea
 							bind:value={commentText}
 							placeholder="Add a comment..."
-							class="w-full border border-orange-700 bg-orange-800/30 px-3 py-2 text-white placeholder-orange-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
+							class="w-full px-3 py-2 text-white focus:outline-none"
+							style="border: 1px solid var(--primary); background: rgba(var(--primary), 0.12); color: rgb(var(--primary-light-rgb));"
 							rows="3"
+							maxlength="500"
 						></textarea>
 						<div class="mt-2 flex justify-end">
 							<button
 								on:click={addComment}
 								disabled={!commentText.trim() || interacting}
-								class=" bg-orange-500 px-3 py-1 text-sm font-medium text-white hover:bg-orange-600 disabled:opacity-50"
+								class="px-3 py-1 text-sm font-medium text-white disabled:opacity-50"
+								style="background: {commentPostHover
+									? 'rgba(var(--primary-light),0.5)'
+									: 'var(--primary)'};"
+								on:mouseenter={() => (commentPostHover = true)}
+								on:mouseleave={() => (commentPostHover = false)}
 							>
 								{interacting ? 'Posting...' : 'Post'}
 							</button>
@@ -745,27 +857,36 @@
 					</div>
 				{:else}
 					<div class="mb-4 text-center">
-						<p class="text-sm text-orange-300">Please sign in to add comments</p>
+						<p class="text-sm" style="color: rgb(var(--primary-light-rgb));">
+							Please sign in to add comments
+						</p>
 					</div>
 				{/if}
 
 				<!-- Comments List -->
 				{#if commentsList.length > 0}
-					<div class="space-y-3">
+					<div class="max-h-80 space-y-3 overflow-y-auto">
 						{#each commentsList as comment (comment.id)}
-							<div class=" bg-orange-800/30 p-3">
+							<div class="p-3" style="background: rgba(var(--primary), 0.12);">
 								<div class="mb-1 flex items-center space-x-2">
-									<span class="text-sm font-medium text-orange-100">{comment.author}</span>
-									<span class="text-xs text-orange-300"
+									<span class="text-sm font-medium" style="color: rgb(var(--primary-light-rgb));"
+										>{comment.author}</span
+									>
+									<span class="text-xs" style="color: rgb(var(--primary-light-rgb));"
 										>{new Date(comment.timestamp).toLocaleDateString()}</span
 									>
 								</div>
-								<p class="text-sm text-orange-200">{comment.text}</p>
+								<p
+									class="overflow-auto text-sm break-words"
+									style="color: rgb(var(--primary-light-rgb)); max-height: 6em; word-break: break-word; white-space: pre-line;"
+								>
+									{comment.text}
+								</p>
 							</div>
 						{/each}
 					</div>
 				{:else}
-					<div class="text-center text-orange-300">
+					<div class="text-center" style="color: rgb(var(--primary-light-rgb));">
 						<p class="text-sm">No comments yet. Be the first to comment!</p>
 					</div>
 				{/if}
@@ -773,7 +894,7 @@
 		{/if}
 
 		<!-- Bottom section with link, edit and delete (share link hidden for local) -->
-		<div class="mt-auto border-t border-orange-700 pt-4">
+		<div class="mt-auto border-t border-white pt-4">
 			<div class="flex items-center justify-between">
 				{#if !isLocal}
 					<!-- Copyable link at bottom left -->
@@ -806,3 +927,31 @@
 		</div>
 	</div>
 </div>
+
+<style>
+	.progress-bar {
+		background: rgba(var(--accent-light), 0.12);
+		border-radius: 4px;
+		overflow: hidden;
+	}
+
+	.progress-fill {
+		background: var(--accent-light);
+		height: 100%;
+		transition: width 0.4s ease;
+	}
+
+	.tier-bar-wrap {
+		width: 160px;
+	}
+	.tier-bar {
+		width: 110px;
+	}
+	.tier-row.active-tier {
+		outline: 1px solid rgba(var(--primary-light-rgb), 0.8);
+		box-shadow: 0 0 0 2px rgba(var(--primary-light-rgb), 0.15) inset;
+	}
+	.active-tier-text {
+		font-weight: 600;
+	}
+</style>

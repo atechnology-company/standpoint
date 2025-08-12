@@ -1,5 +1,6 @@
 // please change your provider already ts pmo
-import { resultImages, type ImageResult } from './stores';
+import { resultImages, imageSearchLoading, currentUser, type ImageResult } from './stores';
+import { get } from 'svelte/store';
 import { loadResultFromStorage, saveResultToStorage } from './storage';
 
 // API Keys
@@ -7,8 +8,16 @@ const GOOGLE_SEARCH_API_KEY = import.meta.env?.VITE_GOOGLE_SEARCH_API_KEY;
 const GOOGLE_SEARCH_CX = import.meta.env?.VITE_GOOGLE_SEARCH_CX;
 
 // Search for images related to the query using Google Custom Search API
-export async function searchForImages(query: string): Promise<void> {
+export async function searchForImages(query: string): Promise<ImageResult[]> {
 	try {
+		// Require authenticated user
+		const user = get(currentUser);
+		if (!user) {
+			console.warn('Image search blocked: user not signed in');
+			resultImages.set([]);
+			return [];
+		}
+		imageSearchLoading.set(true);
 		// Check if API keys are configured
 		if (
 			GOOGLE_SEARCH_API_KEY === 'YOUR_GOOGLE_SEARCH_API_KEY' ||
@@ -17,7 +26,7 @@ export async function searchForImages(query: string): Promise<void> {
 			console.warn('Google Search API keys not configured. Using fallback images.');
 			const fallbackImages = generateFallbackImages(query);
 			resultImages.set(fallbackImages);
-			return;
+			return fallbackImages;
 		}
 
 		// Validate API key and CX format
@@ -25,14 +34,14 @@ export async function searchForImages(query: string): Promise<void> {
 			console.warn('Invalid Google Search API key format. Using fallback images.');
 			const fallbackImages = generateFallbackImages(query);
 			resultImages.set(fallbackImages);
-			return;
+			return fallbackImages;
 		}
 
 		if (!GOOGLE_SEARCH_CX || GOOGLE_SEARCH_CX.length < 10) {
 			console.warn('Invalid Google Search CX format. Using fallback images.');
 			const fallbackImages = generateFallbackImages(query);
 			resultImages.set(fallbackImages);
-			return;
+			return fallbackImages;
 		}
 
 		// Check network status first (only in browser environment)
@@ -42,7 +51,8 @@ export async function searchForImages(query: string): Promise<void> {
 					const cachedResult = await loadResultFromStorage(query);
 					if (cachedResult && cachedResult.images) {
 						resultImages.set(cachedResult.images);
-						return;
+						imageSearchLoading.set(false);
+						return cachedResult.images;
 					}
 					throw new Error('No internet connection');
 				}
@@ -63,11 +73,7 @@ export async function searchForImages(query: string): Promise<void> {
 
 		const apiUrl = `https://www.googleapis.com/customsearch/v1?${params.toString()}`;
 
-		console.log('Making request to Google Custom Search API for query:', query);
-		console.log('API URL (key hidden):', apiUrl.replace(GOOGLE_SEARCH_API_KEY, '[API_KEY_HIDDEN]'));
-
-		// Use Google Custom Search API to find images
-		const response = await fetch(apiUrl);
+		const response = await fetch(apiUrl, { headers: { Accept: 'application/json' } });
 
 		if (!response.ok) {
 			const errorText = await response.text();
@@ -95,26 +101,27 @@ export async function searchForImages(query: string): Promise<void> {
 			// Use fallback images when API fails
 			const fallbackImages = generateFallbackImages(query);
 			resultImages.set(fallbackImages);
-			return;
+			imageSearchLoading.set(false);
+			return fallbackImages;
 		}
 
 		const data = await response.json();
 
+		let images: ImageResult[] = [];
 		if (data.items && data.items.length > 0) {
-			const images: ImageResult[] = data.items.map((item: Record<string, unknown>) => ({
+			images = data.items.map((item: Record<string, unknown>) => ({
 				url: item.link,
 				title: item.title,
 				thumbnailLink:
 					(item.image && (item.image as { thumbnailLink?: string }).thumbnailLink) || item.link
 			}));
-
 			resultImages.set(images);
-
-			// Save to cache for offline access
 			await saveResultToStorage(query, images);
 		} else {
 			resultImages.set([]);
 		}
+		imageSearchLoading.set(false);
+		return images;
 	} catch (error) {
 		console.warn('Error searching for images:', error);
 
@@ -123,17 +130,24 @@ export async function searchForImages(query: string): Promise<void> {
 			const cachedResult = await loadResultFromStorage(query);
 			if (cachedResult && cachedResult.images) {
 				resultImages.set(cachedResult.images);
+				imageSearchLoading.set(false);
+				return cachedResult.images;
 			} else {
-				// Generate fallback images
 				console.warn('No cached images found, generating fallback images.');
 				const fallbackImages = generateFallbackImages(query);
 				resultImages.set(fallbackImages);
+				imageSearchLoading.set(false);
+				return fallbackImages;
 			}
 		} catch (cacheError) {
 			console.warn('Failed to load images from cache:', cacheError);
 			const fallbackImages = generateFallbackImages(query);
 			resultImages.set(fallbackImages);
+			imageSearchLoading.set(false);
+			return fallbackImages;
 		}
+	} finally {
+		imageSearchLoading.set(false);
 	}
 }
 

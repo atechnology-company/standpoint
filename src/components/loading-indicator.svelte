@@ -11,44 +11,44 @@
 <div class="flex items-center justify-center {sizes[size].container}">
 	<div class="flex flex-col items-end justify-center gap-1">
 		<div
-			class="h-2 bg-gray-300 transition-all duration-500 {sizes[size].bars[0]} 
-            animate-pulse-orange-1"
+			class="h-2 bg-gray-300 transition-all duration-500 {sizes[size]
+				.bars[0]} animate-pulse-accent-1"
 		></div>
 		<div
-			class="h-2 bg-gray-300 transition-all duration-500 {sizes[size].bars[1]} 
-            animate-pulse-orange-2"
+			class="h-2 bg-gray-300 transition-all duration-500 {sizes[size]
+				.bars[1]} animate-pulse-accent-2"
 		></div>
 		<div
-			class="h-2 bg-gray-300 transition-all duration-500 {sizes[size].bars[2]} 
-            animate-pulse-orange-3"
+			class="h-2 bg-gray-300 transition-all duration-500 {sizes[size]
+				.bars[2]} animate-pulse-accent-3"
 		></div>
 	</div>
 </div>
 
 <style>
-	@keyframes pulse-orange {
+	@keyframes pulse-accent {
 		0%,
 		60%,
 		100% {
 			background-color: rgb(209, 213, 219);
 		}
 		30% {
-			background-color: rgb(249, 115, 22);
+			background-color: rgb(var(--primary));
 		}
 	}
 
-	:global(.animate-pulse-orange-1) {
-		animation: pulse-orange 1.5s ease-in-out infinite;
+	:global(.animate-pulse-accent-1) {
+		animation: pulse-accent 1.5s ease-in-out infinite;
 		animation-delay: 0s;
 	}
 
-	:global(.animate-pulse-orange-2) {
-		animation: pulse-orange 1.5s ease-in-out infinite;
+	:global(.animate-pulse-accent-2) {
+		animation: pulse-accent 1.5s ease-in-out infinite;
 		animation-delay: 0.5s;
 	}
 
-	:global(.animate-pulse-orange-3) {
-		animation: pulse-orange 1.5s ease-in-out infinite;
+	:global(.animate-pulse-accent-3) {
+		animation: pulse-accent 1.5s ease-in-out infinite;
 		animation-delay: 1s;
 	}
 </style>

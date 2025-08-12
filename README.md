@@ -42,7 +42,19 @@ source src-sanic/bin/activate && python3 src-sanic/main.py
 
 ## Version History
 
+### v0.5.0 - beta
+
+- bug fixes with tierlist creation
+- accent color
+- polls actually make sense
+- anything but fixing tierlist editing
+- enforced character limits on comments
+- file size limits and typechecking for images in tierlists
+- sequential uploading (doesn't move to firebase until publshing a tierlist)
+- other bug fixes, visual and uniformity improvements and microoptimisations
+
 ### v0.4.1
+
 - things i forgot
 
 ### v0.4.0 - alpha
@@ -123,7 +135,7 @@ _i want to sleep so bad_
 
 - saving tierlist as images
 - algorithmic feed and comments
-- half redesign
+- half redesign -- in progress
 - change image api
 - multiplayer
 - live
@@ -132,9 +144,7 @@ _i want to sleep so bad_
 - fix half baked mobile ui
 - finish accent color implementation and theming and update settings display
 - uploading indicators
-- file size limits
 - editing tierlists after publishing
-- validity checking file uploads (only images)
 - xss prevention
 - notifications
 - image logic after transferring to new implementation is cooked
@@ -142,6 +152,16 @@ _i want to sleep so bad_
 - item colors
 - on hover parse items to gemini to explain them
 - ai powered pattern analysis in polls and tierlists
+- update accents to be part of poll presets
+- light and dark mode (add sepia, taiga, nord, dracula, neo tokyo and more)
+- add different accents based on sepia taiga nord dracula light and dark
+- hash checking as to not upload duplicate images
+- localisation in various languages
+
+- voting outside the svg should be banned
+- tierlist names had the same problem as name inputs for items
+- like doesnt refresh for polls
+- dynamic tierlist gradient doesnt update when adding a new tier (make the transition smooth)
 
 ### things i wanna do
 

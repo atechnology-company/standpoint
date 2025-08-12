@@ -108,4 +108,3 @@ export interface TierListUpdate {
 	items?: TierItem[];
 	item_placements?: ItemPlacement[];
 }
-}

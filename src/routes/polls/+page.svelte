@@ -39,7 +39,7 @@
 		title: '',
 		responseType: 2,
 		customOptions: ['Option A', 'Option B'],
-		gradients: { colors: ['#ff5705', '#0066cc'], enabled: false }
+		gradients: { colors: ['rgb(var(--primary))', '#0066cc'], enabled: false }
 	};
 
 	let poll: PollFormType = { ...defaultPoll };
@@ -80,10 +80,9 @@
 			loading = true;
 			error = '';
 			const auth = getAuth();
-			let loadedPolls = [];
+			let loadedPolls = await getPollsFromFirestore();
+			// Attach user votes if signed in
 			if (auth.currentUser) {
-				loadedPolls = await getPollsFromFirestore();
-
 				for (const poll of loadedPolls) {
 					const userVote = await getUserVote(poll.id, auth.currentUser.uid);
 					if (userVote) {
@@ -92,10 +91,22 @@
 					}
 				}
 			} else {
-				const localPolls = localStorage.getItem(LOCAL_STORAGE_POLLS_KEY);
-				loadedPolls = localPolls ? JSON.parse(localPolls) : [];
+				// Merge any locally created polls (offline) without duplicating existing ids
+				const localPollsRaw = localStorage.getItem(LOCAL_STORAGE_POLLS_KEY);
+				if (localPollsRaw) {
+					const localArr = JSON.parse(localPollsRaw);
+					const existingIds = new Set(loadedPolls.map((p: any) => p.id));
+					for (const lp of localArr) {
+						if (!existingIds.has(lp.id)) loadedPolls.push(lp);
+					}
+				}
 			}
 			polls = loadedPolls;
+			// Keep selectedPoll reference fresh
+			if (selectedPoll) {
+				const updated = polls.find((p) => p.id === selectedPoll.id);
+				if (updated) selectedPoll = { ...updated };
+			}
 		} catch (err) {
 			error = 'Failed to load polls. Make sure the backend server is running.';
 			console.error('Error loading polls:', err);
@@ -105,8 +116,23 @@
 	}
 
 	function handlePollClick(poll: any) {
-		selectedPoll = poll;
+		selectedPoll = { ...poll };
 		showSidebar = true;
+	}
+
+	function handleLikesUpdated(event: CustomEvent) {
+		const { id, likes, liked } = event.detail;
+		const idx = polls.findIndex((p) => p.id === id);
+		if (idx !== -1) {
+			polls[idx] = {
+				...polls[idx],
+				stats: { ...polls[idx].stats, total_votes: polls[idx].stats?.total_votes || 0 },
+				likes
+			};
+		}
+		if (selectedPoll?.id === id) {
+			selectedPoll = { ...selectedPoll, likes };
+		}
 	}
 
 	function openCreateModal() {
@@ -125,7 +151,7 @@
 			title: '',
 			responseType: 2,
 			customOptions: ['Option A', 'Option B'],
-			gradients: { colors: ['#ff5705', '#0066cc'], enabled: false }
+			gradients: { colors: ['rgb(var(--primary))', '#0066cc'], enabled: false }
 		};
 	}
 
@@ -155,7 +181,7 @@
 			newCustomOptions = newCustomOptions.slice(0, targetCount);
 		}
 
-		const defaultColors = ['#ff5705', '#0066cc', '#00ff88', '#ff4488', '#ffaa00'];
+		const defaultColors = ['rgb(var(--primary))', '#0066cc', '#00ff88', '#ff4488', '#ffaa00'];
 		while (newColors.length < targetCount) {
 			newColors.push(defaultColors[newColors.length % defaultColors.length]);
 		}
@@ -445,8 +471,8 @@
 					<div class="overflow-hidden">
 						{#each polls as poll}
 							<div
-								class="cursor-pointer border-2 border-transparent bg-white/10 p-6 backdrop-blur transition-all duration-300 hover:border-[#ff5705] hover:bg-white/20"
-								class:!bg-[#ff5705]={selectedPoll?.id === poll.id}
+								class="hover:border-accent cursor-pointer border-2 border-transparent bg-white/10 p-6 backdrop-blur transition-all duration-300 hover:bg-white/20"
+								class:bg-accent={selectedPoll?.id === poll.id}
 								on:click={() => handlePollClick(poll)}
 								on:keydown={(e) => e.key === 'Enter' && handlePollClick(poll)}
 								role="button"
@@ -492,13 +518,15 @@
 					class="chart-container relative"
 					style="height: 90vh; width: 90vh; max-width: calc(100vw - 476px); max-height: 90vh;"
 				>
-					<div class="relative h-full w-full overflow-hidden bg-white/5">
+					<div class="relative h-full w-full overflow-hidden">
 						<ChartRenderer {chartData} {onVote} />
 					</div>
 				</div>
 			{:else}
 				<div class="flex h-full w-full items-center justify-center">
-					<p class="text-s text-white/50">Select a poll to view details</p>
+					<p class="text-s text-white/50">
+						Select a poll to view details (only your vote is shown)
+					</p>
 				</div>
 			{/if}
 		</div>
@@ -507,14 +535,20 @@
 	<!-- Sidebar -->
 	{#if selectedPoll && showSidebar}
 		<div class="h-screen w-80 border-l border-white/20 bg-gray-900">
-			<PollSidebar pollData={selectedPoll} showComments={false} on:delete={handleSidebarDelete} />
+			<PollSidebar
+				id={selectedPoll.id}
+				pollData={selectedPoll}
+				showComments={false}
+				on:delete={handleSidebarDelete}
+				on:likesUpdated={handleLikesUpdated}
+			/>
 		</div>
 	{/if}
 
 	<!-- Add Button -->
 	{#if $userGroup === 'pro' || $userGroup === 'dev'}
 		<button
-			class="fixed bottom-6 left-6 z-50 flex h-16 w-16 items-center justify-center bg-[#ff5705] text-2xl font-bold text-white shadow-lg transition-all duration-300 hover:bg-white hover:text-[#ff5705]"
+			class="bg-accent hover:text-accent fixed bottom-6 left-6 z-50 flex h-16 w-16 items-center justify-center text-2xl font-bold text-white shadow-lg transition-all duration-300 hover:bg-white"
 			on:click={openCreateModal}
 			aria-label="Create new poll"
 		>
@@ -551,7 +585,7 @@
 					>
 					<input
 						id="poll-title"
-						class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-transparent focus:ring-2 focus:ring-[#ff5705] focus:outline-none"
+						class="focus:ring-accent w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-transparent focus:ring-2 focus:outline-none"
 						type="text"
 						bind:value={poll.title}
 						placeholder="What would you like people to vote on?"
@@ -608,7 +642,7 @@
 							on:click={closeCreateModal}>Cancel</button
 						>
 						<button
-							class="bg-[#ff5705] px-6 py-3 font-bold text-white transition-colors hover:bg-[#ff5705]/80 disabled:opacity-50"
+							class="bg-accent px-6 py-3 font-bold text-white transition-colors hover:brightness-110 disabled:opacity-50"
 							on:click={createPoll}
 							disabled={creating || !poll.title.trim()}
 						>
@@ -628,7 +662,7 @@
 			<div class="w-full max-w-md bg-gray-800 p-8">
 				<div class="mb-6 text-center">
 					<div
-						class="mx-auto mb-4 flex h-16 w-16 items-center justify-center bg-gradient-to-r from-[#ff5705] to-[#0066cc]"
+						class="mx-auto mb-4 flex h-16 w-16 items-center justify-center bg-gradient-to-r from-[rgb(var(--primary))] to-[#0066cc]"
 					>
 						<svg class="h-8 w-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path
@@ -719,7 +753,7 @@
 					</button>
 					<a
 						href="/pro"
-						class="flex-1 bg-gradient-to-r from-[#ff5705] to-[#0066cc] px-4 py-3 text-center font-bold text-white transition-all hover:from-[#ff5705]/80 hover:to-[#0066cc]/80"
+						class="flex-1 bg-gradient-to-r from-[rgb(var(--primary))] to-[#0066cc] px-4 py-3 text-center font-bold text-white transition-all hover:brightness-110"
 					>
 						Upgrade Now
 					</a>

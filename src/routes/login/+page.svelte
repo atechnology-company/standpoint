@@ -6,16 +6,20 @@
 		loginModalShown = false;
 	}
 
-    function showLoginModal() {loginModalShown = true;}
+	function showLoginModal() {
+		loginModalShown = true;
+	}
 </script>
 
 {#if loginModalShown}
 	<Modal on:close={closeLoginModal} />
 {/if}
 
-<div class="flex flex-col items-center justify-center h-screen">
-	<h1 class="text-2xl font-bold mb-4">Login Required</h1>
+<div class="flex h-screen flex-col items-center justify-center">
+	<h1 class="mb-4 text-2xl font-bold">Login Required</h1>
 	<p class="mb-8">
-      Please <a href="#" role="button" tabindex="0" on:click|preventDefault={showLoginModal}>sign in</a> to access this page.
-    </p>
+		Please <a href="#" role="button" tabindex="0" on:click|preventDefault={showLoginModal}
+			>sign in</a
+		> to access this page.
+	</p>
 </div>

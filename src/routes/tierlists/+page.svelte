@@ -8,6 +8,7 @@
 	import Hero from '../../components/hero.svelte';
 	import LoadingIndicator from '../../components/loading-indicator.svelte';
 	import { fade } from 'svelte/transition';
+	import { fadeImage } from '$lib/fadeImage';
 	import { goto } from '$app/navigation';
 	const LOCAL_STORAGE_TIERLISTS_KEY = 'standpoint_local_tierlists';
 
@@ -165,19 +166,23 @@
 					>
 						<!-- Background Image -->
 						{#if tierList.banner_image}
-							<div
-								class="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-40"
-								style="background-image: url('{tierList.banner_image}');"
-							></div>
+							<img
+								use:fadeImage
+								src={tierList.banner_image}
+								alt={tierList.title}
+								class="sp-fade-image absolute inset-0 h-full w-full object-cover opacity-40"
+							/>
 						{:else if tierList.thumbnail}
-							<div
-								class="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-40"
-								style="background-image: url('{tierList.thumbnail}');"
-							></div>
+							<img
+								use:fadeImage
+								src={tierList.thumbnail}
+								alt={tierList.title}
+								class="sp-fade-image absolute inset-0 h-full w-full object-cover opacity-40"
+							/>
 						{:else}
 							<div
 								class="absolute inset-0"
-								style="background-color: {[
+								style="background-color:{[
 									'#FFD6E0',
 									'#FFEFB5',
 									'#C1E7E3',
@@ -210,7 +215,7 @@
 								<div class="flex items-center gap-2 opacity-80">
 									{#if tierList._created_local}
 										<span
-											class="flex items-center gap-1 rounded bg-orange-600/70 px-2 py-0.5 text-[10px] font-semibold tracking-wide"
+											class="flex items-center gap-1 bg-orange-600/70 px-2 py-0.5 text-[10px] font-semibold tracking-wide"
 											>LOCAL</span
 										>
 									{:else}
@@ -250,15 +255,15 @@
 								<span>{tierList.items?.length ?? tierList.item_count ?? 0} items</span>
 								{#if tierList._created_local}
 									<button
-										class="ml-2 rounded bg-red-600/70 px-2 py-0.5 text-[10px] font-semibold hover:bg-red-600"
+										class="ml-2 bg-red-600/70 px-2 py-0.5 text-[10px] font-semibold hover:bg-red-600"
 										on:click={(e) => deleteLocalTierlist(tierList, e)}>Delete</button
 									>
 								{/if}
 								<span
 									class="px-2 py-1 text-white"
 									style="background-color: {tierList.list_type === 'dynamic'
-										? '#ff570599'
-										: '#05FFAC99'};"
+										? 'rgba(var(--primary),0.6)'
+										: '#ffffff55'};"
 								>
 									{tierList.list_type === 'dynamic' ? 'DYNAMIC' : 'CLASSIC'}
 								</span>
@@ -273,7 +278,7 @@
 	<!-- Create Button -->
 	<a
 		href="/tierlists/create"
-		class="fixed right-6 bottom-6 z-50 flex h-16 w-16 items-center justify-center bg-[#ff5705] text-white shadow-lg transition-colors duration-300 hover:bg-white hover:text-[#ff5705]"
+		class="bg-accent hover:text-accent fixed right-6 bottom-6 z-50 flex h-16 w-16 items-center justify-center text-white shadow-lg transition-colors duration-300 hover:bg-white"
 		aria-label="Create new tier list"
 	>
 		<svg class="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">

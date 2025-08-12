@@ -150,7 +150,6 @@ class ApiClient {
 
 	async getTierList(id: string): Promise<import('./types').TierListResponse> {
 		try {
-			console.log('API getTierList - trying main API first for ID:', id);
 			return await this.request(`/api/tierlists/${id}`);
 		} catch (error) {
 			console.warn('API getTierList - main API failed, using Firebase fallback for ID:', id);

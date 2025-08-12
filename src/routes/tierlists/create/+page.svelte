@@ -10,9 +10,20 @@
 	} from '$lib/firestore-polls-tierlists.js';
 	import { getAuth } from 'firebase/auth';
 	import { searchForImages } from '$lib/google-images';
+	import LoadingIndicator from '../../../components/loading-indicator.svelte';
+	import { imageSearchLoading } from '$lib';
 	import { onMount } from 'svelte';
 	import LoginModal from '$lib/../components/login-modal.svelte';
 	import { goto } from '$app/navigation';
+	import { fade, scale } from 'svelte/transition';
+	import { fadeImage } from '$lib/fadeImage';
+	import { currentUser, signInWithGoogle, userGroup } from '$lib/stores';
+	import { hasProAccessStore } from '$lib';
+	import { getUserProfile } from '$lib/user-profile';
+	import type { UserProfile } from '$lib/user-profile';
+	import { addToast } from '$lib/toast';
+	import Toast from '$lib/../components/toast.svelte';
+	import { createAutosaver, getDrafts, deleteDraft, type TierListDraft } from '$lib/draft-autosave';
 	let showLoginModal = false;
 	function promptLogin() {
 		addToast('Please sign in to interact with tierlists', 'info');
@@ -28,14 +39,6 @@
 	function handleCloseLogin() {
 		showLoginModal = false;
 	}
-	import { fade, scale } from 'svelte/transition';
-	import { currentUser, signInWithGoogle, userGroup } from '$lib/stores';
-	import { hasProAccessStore } from '$lib';
-	import { getUserProfile } from '$lib/user-profile';
-	import type { UserProfile } from '$lib/user-profile';
-	import { addToast } from '$lib/toast';
-	import Toast from '$lib/../components/toast.svelte';
-	import { createAutosaver, getDrafts, deleteDraft, type TierListDraft } from '$lib/draft-autosave';
 
 	// Represents a tier/category in the tier list
 	interface Tier {
@@ -95,6 +98,11 @@
 	let error = '';
 	let creating = false;
 	let publishing = false;
+	let localImages: Record<string, string> = {};
+	let localBannerImage: string | null = null;
+	let uploadingImages = false;
+	// Upload progress (0-1) for image uploads during publish
+	let uploadProgress = 0;
 	let showPublishMenu = false;
 	let publishWrapper: HTMLElement | null = null;
 
@@ -153,7 +161,7 @@
 		highlightedImageIdx = searchResults.length - 1;
 	$: if (highlightedImageIdx < -1) highlightedImageIdx = -1;
 
-	// ----- Editing Existing Tierlist Support -----
+	// ----- Editing Existing Tierlist Support == In progress == -----
 	let editingTierlistId: string | null = null;
 	async function loadTierlistForEdit(editId: string) {
 		try {
@@ -317,8 +325,50 @@
 		}
 		try {
 			publishing = true;
-			const payload = buildTierlistPayload($currentUser.uid);
+			uploadingImages = true;
+			uploadProgress = 0;
+			let payload = buildTierlistPayload($currentUser.uid);
+			const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
+			const storage = getStorage();
+			const dataUrlEntries: { kind: 'item' | 'banner'; ref: any }[] = [];
+			for (const it of payload.items) {
+				if (it.image && it.image.startsWith('data:'))
+					dataUrlEntries.push({ kind: 'item', ref: it });
+			}
+			if (payload.banner_image && payload.banner_image.startsWith('data:')) {
+				dataUrlEntries.push({ kind: 'banner', ref: payload });
+			}
+			const totalUploads = dataUrlEntries.length || 1;
+			let completed = 0;
+			async function uploadDataUrl(entry: { kind: 'item' | 'banner'; ref: any }) {
+				const dataUrl = entry.kind === 'item' ? entry.ref.image : entry.ref.banner_image;
+				const [meta, base64] = dataUrl.split(',');
+				const mimeMatch = /data:(.*?);base64/.exec(meta);
+				const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+				const extension = mime.split('/')[1] || 'png';
+				const byteString = atob(base64);
+				const ab = new ArrayBuffer(byteString.length);
+				const ia = new Uint8Array(ab);
+				for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+				const file = new Blob([ab], { type: mime });
+				const pathFolder = entry.kind === 'banner' ? 'tierlist-banners' : 'tierlist-items';
+				const fileName = `${Date.now()}_${crypto.randomUUID()}.${extension}`;
+				const fileRef = ref(storage, `${pathFolder}/${fileName}`);
+				await uploadBytes(fileRef, file);
+				const url = await getDownloadURL(fileRef);
+				if (entry.kind === 'item') entry.ref.image = url;
+				else entry.ref.banner_image = url;
+				completed += 1;
+				uploadProgress = completed / totalUploads;
+			}
+			for (const entry of dataUrlEntries) {
+				await uploadDataUrl(entry);
+			}
+			uploadProgress = 1;
+			uploadingImages = false;
 			const id = await saveTierlistToFirestore(payload);
+			localStorage.removeItem('standpoint_tierlist_images');
+			localStorage.removeItem('standpoint_tierlist_banner');
 			goto(`/tierlists/${id}`);
 		} finally {
 			publishing = false;
@@ -333,8 +383,50 @@
 		}
 		try {
 			publishing = true;
-			const payload = buildTierlistPayload($currentUser.uid);
+			uploadingImages = true;
+			uploadProgress = 0;
+			let payload = buildTierlistPayload($currentUser.uid);
+			const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
+			const storage = getStorage();
+			const dataUrlEntries: { kind: 'item' | 'banner'; ref: any }[] = [];
+			for (const it of payload.items) {
+				if (it.image && it.image.startsWith('data:'))
+					dataUrlEntries.push({ kind: 'item', ref: it });
+			}
+			if (payload.banner_image && payload.banner_image.startsWith('data:')) {
+				dataUrlEntries.push({ kind: 'banner', ref: payload });
+			}
+			const totalUploads = dataUrlEntries.length || 1;
+			let completed = 0;
+			async function uploadDataUrl(entry: { kind: 'item' | 'banner'; ref: any }) {
+				const dataUrl = entry.kind === 'item' ? entry.ref.image : entry.ref.banner_image;
+				const [meta, base64] = dataUrl.split(',');
+				const mimeMatch = /data:(.*?);base64/.exec(meta);
+				const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+				const extension = mime.split('/')[1] || 'png';
+				const byteString = atob(base64);
+				const ab = new ArrayBuffer(byteString.length);
+				const ia = new Uint8Array(ab);
+				for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+				const file = new Blob([ab], { type: mime });
+				const pathFolder = entry.kind === 'banner' ? 'tierlist-banners' : 'tierlist-items';
+				const fileName = `${Date.now()}_${crypto.randomUUID()}.${extension}`;
+				const fileRef = ref(storage, `${pathFolder}/${fileName}`);
+				await uploadBytes(fileRef, file);
+				const url = await getDownloadURL(fileRef);
+				if (entry.kind === 'item') entry.ref.image = url;
+				else entry.ref.banner_image = url;
+				completed += 1;
+				uploadProgress = completed / totalUploads;
+			}
+			for (const entry of dataUrlEntries) {
+				await uploadDataUrl(entry);
+			}
+			uploadProgress = 1;
+			uploadingImages = false;
 			const id = await saveTierlistUnlisted(payload, false);
+			localStorage.removeItem('standpoint_tierlist_images');
+			localStorage.removeItem('standpoint_tierlist_banner');
 			goto(`/tierlists/${id}`);
 		} finally {
 			publishing = false;
@@ -472,7 +564,8 @@
 	// Search state
 	let searchQuery = '';
 	let searchResults: any[] = [];
-	let searching = false;
+	let searching = false; // deprecated
+	$: searching = $imageSearchLoading;
 	let searchTimeout: any;
 	let searchPage = 1;
 	let hasMoreResults = true;
@@ -505,6 +598,23 @@
 	// Dynamic mode resize state
 	let isResizing = false;
 	let resizingItemId: string | null = null;
+	let pendingMove: { id: string; x: number; y: number } | null = null;
+	function scheduleMove(id: string, x: number, y: number) {
+		if (!pendingMove) {
+			pendingMove = { id, x, y };
+			requestAnimationFrame(() => {
+				if (pendingMove) {
+					updateItemEverywhere(pendingMove.id, {
+						position: { x: pendingMove.x, y: pendingMove.y }
+					});
+					pendingMove = null;
+				}
+			});
+		} else {
+			pendingMove.x = x;
+			pendingMove.y = y;
+		}
+	}
 
 	function convertDynamicToClassic() {
 		const allItems: TierItem[] = [
@@ -537,6 +647,29 @@
 			}
 		}
 		tierList.type = 'classic';
+	}
+
+	function convertClassicToDynamic() {
+		if (tierList.type === 'dynamic') return;
+		for (let ti = 0; ti < tierList.tiers.length; ti++) {
+			const tier = tierList.tiers[ti];
+			for (let i = 0; i < tier.items.length; i++) {
+				const item = tier.items[i];
+				if (!item.position) {
+					item.position = {
+						x: 0.1 + (i % 8) * 0.1,
+						y: (ti + 0.2 + Math.random() * 0.6) / tierList.tiers.length
+					};
+				}
+			}
+		}
+		for (let i = 0; i < tierList.unassignedItems.length; i++) {
+			const item = tierList.unassignedItems[i];
+			if (!item.position) {
+				item.position = { x: 0.1 + (i % 8) * 0.1, y: 0.3 + Math.random() * 0.4 };
+			}
+		}
+		tierList.type = 'dynamic';
 	}
 
 	let resizeStartX = 0;
@@ -1259,22 +1392,37 @@
 	async function handleFileUpload(event: Event) {
 		const target = event.target as HTMLInputElement;
 		const file = target.files?.[0];
-		if (!file || !file.type.startsWith('image/')) return;
+		if (!file) return;
+		const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
+		if (!allowedTypes.includes(file.type)) {
+			addToast('Only PNG, JPEG, JPG, GIF, and WEBP images are allowed.', 'error');
+			return;
+		}
+		if (file.size > 5 * 1024 * 1024) {
+			addToast('Image file size must be 5MB or less.', 'error');
+			return;
+		}
 		try {
-			const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
-			const storage = getStorage();
-			const fileRef = ref(storage, `tierlist-items/${Date.now()}_${file.name}`);
-			await uploadBytes(fileRef, file);
-			const url = await getDownloadURL(fileRef);
-			const newItem: TierItem = {
-				id: `item_${crypto.randomUUID()}`,
-				text: file.name,
-				image: url,
-				type: 'image',
-				position: createItemPosition(targetTierId || undefined)
+			const reader = new FileReader();
+			reader.onload = () => {
+				const url = reader.result as string;
+				const id = `item_${crypto.randomUUID()}`;
+				localImages[id] = url;
+				localStorage.setItem('standpoint_tierlist_images', JSON.stringify(localImages));
+				const newItem: TierItem = {
+					id,
+					text: file.name,
+					image: url,
+					type: 'image',
+					position: createItemPosition(targetTierId || undefined)
+				};
+				addItemToLocation(newItem);
+				closeAddItemModal();
 			};
-			addItemToLocation(newItem);
-			closeAddItemModal();
+			reader.onerror = () => {
+				addToast('Image upload failed. Please try again.', 'error');
+			};
+			reader.readAsDataURL(file);
 		} catch (err) {
 			addToast('Image upload failed. Please try again.', 'error');
 		}
@@ -1383,7 +1531,6 @@
 				searchPage++;
 			}
 		} finally {
-			searching = false;
 			loadingMore = false;
 		}
 	}
@@ -1504,16 +1651,24 @@
 		}
 	}
 
-	function getDynamicGradient(): string {
-		if (tierList.tiers.length <= 1)
-			return 'background: linear-gradient(to bottom, #2d7a2d, #7a2d2d);';
-
+	// Dynamic gradient (simple immediate update for reliability)
+	let dynamicGradientStyle = '';
+	let gradientVersion = 0;
+	$: gradientSignature = tierList.tiers.map((t) => t.color).join('|') + ':' + tierList.tiers.length;
+	function computeDynamicGradient(): string {
+		if (tierList.tiers.length <= 1) return 'linear-gradient(to bottom, #222,#444)';
 		const colors = tierList.tiers.map((tier: { color: string }) => dimColor(tier.color, 0.6));
-		const gradientStops = colors
-			.map((color: string, index: number) => `${color} ${(index / (colors.length - 1)) * 100}%`)
+		const stops = colors
+			.map((c: string, i: number) => `${c} ${(i / (colors.length - 1)) * 100}%`)
 			.join(', ');
+		return `linear-gradient(to bottom, ${stops})`;
+	}
 
-		return `background: linear-gradient(to bottom, ${gradientStops});`;
+	// Watch for changes in tier colors and update gradient
+	$: if (tierList && tierList.tiers) {
+		const g = computeDynamicGradient();
+		gradientVersion += 1;
+		dynamicGradientStyle = `background: ${g}; transition: background 300ms ease;`;
 	}
 
 	function startResize(
@@ -1647,17 +1802,26 @@
 
 			// Check for parameters in URL
 			const urlParams = new URLSearchParams(window.location.search);
-			const draftId = urlParams.get('draft');
-			const isForked = urlParams.get('forked');
-			const forkId = urlParams.get('fork');
+			const draftParam = urlParams.get('draft');
+			const isForkedParam = urlParams.get('forked') === 'true';
+			const forkIdParam = urlParams.get('fork');
 
-			if (draftId) {
-				loadDraftById(draftId);
-			} else if (isForked === 'true') {
-				loadForkedData();
-			} else if (forkId) {
-				loadTierlistForFork(forkId);
-			}
+			queueMicrotask(() => {
+				try {
+					if (draftParam) {
+						loadDraftById(draftParam);
+					} else if (isForkedParam) {
+						// Guard: only run if tierList still in initial state (no user edits yet)
+						if (tierList && !tierList.isForked) {
+							loadForkedData();
+						}
+					} else if (forkIdParam) {
+						loadTierlistForFork(forkIdParam);
+					}
+				} catch (e) {
+					console.error('Deferred init error', e);
+				}
+			});
 		}
 
 		if (typeof window !== 'undefined') {
@@ -1700,7 +1864,11 @@
 		>{tierList.title ? `${tierList.title} - Standpoint` : 'Create Tier List - Standpoint'}</title
 	>
 </svelte:head>
-<div class="fixed inset-0 flex flex-col bg-black text-white">
+<div
+	class="fixed inset-0 flex flex-col bg-black text-white {tierList.type === 'dynamic'
+		? 'dynamic-gradient-bg'
+		: ''}"
+>
 	<!-- Banner-->
 	{#if tierList.bannerImage}
 		<div
@@ -1719,7 +1887,7 @@
 			<div class="flex items-center gap-2 pl-10">
 				{#if editingTitle}
 					<input
-						class="border-b-2 border-orange-500 bg-transparent px-2 py-1 text-2xl font-bold text-white outline-none"
+						class="border-b-2 border-[rgb(var(--primary))] bg-transparent px-2 py-1 text-2xl font-bold text-white outline-none focus:ring-0"
 						bind:value={tierList.title}
 						on:blur={() => {
 							toggleTitleEdit();
@@ -1730,11 +1898,15 @@
 								toggleTitleEdit();
 								handleTitleSet();
 							}
+							// Prevent global shortcuts / add-item modal triggers while typing title
+							if (e.key === ' ') {
+								e.stopPropagation();
+							}
 						}}
 					/>
 				{:else}
 					<button
-						class="cursor-pointer border-none bg-transparent p-0 text-2xl font-bold transition-colors hover:text-orange-400"
+						class="hover:text-accent cursor-pointer border-none bg-transparent p-0 text-2xl font-bold transition-colors"
 						on:click={toggleTitleEdit}
 						aria-label="Edit title"
 					>
@@ -1743,10 +1915,10 @@
 				{/if}
 				<!-- Banner upload button -->
 				<label
-					class="ml-4 flex cursor-pointer items-center gap-2 bg-gray-800 px-2 py-1 transition-colors hover:bg-gray-700"
+					class="hover:bg-accent/20 ml-4 flex cursor-pointer items-center gap-2 bg-gray-800 px-2 py-1 transition-colors"
 					title="Upload banner image"
 				>
-					<span class="material-symbols-outlined text-lg text-orange-400">image</span>
+					<span class="material-symbols-outlined text-accent text-lg">image</span>
 					<span class="text-xs text-gray-300">Banner</span>
 					<input
 						type="file"
@@ -1756,26 +1928,26 @@
 							const input = e.target as HTMLInputElement;
 							const file = input.files?.[0];
 							if (!file) return;
-							try {
-								const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
-								const storage = getStorage();
-								const storageRef = ref(storage, `tierlist-banners/${Date.now()}_${file.name}`);
-								await uploadBytes(storageRef, file);
-								const url = await getDownloadURL(storageRef);
-								tierList.bannerImage = url;
-							} catch (err) {
-								console.error('Banner upload failed:', err);
+							const reader = new FileReader();
+							reader.onload = () => {
+								localBannerImage = reader.result as string;
+								localStorage.setItem('standpoint_tierlist_banner', localBannerImage);
+								tierList.bannerImage = localBannerImage;
+							};
+							reader.onerror = () => {
 								addToast('Banner upload failed. Please try again.', 'error');
-							}
+							};
+							reader.readAsDataURL(file);
 						}}
 					/>
 				</label>
 				{#if tierList.bannerImage}
 					<div class="relative ml-2 h-12 w-24 overflow-hidden shadow">
 						<img
+							use:fadeImage
 							src={tierList.bannerImage}
 							alt="Banner Preview"
-							class="absolute inset-0 h-full w-full object-cover"
+							class="sp-fade-image absolute inset-0 h-full w-full object-cover"
 							style="filter: brightness(0.7) blur(2px);"
 						/>
 					</div>
@@ -1783,6 +1955,45 @@
 			</div>
 			<!-- Suggestions, mode toggle, POST button -->
 			<div class="flex flex-1 items-center justify-end gap-4">
+				<!-- Mode Toggle -->
+				<div class="relative flex bg-[#191919] p-1">
+					<div
+						class="absolute top-1 bottom-1 bg-[rgb(var(--primary))] transition-all duration-300 ease-in-out"
+						style="left: {tierList.type === 'classic'
+							? '4px'
+							: 'calc(50% + 2px)'}; width: calc(50% - 6px);"
+					></div>
+					<button
+						class="relative z-10 px-4 py-2 text-sm font-medium transition-colors duration-300 {tierList.type ===
+						'classic'
+							? 'text-white'
+							: 'text-gray-400 hover:text-white'}"
+						on:click={() => {
+							if (tierList.type === 'dynamic') {
+								convertDynamicToClassic();
+							} else {
+								/* stay classic */
+							}
+						}}
+					>
+						Classic
+					</button>
+					<button
+						class="relative z-10 px-4 py-2 text-sm font-medium transition-colors duration-300 {tierList.type ===
+						'dynamic'
+							? 'text-white'
+							: 'text-gray-400 hover:text-white'}"
+						on:click={() => convertClassicToDynamic()}
+					>
+						Dynamic
+					</button>
+				</div>
+				<!-- Draft autosave indicator -->
+				{#if tierList.title.trim() !== 'Untitled Tier List' && tierList.title.trim().length > 0}
+					<span class="ml-4 text-xs text-blue-400" title="Draft automatically saved">
+						💾 Auto-saved
+					</span>
+				{/if}
 				{#if aiEnabled}
 					{#if fetchingSuggestions}
 						<span class="ml-4 animate-pulse text-xs text-blue-400" in:fade={{ duration: 300 }}
@@ -1796,7 +2007,7 @@
 						{:else}
 							<button
 								type="button"
-								class="ml-4 cursor-pointer border-0 bg-transparent p-0 text-xs text-orange-400"
+								class="text-accent ml-4 cursor-pointer border-0 bg-transparent p-0 text-xs hover:brightness-110"
 								on:click={() => (showGeminiDebugModal = true)}
 								in:fade={{ duration: 300 }}>No suggestions found</button
 							>
@@ -1814,58 +2025,32 @@
 				{:else if !$hasProAccessStore}
 					<a
 						href="/pro"
-						class="ml-4 text-xs text-orange-500 underline decoration-dotted underline-offset-4 hover:text-orange-400"
+						class="text-accent ml-4 text-xs underline decoration-dotted underline-offset-4 hover:brightness-110"
 						>Upgrade to Pro for AI</a
 					>
 				{/if}
-				<!-- Draft autosave indicator -->
-				{#if tierList.title.trim() !== 'Untitled Tier List' && tierList.title.trim().length > 0}
-					<span class="ml-4 text-xs text-blue-400" title="Draft automatically saved">
-						💾 Auto-saved
-					</span>
-				{/if}
-				<!-- Mode Toggle -->
-				<div class="relative flex bg-[#191919] p-1">
-					<div
-						class="absolute top-1 bottom-1 bg-orange-500 transition-all duration-300 ease-in-out"
-						style="left: {tierList.type === 'classic'
-							? '4px'
-							: 'calc(50% + 2px)'}; width: calc(50% - 6px);"
-					></div>
-					<button
-						class="relative z-10 px-4 py-2 text-sm font-medium transition-colors duration-300 {tierList.type ===
-						'classic'
-							? 'text-white'
-							: 'text-gray-400 hover:text-white'}"
-						on:click={() => {
-							if (tierList.type === 'dynamic') {
-								convertDynamicToClassic();
-							} else {
-								tierList.type = 'classic';
-							}
-						}}
-					>
-						Classic
-					</button>
-					<button
-						class="relative z-10 px-4 py-2 text-sm font-medium transition-colors duration-300 {tierList.type ===
-						'dynamic'
-							? 'text-white'
-							: 'text-gray-400 hover:text-white'}"
-						on:click={() => (tierList.type = 'dynamic')}
-					>
-						Dynamic
-					</button>
-				</div>
 				<div class="relative ml-auto flex items-center" bind:this={publishWrapper}>
+					{#if publishing && uploadingImages}
+						<div class="absolute inset-0 -z-10 overflow-hidden">
+							<div class="h-full w-full bg-gray-700/40"></div>
+							<div
+								class="absolute top-0 left-0 h-full bg-gradient-to-r from-[rgb(var(--primary))] to-[rgb(var(--primary))]/60 transition-all duration-300"
+								style="width:{Math.round(uploadProgress * 100)}%;"
+							></div>
+						</div>
+					{/if}
 					{#if $currentUser}
 						<button
-							class="relative flex w-56 items-center gap-2 bg-[#ff5705] px-4 py-2 text-sm font-semibold tracking-wide text-white shadow transition-colors hover:bg-white hover:text-[#ff5705] disabled:opacity-50"
+							class="bg-accent relative flex w-56 items-center gap-2 px-4 py-2 text-sm font-semibold tracking-wide text-white shadow transition-colors hover:brightness-110 disabled:opacity-50"
 							disabled={publishing}
 							on:click={togglePublishMenu}
 						>
 							<span class="material-symbols-outlined text-base">cloud_upload</span>
-							{publishing ? 'PUBLISHING...' : 'PUBLISH'}
+							{publishing
+								? uploadingImages
+									? `UPLOADING ${Math.round(uploadProgress * 100)}%`
+									: 'PUBLISHING...'
+								: 'PUBLISH'}
 							<span
 								class="material-symbols-outlined absolute right-4 text-sm transition-transform duration-200"
 								style="transform: rotate({showPublishMenu ? 180 : 0}deg);"
@@ -1896,7 +2081,7 @@
 									<span class="material-symbols-outlined text-base">link_off</span> PUBLISH UNLISTED
 								</button>
 								<button
-									class="flex items-center gap-2 bg-orange-600/80 px-3 py-2 text-left hover:bg-orange-500"
+									class="bg-accent/70 hover:bg-accent flex items-center gap-2 px-3 py-2 text-left"
 									on:click={(e) => {
 										e.stopPropagation();
 										publishLocalOnly();
@@ -1908,20 +2093,22 @@
 							</div>
 						{/if}
 					{:else}
-						<button
-							class="ml-4 flex w-full items-center gap-2 bg-white px-4 py-2 text-black shadow transition-colors hover:bg-gray-100"
-							on:click={signInWithGoogle}
-						>
-							<span>Sign in with Google</span>
-						</button>
-						<button
-							class="w-full bg-gray-600 px-6 py-2 font-bold text-white transition-colors hover:bg-gray-700 disabled:opacity-50"
-							on:click={publishLocalOnly}
-							disabled={publishing}
-							title="Creates a local tier list - sign in to publish publicly"
-						>
-							{publishing ? 'SAVING...' : 'SAVE LOCALLY'}
-						</button>
+						<div class="flex h-10 gap-5">
+							<button
+								class="ml-4 flex w-full items-center gap-2 bg-white px-4 py-2 text-xs text-black shadow transition-colors hover:bg-gray-100"
+								on:click={signInWithGoogle}
+							>
+								<span>Sign in with Google</span>
+							</button>
+							<button
+								class="w-full bg-gray-600 px-6 py-2 text-sm font-bold text-white transition-colors hover:bg-gray-700 disabled:opacity-50"
+								on:click={publishLocalOnly}
+								disabled={publishing}
+								title="Creates a local tier list - sign in to publish publicly"
+							>
+								{publishing ? 'SAVING...' : 'SAVE LOCALLY'}
+							</button>
+						</div>
 					{/if}
 				</div>
 			</div>
@@ -1940,7 +2127,9 @@
 				<!-- svelte-ignore a11y-no-static-element-interactions -->
 				{#each tierList.tiers as tier, index (tier.id)}
 					<div
-						class="relative flex flex-1 transition-all duration-300"
+						in:fade={{ duration: 180 }}
+						out:fade={{ duration: 140 }}
+						class="relative flex flex-1 transition-all duration-300 will-change-transform"
 						style="background-color: {dimColor(tier.color, 0.6)};"
 					>
 						<!-- Tier Items Area -->
@@ -2015,7 +2204,7 @@
 											{#if isDragging}
 												<!-- Empty tier drop zone -->
 												<div
-													class="flex flex-1 cursor-pointer items-center justify-center border-2 border-dashed border-gray-400 bg-gray-800/40 transition-colors hover:border-orange-400 hover:bg-orange-900/10"
+													class="flex flex-1 cursor-pointer items-center justify-center border-2 border-dashed border-gray-400 bg-gray-800/40 transition-colors hover:border-[rgb(var(--primary))] hover:bg-[rgb(var(--primary))/10]"
 													style="height: {itemsStyle.itemHeight}; min-width: 120px;"
 													on:dragover={(e) => handleDragOver(e, tier.id, 0)}
 													on:drop={(e) => handleDrop(e, tier.id, 0)}
@@ -2028,15 +2217,17 @@
 										{:else}
 											{#each tier.items as item, idx (item.id)}
 												<div
-													class="group/item relative flex min-h-20 cursor-pointer items-center justify-center overflow-hidden border border-gray-700 bg-gray-800/40 shadow transition-all hover:shadow-lg"
-													style="
-														height: {itemsStyle.itemHeight};
-														width: {itemsStyle.itemWidth};
-														opacity: {isDragging && draggedItem?.id === item.id ? 0.5 : 1};
-														border-left: {isDragging && dragOverTier === tier.id && dragOverPosition === idx
-														? '4px solid orange'
-														: 'none'};
-													"
+													in:fade={{ duration: 140 }}
+													out:fade={{ duration: 110 }}
+													class="group/item relative flex min-h-20 cursor-pointer items-center justify-center overflow-hidden border border-gray-700 bg-gray-800/40 shadow transition-all hover:border-[rgb(var(--primary))] hover:shadow-lg"
+													style="height:{itemsStyle.itemHeight};width:{itemsStyle.itemWidth};opacity:{isDragging &&
+													draggedItem?.id === item.id
+														? 0.5
+														: 1};border-left:{isDragging &&
+													dragOverTier === tier.id &&
+													dragOverPosition === idx
+														? '4px solid rgb(var(--primary))'
+														: 'none'};"
 													draggable="true"
 													on:dragstart={(e) => handleDragStart(e, item)}
 													on:dragend={handleDragEnd}
@@ -2056,8 +2247,13 @@
 													tabindex="0"
 													aria-label="Edit item {item.text}"
 												>
-													<!-- Gradient overlay -->
 													{#if item.image}
+														<img
+															use:fadeImage
+															src={item.image}
+															alt={item.text}
+															class="sp-fade-image absolute inset-0 h-full w-full object-cover"
+														/>
 														<div
 															class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"
 														></div>
@@ -2101,12 +2297,12 @@
 											{#if isDragging}
 												<!-- End drop zone -->
 												<div
-													class="flex min-h-20 flex-1 cursor-pointer items-center justify-center border-2 border-dashed border-gray-400 bg-gray-800/40 transition-colors hover:border-orange-400 hover:bg-orange-900/10"
+													class="flex min-h-20 flex-1 cursor-pointer items-center justify-center border-2 border-dashed border-gray-400 bg-gray-800/40 transition-colors hover:border-[rgb(var(--primary))] hover:bg-[rgb(var(--primary))/10]"
 													style="
 														height: {itemsStyle.itemHeight};
 														min-width: 120px;
 														border-left: {isDragging && dragOverTier === tier.id && dragOverPosition === tier.items.length
-														? '4px solid orange'
+														? '4px solid rgb(var(--primary))'
 														: '2px dashed #888'};
 														background: transparent;
 													"
@@ -2134,171 +2330,201 @@
 			<!-- Dynamic Tier List -->
 			<div class="flex flex-1 flex-col">
 				<!-- Dynamic Canvas -->
-				<div
-					class="dynamic-canvas relative flex-1 cursor-crosshair overflow-hidden"
-					style={getDynamicGradient()}
-					on:click={(e) => {
-						const rect = e.currentTarget.getBoundingClientRect();
-						const x = (e.clientX - rect.left) / rect.width;
-						const y = (e.clientY - rect.top) / rect.height;
-						openAddItemModal(null, y, e);
-					}}
-					role="button"
-					tabindex="0"
-					on:keydown={(e) => {
-						if (e.key === 'Enter' || e.key === ' ') {
-							const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-							const y = 0.5;
+				{#key `${gradientVersion}-${gradientSignature}`}
+					<div
+						class="dynamic-canvas relative flex-1 cursor-crosshair overflow-hidden"
+						style="{dynamicGradientStyle} background-size: 100% 100%; min-height: 600px;"
+						on:click={(e) => {
+							const rect = e.currentTarget.getBoundingClientRect();
+							const x = (e.clientX - rect.left) / rect.width;
+							const y = (e.clientY - rect.top) / rect.height;
 							openAddItemModal(null, y, e);
-						}
-					}}
-				>
-					<!-- Tier Zones -->
-					{#each tierList.tiers as tier, index (tier.id)}
-						{@const tierHeight = 100 / tierList.tiers.length}
-						{@const tierTop = (index / tierList.tiers.length) * 100}
-						<div
-							class="pointer-events-none absolute right-0 left-0 transition-all"
-							style="top: {tierTop}%; height: {tierHeight}%;"
-						>
-							<!-- Tier Controls -->
+						}}
+						role="button"
+						tabindex="0"
+						on:keydown={(e) => {
+							if (e.key === 'Enter' || e.key === ' ') {
+								const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+								const y = 0.5;
+								openAddItemModal(null, y, e);
+							}
+						}}
+					>
+						<!-- Tier Zones -->
+						{#each tierList.tiers as tier, index (tier.id)}
+							{@const tierHeight = 100 / tierList.tiers.length}
+							{@const tierTop = (index / tierList.tiers.length) * 100}
 							<div
-								class="group pointer-events-auto absolute top-0 right-4 z-20 flex h-full w-64 items-center justify-end"
+								class="pointer-events-none absolute right-0 left-0 transition-all"
+								style="top: {tierTop}%; height: {tierHeight}%;"
 							>
-								<div class="flex flex-col items-end space-y-3" style="color: {tier.color};">
-									<input
-										class="cursor-text border-none bg-transparent text-right text-4xl font-bold placeholder-gray-300 outline-none"
-										style="color: {tier.color};"
-										bind:value={tier.name}
-										placeholder="Tier"
-										on:click|stopPropagation
-									/>
+								<!-- Tier Controls -->
+								<div
+									class="group pointer-events-auto absolute top-0 right-4 z-20 flex h-full w-64 items-center justify-end"
+								>
+									<div class="flex flex-col items-end space-y-3" style="color: {tier.color};">
+										<input
+											class="cursor-text border-none bg-transparent text-right text-4xl font-bold placeholder-gray-300 outline-none"
+											style="color: {tier.color};"
+											bind:value={tier.name}
+											placeholder="Tier"
+											on:click|stopPropagation
+											on:keydown|stopPropagation={(e) => {
+												// Prevent space / enter from triggering add item modal on canvas
+												if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Enter') {
+													// Let input handle it only
+												}
+											}}
+										/>
 
-									<div
-										class="flex flex-row justify-end space-x-2 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-									>
-										{#each [{ icon: 'add', action: () => openAddItemModal(tier.id), title: 'Add item' }, { icon: 'settings', action: () => openColorPicker(tier.id), title: 'Settings' }, { icon: 'keyboard_arrow_down', action: () => addTierAtPosition(index + 1), title: 'Add tier below' }, { icon: 'keyboard_arrow_up', action: () => addTierAtPosition(index), title: 'Add tier above' }] as control}
-											<button
-												class="hover:bg-opacity-20 flex h-8 w-8 items-center justify-center transition-colors hover:bg-black"
-												style="color: {tier.color};"
-												on:click|stopPropagation={control.action}
-												title={control.title}
-											>
-												<span class="material-symbols-outlined text-lg">{control.icon}</span>
-											</button>
-										{/each}
-										{#if tierList.tiers.length > 1}
-											<button
-												class="hover:bg-opacity-20 flex h-8 w-8 items-center justify-center transition-colors hover:bg-black"
-												style="color: {tier.color};"
-												on:click|stopPropagation={() => removeTier(tier.id)}
-												title="Remove tier"
-											>
-												<span class="material-symbols-outlined text-lg">delete</span>
-											</button>
-										{/if}
+										<div
+											class="flex flex-row justify-end space-x-2 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+										>
+											{#each [{ icon: 'add', action: () => openAddItemModal(tier.id), title: 'Add item' }, { icon: 'settings', action: () => openColorPicker(tier.id), title: 'Settings' }, { icon: 'keyboard_arrow_down', action: () => addTierAtPosition(index + 1), title: 'Add tier below' }, { icon: 'keyboard_arrow_up', action: () => addTierAtPosition(index), title: 'Add tier above' }] as control}
+												<button
+													class="hover:bg-opacity-20 flex h-8 w-8 items-center justify-center transition-colors hover:bg-black"
+													style="color: {tier.color};"
+													on:click|stopPropagation={control.action}
+													title={control.title}
+												>
+													<span class="material-symbols-outlined text-lg">{control.icon}</span>
+												</button>
+											{/each}
+											{#if tierList.tiers.length > 1}
+												<button
+													class="hover:bg-opacity-20 flex h-8 w-8 items-center justify-center transition-colors hover:bg-black"
+													style="color: {tier.color};"
+													on:click|stopPropagation={() => removeTier(tier.id)}
+													title="Remove tier"
+												>
+													<span class="material-symbols-outlined text-lg">delete</span>
+												</button>
+											{/if}
+										</div>
 									</div>
 								</div>
 							</div>
-						</div>
-					{/each}
+						{/each}
 
-					<!-- All Dynamic Items -->
-					{#each dynamicAllItems as item (item.id)}
-						<div
-							class="group/item absolute -translate-x-1/2 -translate-y-1/2 transform cursor-pointer overflow-hidden shadow-lg transition-all hover:shadow-xl {isDragging &&
-							draggedItem?.id === item.id
-								? 'z-[9999]'
-								: 'z-50'}"
-							style="left: {item._x * 100}%; top: {item._y *
-								100}%; width: {item._w}px; height: {item._h}px; {item.image
-								? `background-image: url('${item.image}'); background-size: cover; background-position: center;`
-								: item.type === 'text'
-									? 'background: linear-gradient(135deg, #374151, #4b5563); display: flex; align-items: center; justify-content: center;'
-									: 'background: linear-gradient(135deg, #1f2937, #374151);'}"
-							draggable="true"
-							on:dragstart={(e) => handleDragStart(e, item)}
-							on:dragend={handleDragEnd}
-							on:click|stopPropagation={() => startInlineEdit(item)}
-							on:keydown={(e) => {
-								if (editingItemId === item.id) return;
-								if (e.key === 'Enter' || e.key === ' ') startInlineEdit(item);
-							}}
-							on:contextmenu={(e) => showItemContextMenu(item, e)}
-							role="button"
-							tabindex="0"
-							aria-label="Edit item {item.text}"
-						>
-							{#if item.image}
-								<div
-									class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"
-								></div>
-							{/if}
-							<button
-								class="absolute top-1 right-1 z-20 flex h-6 w-6 items-center justify-center bg-red-500 text-white opacity-0 transition-opacity group-hover/item:opacity-100 hover:bg-red-600"
-								on:click|stopPropagation={() => deleteItem(item.id)}
-								title="Delete item"
-								><span class="material-symbols-outlined text-sm">close</span></button
-							>
+						<!-- All Dynamic Items -->
+						{#each dynamicAllItems as item (item.id)}
 							<div
-								class="absolute right-0 bottom-0 z-20 h-4 w-4 cursor-se-resize bg-white/20 opacity-0 transition-opacity group-hover/item:opacity-100 hover:bg-white/40"
-								style="clip-path: polygon(100% 0%, 0% 100%, 100% 100%);"
-								on:mousedown={(e) => startResize(e, item.id, item._w, item._h)}
-								title="Resize"
+								class="group/item absolute -translate-x-1/2 -translate-y-1/2 transform cursor-pointer overflow-hidden shadow-lg transition-all hover:shadow-xl {isDragging &&
+								draggedItem?.id === item.id
+									? 'z-[9999]'
+									: 'z-50'}"
+								style="left: {item._x * 100}%; top: {item._y *
+									100}%; width: {item._w}px; height: {item._h}px; {item.image
+									? `background-image: url('${item.image}'); background-size: cover; background-position: center;`
+									: item.type === 'text'
+										? 'background: linear-gradient(135deg, #374151, #4b5563); display: flex; align-items: center; justify-content: center;'
+										: 'background: linear-gradient(135deg, #1f2937, #374151);'}"
+								on:mousedown={(e) => {
+									if (tierList.type !== 'dynamic') return;
+									const startX = e.clientX;
+									const startY = e.clientY;
+									const canvas = (e.currentTarget as HTMLElement)?.closest(
+										'.dynamic-canvas'
+									) as HTMLElement;
+									if (!canvas) return;
+									const rect = canvas.getBoundingClientRect();
+									const origX = item._x;
+									const origY = item._y;
+									function move(ev: MouseEvent) {
+										const dx = (ev.clientX - startX) / rect.width;
+										const dy = (ev.clientY - startY) / rect.height;
+										const nx = Math.max(0, Math.min(1, origX + dx));
+										const ny = Math.max(0, Math.min(1, origY + dy));
+										scheduleMove(item.id, nx, ny);
+									}
+									function up() {
+										document.removeEventListener('mousemove', move);
+										document.removeEventListener('mouseup', up);
+									}
+									document.addEventListener('mousemove', move);
+									document.addEventListener('mouseup', up);
+								}}
+								on:click|stopPropagation={() => startInlineEdit(item)}
+								on:keydown={(e) => {
+									if (editingItemId === item.id) return;
+									if (e.key === 'Enter' || e.key === ' ') startInlineEdit(item);
+								}}
+								on:contextmenu={(e) => showItemContextMenu(item, e)}
 								role="button"
 								tabindex="0"
-								aria-label="Resize item"
-								on:keydown={(e) => {
-									if (e.key === 'Enter' || e.key === ' ') {
-										/* noop trigger */
-									}
-								}}
-							></div>
-							{#if editingItemId === item.id}
-								<div class="absolute inset-0 z-10 flex items-center justify-center p-2">
-									<input
-										id="inline-edit-{item.id}"
-										class="w-full border border-white/30 bg-black/50 px-2 py-1 text-center text-sm font-medium text-white outline-none"
-										bind:value={inlineEditText}
-										on:blur={finishInlineEdit}
-										on:keydown|stopPropagation={(e) => {
-											if (e.key === 'Enter') finishInlineEdit();
-											if (e.key === 'Escape') cancelInlineEdit();
-										}}
-									/>
-								</div>
-							{:else if item.type === 'text' && !item.image}
-								<div class="absolute inset-0 z-10 flex items-center justify-center p-2">
+								aria-label="Edit item {item.text}"
+							>
+								{#if item.image}
 									<div
-										class="text-center text-sm leading-tight font-medium text-white"
-										style={getTextStyle(item)}
-									>
-										{item.text}
+										class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"
+									></div>
+								{/if}
+								<button
+									class="absolute top-1 right-1 z-20 flex h-6 w-6 items-center justify-center bg-red-500 text-white opacity-0 transition-opacity group-hover/item:opacity-100 hover:bg-red-600"
+									on:click|stopPropagation={() => deleteItem(item.id)}
+									title="Delete item"
+									><span class="material-symbols-outlined text-sm">close</span></button
+								>
+								<div
+									class="absolute right-0 bottom-0 z-20 h-4 w-4 cursor-se-resize bg-white/20 opacity-0 transition-opacity group-hover/item:opacity-100 hover:bg-white/40"
+									style="clip-path: polygon(100% 0%, 0% 100%, 100% 100%);"
+									on:mousedown={(e) => startResize(e, item.id, item._w, item._h)}
+									title="Resize"
+									role="button"
+									tabindex="0"
+									aria-label="Resize item"
+									on:keydown={(e) => {
+										if (e.key === 'Enter' || e.key === ' ') {
+											/* noop trigger */
+										}
+									}}
+								></div>
+								{#if editingItemId === item.id}
+									<div class="absolute inset-0 z-10 flex items-center justify-center p-2">
+										<input
+											id="inline-edit-{item.id}"
+											class="w-full border border-white/30 bg-black/50 px-2 py-1 text-center text-sm font-medium text-white outline-none"
+											bind:value={inlineEditText}
+											on:blur={finishInlineEdit}
+											on:keydown|stopPropagation={(e) => {
+												if (e.key === 'Enter') finishInlineEdit();
+												if (e.key === 'Escape') cancelInlineEdit();
+											}}
+										/>
 									</div>
-								</div>
-							{:else}
-								<div class="absolute right-1 bottom-1 z-10">
-									<div
-										class="text-right text-xs leading-tight font-medium text-white drop-shadow-lg"
-									>
-										{item.text}
+								{:else if item.type === 'text' && !item.image}
+									<div class="absolute inset-0 z-10 flex items-center justify-center p-2">
+										<div
+											class="text-center text-sm leading-tight font-medium text-white"
+											style={getTextStyle(item)}
+										>
+											{item.text}
+										</div>
 									</div>
-								</div>
-							{/if}
-						</div>
-					{/each}
-
-					{#if tierList.unassignedItems.length === 0 && tierList.tiers.every((t: Tier) => t.items.length === 0)}
-						<div
-							class="pointer-events-none absolute inset-0 flex items-center justify-center text-white"
-						>
-							<div class="bg-opacity-30 bg-black p-6 text-center">
-								<div class="mb-2 text-3xl opacity-60">+</div>
-								<div class="opacity-80">Click anywhere to add your first item</div>
+								{:else}
+									<div class="absolute right-1 bottom-1 z-10">
+										<div
+											class="text-right text-xs leading-tight font-medium text-white drop-shadow-lg"
+										>
+											{item.text}
+										</div>
+									</div>
+								{/if}
 							</div>
-						</div>
-					{/if}
-				</div>
+						{/each}
+
+						{#if tierList.unassignedItems.length === 0 && tierList.tiers.every((t: Tier) => t.items.length === 0)}
+							<div
+								class="pointer-events-none absolute inset-0 flex items-center justify-center text-white"
+							>
+								<div class="bg-opacity-30 bg-black p-6 text-center">
+									<div class="mb-2 text-3xl opacity-60">+</div>
+									<div class="opacity-80">Click anywhere to add your first item</div>
+								</div>
+							</div>
+						{/if}
+					</div>
+				{/key}
 			</div>
 		{/if}
 	</div>
@@ -2390,8 +2616,8 @@
 	<!-- Add Item Modal -->
 	{#if showAddItemModal}
 		<div
-			class="fixed z-50 border border-gray-800 bg-black shadow-2xl"
-			style="left: {addItemModalX}px; top: {addItemModalY}px; min-width: 320px; max-width: 95vw; width: auto;"
+			class="fixed z-50 w-[25vw] border border-gray-800 bg-black shadow-2xl"
+			style="left: {addItemModalX}px; top: {addItemModalY}px;"
 			role="dialog"
 			aria-modal="true"
 			tabindex="-1"
@@ -2410,7 +2636,7 @@
 				}
 			}}
 		>
-			<div class="flex w-auto max-w-[95vw] min-w-[320px] flex-col items-stretch p-4">
+			<div class="flex flex-col items-stretch p-4">
 				<!-- AI Suggestions -->
 				{#if filteredAISuggestions.length > 0}
 					<div class="mb-3">
@@ -2419,9 +2645,9 @@
 						>
 							{#each filteredAISuggestions as suggestion, idx (`${suggestion.name}-${idx}`)}
 								<button
-									class="animate-fadein-suggestion flex translate-y-2 items-center gap-2 bg-gray-800 px-3 py-1 text-sm text-white opacity-0 transition-colors hover:bg-orange-500 focus:outline-none {highlightedAISuggestionIdx ===
+									class="animate-fadein-suggestion hover:bg-accent flex translate-y-2 items-center gap-2 bg-gray-800 px-3 py-1 text-sm text-white opacity-0 transition-colors focus:outline-none {highlightedAISuggestionIdx ===
 									idx
-										? 'ring-2 ring-orange-500'
+										? 'ring-2 ring-[rgb(var(--primary))]'
 										: ''}"
 									style="animation-delay: {idx * 60}ms"
 									on:click={() => addSuggestedItem(suggestion)}
@@ -2433,13 +2659,13 @@
 										<img
 											src={suggestion.imageUrl}
 											alt={suggestion.name}
-											class="mr-2 inline-block h-5 w-5 rounded object-cover"
+											class="mr-2 inline-block h-5 w-5 object-cover"
 										/>
 									{:else if suggestion.image && prefetchedImages[suggestion.name]}
 										<img
 											src={prefetchedImages[suggestion.name]}
 											alt={suggestion.name}
-											class="mr-2 inline-block h-5 w-5 rounded object-cover"
+											class="mr-2 inline-block h-5 w-5 object-cover"
 										/>
 									{/if}
 									<span>{suggestion.name}</span>
@@ -2453,7 +2679,7 @@
 				<div class="flex items-center gap-2">
 					<input
 						id="quick-add-input"
-						class="flex-1 border border-gray-600 bg-[#191919] px-4 py-3 text-white placeholder-gray-400 focus:ring-2 focus:ring-orange-500 focus:outline-none"
+						class="flex-1 border border-gray-600 bg-[#191919] px-4 py-3 text-white placeholder-gray-400 focus:ring-2 focus:ring-[rgb(var(--primary))] focus:outline-none"
 						type="text"
 						bind:value={newItemText}
 						placeholder="Type to add item or search images..."
@@ -2531,16 +2757,13 @@
 
 				<!-- Google Image Search Results -->
 				{#if newItemText.trim().length > 2 && (searchResults.length > 0 || searching)}
-					<div class="mt-4 max-h-64 overflow-y-auto">
-						<div
-							class="grid gap-2"
-							style="grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));"
-						>
+					<div class="mt-4 max-h-96 overflow-y-auto">
+						<div class="grid gap-2" style="grid-template-columns: repeat(3, minmax(0,1fr));">
 							{#each searchResults as result, idx}
 								<button
-									class="group animate-fadein-image overflow-hidden border border-gray-600 opacity-0 transition-colors hover:border-orange-400 hover:bg-gray-700 focus:outline-none {highlightedImageIdx ===
+									class="group animate-fadein-image overflow-hidden border border-gray-600 opacity-0 transition-colors hover:border-[rgb(var(--primary))] hover:bg-gray-700 focus:outline-none {highlightedImageIdx ===
 									idx
-										? 'ring-2 ring-orange-500'
+										? 'ring-2 ring-[rgb(var(--primary))]'
 										: ''}"
 									style="animation-delay: {idx * 70}ms"
 									on:click={() => addSearchResult(result)}
@@ -2585,9 +2808,11 @@
 					</div>
 				{/if}
 				{#if searching}
-					<div class="mt-2 flex items-center space-x-2 text-gray-400">
-						<div class="h-4 w-4 animate-spin border-2 border-gray-400 border-t-orange-500"></div>
-						<span class="text-sm">Searching...</span>
+					<div class="mt-3 flex items-center space-x-3">
+						<div class="flex aspect-square h-6 w-6 items-center justify-center">
+							<LoadingIndicator size="sm" />
+						</div>
+						<span class="text-xs text-gray-400">Searching images…</span>
 					</div>
 				{/if}
 				{#if newItemText.trim() && (!searchResults.length || highlightedImageIdx === -1)}
@@ -2603,9 +2828,11 @@
 			<div class="mb-3 flex items-center justify-between">
 				<div class="text-sm text-gray-400">Search Results</div>
 				{#if searching}
-					<div class="flex items-center space-x-2 text-blue-400">
-						<div class="h-3 w-3 animate-spin border-2 border-blue-400 border-t-transparent"></div>
-						<span class="text-xs">Searching...</span>
+					<div class="flex items-center space-x-2 text-gray-400">
+						<div class="flex h-6 w-6 items-center justify-center">
+							<LoadingIndicator size="sm" />
+						</div>
+						<span class="text-xs">Searching…</span>
 					</div>
 				{:else if loadingMore}
 					<div class="flex items-center space-x-2 text-blue-400">
@@ -2617,7 +2844,7 @@
 				{/if}
 			</div>
 			<div
-				class="max-h-80 overflow-y-auto"
+				class="max-w-25vw max-h-[34rem] overflow-y-auto"
 				on:scroll={(e) => {
 					const target = e.currentTarget as HTMLElement;
 					if (
@@ -2637,13 +2864,10 @@
 					}
 				}}
 			>
-				<div
-					class="grid gap-2"
-					style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));"
-				>
+				<div class="grid gap-2" style="grid-template-columns: repeat(3, minmax(0,1fr));">
 					{#each searchResults as result}
 						<button
-							class="group overflow-hidden border border-gray-600 transition-colors hover:border-orange-400 hover:bg-gray-700"
+							class="group overflow-hidden border border-gray-600 transition-colors hover:border-[rgb(var(--primary))] hover:bg-gray-700"
 							on:click={() => addSearchResult(result)}
 							title={result.title}
 						>

@@ -260,7 +260,6 @@ async function copyProfileData(originalUid: string, newUid: string): Promise<voi
 	if (originalProfileDoc.exists()) {
 		const profileData = originalProfileDoc.data();
 		await setDoc(newProfileRef, profileData, { merge: true });
-		console.log(`Profile data copied from ${originalUid} to ${newUid}`);
 	}
 }
 

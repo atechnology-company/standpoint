@@ -29,14 +29,19 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ uid: user.uid })
 			});
-			const data = await res.json();
-			if (data.url) {
-				window.location.href = data.url;
-			} else {
-				error = data.error || 'Failed to start checkout.';
+			if (res.ok) {
+				const data = await res.json();
+				if (data.url) {
+					window.location.href = data.url;
+					return;
+				}
+				if (data.error) {
+					throw new Error(data.error);
+				}
 			}
+			throw new Error('Backend unavailable');
 		} catch (e) {
-			error = 'An error occurred while starting checkout.';
+			error = 'Checkout service unavailable. Please try again later.';
 		}
 	}
 
@@ -52,15 +57,17 @@
 						uid: user.uid
 					})
 				});
-				const data = await res.json();
-				if (data.success) {
-					await setUserGroup(user.uid, 'pro');
-					purchased = true;
-				} else {
-					error = 'Purchase verification failed.';
+				if (res.ok) {
+					const data = await res.json();
+					if (data.success) {
+						await setUserGroup(user.uid, 'pro');
+						purchased = true;
+						return;
+					}
 				}
+				error = 'Purchase verification failed.';
 			} catch (e) {
-				error = 'An error occurred during verification.';
+				error = 'Verification service unavailable.';
 			}
 		}
 	});

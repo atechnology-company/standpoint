@@ -6,7 +6,6 @@
 		updateTierlist,
 		type TierlistData
 	} from '$lib/firestore-re-export';
-	import { type TierListUpdate } from '$lib/api';
 	import { addToast } from '$lib/toast';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -97,7 +96,9 @@
 	<title>My Drafts - Standpoint</title>
 </svelte:head>
 
-<div class="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-black text-white">
+<div
+	class="min-h-screen animate-[fadeIn_0.4s_ease] bg-gradient-to-br from-gray-950 via-gray-900 to-black text-white"
+>
 	<div class="container mx-auto px-6 py-8">
 		<!-- Header -->
 		<div class="mb-8 flex items-center justify-between">
@@ -120,7 +121,7 @@
 				</button>
 				<a
 					href="/tierlists/create"
-					class="flex items-center gap-2 bg-orange-500 px-4 py-2 text-white transition-colors hover:bg-orange-600"
+					class="flex items-center gap-2 bg-[rgb(var(--primary))] px-4 py-2 text-white transition-colors hover:brightness-110"
 				>
 					<span class="material-symbols-outlined text-sm">add</span>
 					New Tierlist
@@ -131,7 +132,7 @@
 		<!-- Loading State -->
 		{#if loading}
 			<div class="flex items-center justify-center py-12">
-				<div class="h-8 w-8 animate-spin border-2 border-orange-500 border-t-transparent"></div>
+				<div class="border-accent h-8 w-8 animate-spin border-2 border-t-transparent"></div>
 			</div>
 		{/if}
 
@@ -147,7 +148,7 @@
 				</p>
 				<a
 					href="/tierlists/create"
-					class="inline-flex items-center gap-2 bg-orange-500 px-6 py-3 text-white transition-colors hover:bg-orange-600"
+					class="inline-flex items-center gap-2 bg-[rgb(var(--primary))] px-6 py-3 text-white shadow-[0_0_0_0_rgba(var(--primary),0.4)] transition-colors hover:shadow-[0_0_0_4px_rgba(var(--primary),0.25)] hover:brightness-110"
 				>
 					<span class="material-symbols-outlined">add</span>
 					Create Tierlist
@@ -160,7 +161,7 @@
 			<div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
 				{#each drafts as draft (draft.id)}
 					<div
-						class="group overflow-hidden border border-gray-700 bg-gray-800/50 backdrop-blur-sm transition-all duration-300 hover:border-orange-500/50"
+						class="group hover:border-accent/50 overflow-hidden border border-gray-700 bg-gray-800/50 backdrop-blur-sm transition-all duration-300"
 					>
 						<!-- Thumbnail -->
 						<div class="relative h-48 overflow-hidden bg-gradient-to-br from-gray-700 to-gray-800">

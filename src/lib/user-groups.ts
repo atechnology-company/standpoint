@@ -20,17 +20,14 @@ export async function setUserGroup(uid: string, group: string) {
 
 export async function setUserAsDeveloper(uid: string) {
 	await setUserGroup(uid, 'dev');
-	console.log(`[setUserAsDeveloper] User ${uid} is now a developer`);
 }
 
 export async function setUserAsPro(uid: string) {
 	await setUserGroup(uid, 'pro');
-	console.log(`[setUserAsPro] User ${uid} is now a pro user`);
 }
 
 export async function setUserAsRegular(uid: string) {
 	await setUserGroup(uid, 'user');
-	console.log(`[setUserAsRegular] User ${uid} is now a regular user`);
 }
 
 // Check if user has pro privileges (either pro or developer)

@@ -53,7 +53,7 @@
 				particleCount: 20,
 				spread: 35,
 				origin: { y: 0.8 },
-				colors: ['#ff5705', '#ff8c42'],
+				colors: ['rgb(var(--primary))', '#ff8c42'],
 				scalar: 0.6
 			});
 			currentStep++;
@@ -74,7 +74,7 @@
 			particleCount: 100,
 			spread: 70,
 			origin: { y: 0.6 },
-			colors: ['#ff5705', '#ff8c42', '#ffa726', '#ffcc02']
+			colors: ['rgb(var(--primary))', '#ff8c42', '#ffa726', '#ffcc02']
 		});
 
 		// Not enough confetti
@@ -84,7 +84,7 @@
 				angle: 60,
 				spread: 55,
 				origin: { x: 0, y: 0.7 },
-				colors: ['#ff5705', '#ff8c42']
+				colors: ['rgb(var(--primary))', '#ff8c42']
 			});
 			confetti({
 				particleCount: 50,
@@ -163,7 +163,7 @@
 				</div>
 				<div class="h-2 w-full bg-gray-700">
 					<div
-						class="h-2 bg-gradient-to-r from-orange-500 to-red-500 transition-all duration-500 ease-out"
+						class="h-2 bg-gradient-to-r from-[rgb(var(--primary))] to-red-500 transition-all duration-500 ease-out"
 						style="width: {((currentStep + 1) / totalSteps) * 100}%"
 					></div>
 				</div>
@@ -182,7 +182,7 @@
 			<!-- Visual Indicator based on step -->
 			<div class="mb-8 flex justify-center">
 				{#if onboardingSteps[currentStep].highlight === 'welcome'}
-					<div class="bg-gradient-to-br from-orange-500 to-red-500 p-4">
+					<div class="bg-gradient-to-br from-[rgb(var(--primary))] to-red-500 p-4">
 						<div class="text-6xl">🎯</div>
 					</div>
 				{:else if onboardingSteps[currentStep].highlight === 'tierlists'}
@@ -219,7 +219,7 @@
 						<button
 							on:click={() => (currentStep = index)}
 							class="h-3 w-3 transition-colors {index === currentStep
-								? 'bg-orange-500'
+								? 'bg-accent'
 								: 'bg-gray-600 hover:bg-gray-500'}"
 							aria-label="Go to step {index + 1}"
 						></button>
@@ -228,7 +228,7 @@
 
 				<button
 					on:click={nextStep}
-					class="bg-gradient-to-r from-orange-500 to-red-500 px-6 py-2 font-bold text-white transition-all hover:from-orange-600 hover:to-red-600 hover:shadow-lg"
+					class="bg-gradient-to-r from-[rgb(var(--primary))] to-red-500 px-6 py-2 font-bold text-white transition-all hover:shadow-lg hover:brightness-110"
 				>
 					{onboardingSteps[currentStep].action}
 				</button>

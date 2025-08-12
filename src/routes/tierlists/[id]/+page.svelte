@@ -15,6 +15,7 @@
 		unlikeTierlist,
 		hasUserLikedTierlist
 	} from '$lib/firestore-polls-tierlists.js';
+	import { fadeImage } from '$lib/fadeImage';
 
 	interface DisplayTier {
 		id: string;
@@ -180,9 +181,7 @@
 		try {
 			loading = true;
 			error = '';
-			console.log('Loading tier list with ID:', tierListId);
 			const response = await apiClient.getTierList(String(tierListId));
-			console.log('Tier list response:', response);
 
 			const defaultColors = [
 				'#ff7f7f',
@@ -241,7 +240,6 @@
 						}
 
 						tier.items.push(item);
-						console.log(`✅ Successfully placed item "${item.text}" in tier "${tier.name}"`);
 					} else {
 						console.warn(
 							`❌ Failed to place item: item=${!!item}, tier=${!!tier}, tierByPosition=${tierByPosition?.name}`
@@ -285,8 +283,6 @@
 				author: response.owner_displayName || 'Anonymous',
 				created_at: response.created_at
 			};
-
-			console.log('Transformed tier list:', tierList);
 
 			if ($currentUser) {
 				liked = await hasUserLikedTierlist(tierList.id, $currentUser.uid);
@@ -364,43 +360,44 @@
 		try {
 			interacting = true;
 
+			// Collect all items (assigned + unassigned)
+			const allItems = [
+				...(tierList.unassignedItems || []),
+				...tierList.tiers.flatMap((tier) => tier.items || [])
+			];
+
 			const forkData = {
-				title: `${tierList.title} (Fork)`,
-				description: tierList.description || '',
-				list_type: tierList.list_type,
-				tiers: tierList.tiers.map((tier) => ({
-					name: tier.name,
-					color: tier.color,
-					position: tier.position
-				})),
-				items: [
-					...(tierList.unassignedItems || []),
-					...tierList.tiers.flatMap((tier) => tier.items || [])
-				].map((item) => ({
+				sourceTitle: tierList.title,
+				sourceId: tierList.id,
+				items: allItems.map((item) => ({
 					id: item.id,
 					text: item.text,
-					type: item.type,
 					image: item.image,
+					type: item.type,
 					position: item.position,
 					size: item.size,
 					naturalSize: item.naturalSize
 				})),
-				owner: $currentUser.uid,
-				item_placements: []
+				timestamp: Date.now()
 			};
+			localStorage.setItem('standpoint_fork_data', JSON.stringify(forkData));
 
-			console.log('Fork data being passed:', forkData);
+			// AI suggestions mirror
+			const aiSuggestions = allItems.map((item) => ({
+				name: item.text,
+				image: !!item.image,
+				imageUrl:
+					typeof item.image === 'string' && item.image.startsWith('http') ? item.image : null
+			}));
+			localStorage.setItem('standpoint_ai_suggestions', JSON.stringify(aiSuggestions));
+			localStorage.setItem('standpoint_ai_suggestions_enabled', 'true');
 
 			forks++;
 			addToast('Tierlist forked! Redirecting to editor...', 'success');
 
-			sessionStorage.setItem('forkData', JSON.stringify(forkData));
-
 			setTimeout(() => {
-				if (tierList) {
-					goto(`/tierlists/create?fork=${tierList.id}`);
-				}
-			}, 1000);
+				goto('/tierlists/create?forked=true');
+			}, 900);
 		} catch (error) {
 			console.error('Error forking tierlist:', error);
 			addToast('Failed to fork tierlist', 'error');
@@ -584,9 +581,7 @@
 
 	async function deleteTierList(tierListId: number) {
 		try {
-			console.log('Attempting to delete tier list with ID:', tierListId);
 			await apiClient.deleteTierList(String(tierListId));
-			console.log('Tier list deleted successfully');
 			window.location.href = '/tierlists';
 		} catch (err) {
 			console.error('Error deleting tier list:', err);
@@ -655,9 +650,9 @@
 												item.id
 													? 'ring-2 ring-orange-400'
 													: ''}"
-												style="{item.image
-													? `background-image: url('${item.image}'); background-size: cover; background-position: center;`
-													: 'background: linear-gradient(135deg, #1f2937, #374151);'} height: {itemsStyle.itemHeight}; width: {itemsStyle.itemWidth}; margin: {itemsStyle.margin};"
+												style="height: {itemsStyle.itemHeight}; width: {itemsStyle.itemWidth}; margin: {itemsStyle.margin}; {item.image
+													? ''
+													: 'background: linear-gradient(135deg, #1f2937, #374151);'}"
 												on:click|stopPropagation={() => selectItem(item)}
 												on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && selectItem(item)}
 												role="button"
@@ -667,6 +662,14 @@
 											>
 												<!-- Gradient overlay -->
 												{#if item.image}
+													<img
+														use:fadeImage
+														src={item.image}
+														alt={item.text}
+														class="sp-fade-image absolute inset-0 h-full w-full object-cover"
+														loading="lazy"
+														draggable="false"
+													/>
 													<div
 														class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"
 													></div>
@@ -742,7 +745,7 @@
 										: ''}"
 									style="left: {x * 100}%; top: {y *
 										100}%; width: {itemSize.width}px; height: {itemSize.height}px; {item.image
-										? `background-image: url('${item.image}'); background-size: cover; background-position: center;`
+										? ''
 										: item.type === 'text'
 											? 'background: linear-gradient(135deg, #374151, #4b5563); display: flex; align-items: center; justify-content: center;'
 											: 'background: linear-gradient(135deg, #1f2937, #374151);'}"
@@ -755,6 +758,14 @@
 								>
 									<!-- Gradient overlay for images -->
 									{#if item.image}
+										<img
+											use:fadeImage
+											src={item.image}
+											alt={item.text}
+											class="sp-fade-image absolute inset-0 h-full w-full object-cover"
+											loading="lazy"
+											draggable="false"
+										/>
 										<div
 											class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"
 										></div>
