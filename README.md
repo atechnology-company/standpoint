@@ -42,6 +42,10 @@ source src-sanic/bin/activate && python3 src-sanic/main.py
 
 ## Version History
 
+### v0.5.2
+- fixed bugs in adding tiers to tierlists and viewing it
+- fixed statistic bars
+
 ### v0.5.1
 - weird z index issues (wasn't in my browser) on create page
 

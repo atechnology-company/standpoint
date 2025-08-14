@@ -671,15 +671,12 @@
 					<div class="mb-2 text-sm" style="color: rgb(var(--primary-light-rgb));">Tiers</div>
 					<div class="space-y-2">
 						{#if tierListData.tiers && tierListData.tiers.length > 0}
-							{@const tierPercents = tierListData.tiers.map((tier) => {
-								const count = getItemsInTier(tier.name);
-								return totalItems ? (count / totalItems) * 100 : 0;
-							})}
-							{@const minPercent = Math.min(...tierPercents.filter((p) => p > 0)) || 1}
+							{@const tierCounts = tierListData.tiers.map((tier) => getItemsInTier(tier.name))}
+							{@const totalTierCount = tierCounts.reduce((a, b) => a + b, 0)}
 							{#each tierListData.tiers as tier, i (tier.name)}
 								{@const tierCount = getItemsInTier(tier.name)}
-								{@const percent = totalItems ? (tierCount / totalItems) * 100 : 0}
-								{@const barWidth = minPercent > 0 ? (percent / minPercent) * 100 : 100}
+								{@const percent = totalTierCount ? (tierCount / totalTierCount) * 100 : 0}
+								{@const barWidth = percent}
 								<div
 									class="tier-row flex items-center justify-between p-2 {tier.name === mostPopulated
 										? 'active-tier'

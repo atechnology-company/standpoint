@@ -1865,9 +1865,10 @@
 	>
 </svelte:head>
 <div
-	class="fixed inset-0 flex flex-col bg-black text-white {tierList.type === 'dynamic'
-		? 'dynamic-gradient-bg'
-		: ''}"
+       class="fixed inset-0 flex flex-col bg-black text-white {tierList.type === 'dynamic'
+	       ? 'dynamic-gradient-bg'
+	       : ''}"
+       style="height: 100vh;"
 >
 	<!-- Banner-->
 	{#if tierList.bannerImage}
@@ -2121,17 +2122,17 @@
 	{/if}
 	<!-- Main Tier List Display -->
 	<div class="flex min-h-0 w-full flex-1 flex-col">
-		{#if tierList.type === 'classic'}
-			<!-- Classic Mode -->
-			<div class="flex flex-1 flex-col">
+	       {#if tierList.type === 'classic'}
+		       <!-- Classic Mode -->
+		       <div class="flex flex-1 flex-col h-full">
 				<!-- svelte-ignore a11y-no-static-element-interactions -->
 				{#each tierList.tiers as tier, index (tier.id)}
-					<div
-						in:fade={{ duration: 180 }}
-						out:fade={{ duration: 140 }}
-						class="relative flex flex-1 transition-all duration-300 will-change-transform"
-						style="background-color: {dimColor(tier.color, 0.6)};"
-					>
+				       <div
+					       in:fade={{ duration: 180 }}
+					       out:fade={{ duration: 140 }}
+					       class="relative flex flex-1 min-h-0 transition-all duration-300 will-change-transform"
+					       style="background-color: {dimColor(tier.color, 0.6)};"
+				       >
 						<!-- Tier Items Area -->
 						<div
 							class="relative flex-1 cursor-pointer p-6 transition-colors"
@@ -2328,7 +2329,7 @@
 			</div>
 		{:else}
 			<!-- Dynamic Tier List -->
-			<div class="flex flex-1 flex-col">
+					   <div class="flex flex-1 flex-col h-full">
 				<!-- Dynamic Canvas -->
 				{#key `${gradientVersion}-${gradientSignature}`}
 					<div
@@ -2614,213 +2615,223 @@
 	{/if}
 
 	<!-- Add Item Modal -->
-	{#if showAddItemModal}
-		<div
-			class="fixed z-50 w-[25vw] border border-gray-800 bg-black shadow-2xl"
-			style="left: {addItemModalX}px; top: {addItemModalY}px;"
-			role="dialog"
-			aria-modal="true"
-			tabindex="-1"
-			on:keydown={(e) => {
-				if (e.key === 'Escape') closeAddItemModal();
-				if (e.key === 'ArrowDown' && filteredAISuggestions.length > 0) {
-					highlightedAISuggestionIdx = Math.min(
-						highlightedAISuggestionIdx + 1,
-						filteredAISuggestions.length - 1
-					);
-					e.preventDefault();
-				}
-				if (e.key === 'ArrowUp' && filteredAISuggestions.length > 0) {
-					highlightedAISuggestionIdx = Math.max(highlightedAISuggestionIdx - 1, 0);
-					e.preventDefault();
-				}
-			}}
-		>
-			<div class="flex flex-col items-stretch p-4">
-				<!-- AI Suggestions -->
-				{#if filteredAISuggestions.length > 0}
-					<div class="mb-3">
-						<div
-							class="flex max-h-32 max-w-[420px] flex-wrap gap-2 overflow-x-hidden overflow-y-auto pr-2"
-						>
-							{#each filteredAISuggestions as suggestion, idx (`${suggestion.name}-${idx}`)}
-								<button
-									class="animate-fadein-suggestion hover:bg-accent flex translate-y-2 items-center gap-2 bg-gray-800 px-3 py-1 text-sm text-white opacity-0 transition-colors focus:outline-none {highlightedAISuggestionIdx ===
-									idx
-										? 'ring-2 ring-[rgb(var(--primary))]'
-										: ''}"
-									style="animation-delay: {idx * 60}ms"
-									on:click={() => addSuggestedItem(suggestion)}
-									on:mouseenter={() => (highlightedAISuggestionIdx = idx)}
-									on:mouseleave={() => (highlightedAISuggestionIdx = -1)}
-									tabindex="0"
-								>
-									{#if suggestion.imageUrl}
-										<img
-											src={suggestion.imageUrl}
-											alt={suggestion.name}
-											class="mr-2 inline-block h-5 w-5 object-cover"
-										/>
-									{:else if suggestion.image && prefetchedImages[suggestion.name]}
-										<img
-											src={prefetchedImages[suggestion.name]}
-											alt={suggestion.name}
-											class="mr-2 inline-block h-5 w-5 object-cover"
-										/>
-									{/if}
-									<span>{suggestion.name}</span>
-								</button>
-							{/each}
-						</div>
-					</div>
-				{/if}
+	       {#if showAddItemModal}
+		       <div
+			       class="fixed z-50 w-[25vw] border border-gray-800 bg-black shadow-2xl"
+			       style="left: {addItemModalX}px; top: {addItemModalY}px;"
+			       role="dialog"
+			       aria-modal="true"
+			       tabindex="-1"
+			       on:keydown={(e) => {
+				       if (e.key === 'Escape') closeAddItemModal();
+				       if (e.key === 'ArrowDown' && filteredAISuggestions.length > 0) {
+					       highlightedAISuggestionIdx = Math.min(
+						       highlightedAISuggestionIdx + 1,
+						       filteredAISuggestions.length - 1
+					       );
+					       e.preventDefault();
+				       }
+				       if (e.key === 'ArrowUp' && filteredAISuggestions.length > 0) {
+					       highlightedAISuggestionIdx = Math.max(highlightedAISuggestionIdx - 1, 0);
+					       e.preventDefault();
+				       }
+			       }}
+		       >
+			       <div class="flex flex-col items-stretch p-4">
+				       <!-- AI Suggestions -->
+				       {#if filteredAISuggestions.length > 0}
+					       <div class="mb-3">
+						       <div
+							       class="flex max-h-32 max-w-[420px] flex-wrap gap-2 overflow-x-hidden overflow-y-auto pr-2"
+						       >
+							       {#each filteredAISuggestions as suggestion, idx (`${suggestion.name}-${idx}`)}
+								       <button
+									       class="animate-fadein-suggestion hover:bg-accent flex translate-y-2 items-center gap-2 bg-gray-800 px-3 py-1 text-sm text-white opacity-0 transition-colors focus:outline-none {highlightedAISuggestionIdx ===
+									       idx
+										       ? 'ring-2 ring-[rgb(var(--primary))]'
+										       : ''}"
+									       style="animation-delay: {idx * 60}ms"
+									       on:click={() => addSuggestedItem(suggestion)}
+									       on:mouseenter={() => (highlightedAISuggestionIdx = idx)}
+									       on:mouseleave={() => (highlightedAISuggestionIdx = -1)}
+									       tabindex="0"
+								       >
+									       {#if suggestion.imageUrl}
+										       <img
+											       src={suggestion.imageUrl}
+											       alt={suggestion.name}
+											       class="mr-2 inline-block h-5 w-5 object-cover"
+										       />
+									       {:else if suggestion.image && prefetchedImages[suggestion.name]}
+										       <img
+											       src={prefetchedImages[suggestion.name]}
+											       alt={suggestion.name}
+											       class="mr-2 inline-block h-5 w-5 object-cover"
+										       />
+									       {/if}
+									       <span>{suggestion.name}</span>
+								       </button>
+							       {/each}
+						       </div>
+					       </div>
+				       {/if}
 
-				<!-- Input row with upload button -->
-				<div class="flex items-center gap-2">
-					<input
-						id="quick-add-input"
-						class="flex-1 border border-gray-600 bg-[#191919] px-4 py-3 text-white placeholder-gray-400 focus:ring-2 focus:ring-[rgb(var(--primary))] focus:outline-none"
-						type="text"
-						bind:value={newItemText}
-						placeholder="Type to add item or search images..."
-						autocomplete="off"
-						on:input={() => {
-							if (newItemText.trim().length > 2) {
-								clearTimeout(searchTimeout);
-								searchTimeout = setTimeout(() => {
-									searchQuery = newItemText;
-									searchImages(true);
-								}, 300);
-							} else {
-								searchResults = [];
-								hasMoreResults = true;
-								searchPage = 1;
-								highlightedImageIdx = -1;
-							}
-							highlightedAISuggestionIdx = -1;
-						}}
-						on:keydown={(e: KeyboardEvent) => {
-							if (e.key === 'Enter' && newItemText.trim()) {
-								if (highlightedAISuggestionIdx >= 0 && filteredAISuggestions.length > 0) {
-									addSuggestedItem(filteredAISuggestions[highlightedAISuggestionIdx]);
-								} else if (highlightedImageIdx >= 0 && searchResults.length > 0) {
-									addSearchResult(searchResults[highlightedImageIdx]);
-								} else {
-									addTextItem();
-								}
-							}
-							if (e.key === 'Escape') closeAddItemModal();
-							if (e.key === 'ArrowDown' && filteredAISuggestions.length > 0) {
-								highlightedAISuggestionIdx = Math.min(
-									highlightedAISuggestionIdx + 1,
-									filteredAISuggestions.length - 1
-								);
-								e.preventDefault();
-							}
-							if (e.key === 'ArrowUp' && filteredAISuggestions.length > 0) {
-								highlightedAISuggestionIdx = Math.max(highlightedAISuggestionIdx - 1, 0);
-								e.preventDefault();
-							}
-						}}
-						aria-label="Add item or search images"
-						on:paste={handlePasteImage}
-					/>
-					<button
-						class="flex h-10 w-10 items-center justify-center text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
-						title="Upload Image"
-						on:click={() => document.getElementById('add-modal-file-input')?.click()}
-						on:keydown={(e) => {
-							if (e.key === 'Enter' || e.key === ' ')
-								document.getElementById('add-modal-file-input')?.click();
-						}}
-						aria-label="Upload image"
-						type="button"
-					>
-						<span class="material-symbols-outlined text-lg">upload</span>
-					</button>
-					<input
-						id="add-modal-file-input"
-						type="file"
-						accept="image/*"
-						class="hidden"
-						on:change={handleFileUpload}
-					/>
-					<button
-						class="flex h-8 w-8 items-center justify-center text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
-						on:click={closeAddItemModal}
-						title="Close"
-						tabindex="0"
-					>
-						<span class="material-symbols-outlined text-sm">close</span>
-					</button>
-				</div>
+				       <!-- Input row with upload button -->
+				       <div class="flex items-center gap-2">
+					       <input
+						       id="quick-add-input"
+						       class="flex-1 border border-gray-600 bg-[#191919] px-4 py-3 text-white placeholder-gray-400 focus:ring-2 focus:ring-[rgb(var(--primary))] focus:outline-none"
+						       type="text"
+						       bind:value={newItemText}
+						       placeholder="Type to add item or search images..."
+						       autocomplete="off"
+						       on:input={() => {
+							       if (!$currentUser) return; // Disable search for guests
+							       if (newItemText.trim().length > 2) {
+								       clearTimeout(searchTimeout);
+								       searchTimeout = setTimeout(() => {
+									       searchQuery = newItemText;
+									       searchImages(true);
+								       }, 300);
+							       } else {
+								       searchResults = [];
+								       hasMoreResults = true;
+								       searchPage = 1;
+								       highlightedImageIdx = -1;
+							       }
+							       highlightedAISuggestionIdx = -1;
+						       }}
+						       on:keydown={(e: KeyboardEvent) => {
+							       if (e.key === 'Enter' && newItemText.trim()) {
+								       if (highlightedAISuggestionIdx >= 0 && filteredAISuggestions.length > 0) {
+									       addSuggestedItem(filteredAISuggestions[highlightedAISuggestionIdx]);
+								       } else if (highlightedImageIdx >= 0 && searchResults.length > 0) {
+									       addSearchResult(searchResults[highlightedImageIdx]);
+								       } else {
+									       addTextItem();
+								       }
+							       }
+							       if (e.key === 'Escape') closeAddItemModal();
+							       if (e.key === 'ArrowDown' && filteredAISuggestions.length > 0) {
+								       highlightedAISuggestionIdx = Math.min(
+									       highlightedAISuggestionIdx + 1,
+									       filteredAISuggestions.length - 1
+								       );
+								       e.preventDefault();
+							       }
+							       if (e.key === 'ArrowUp' && filteredAISuggestions.length > 0) {
+								       highlightedAISuggestionIdx = Math.max(highlightedAISuggestionIdx - 1, 0);
+								       e.preventDefault();
+							       }
+						       }}
+						       aria-label="Add item or search images"
+						       on:paste={handlePasteImage}
+						       disabled={!$currentUser}
+					       />
+					       <button
+						       class="flex h-10 w-10 items-center justify-center text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
+						       title="Upload Image"
+						       on:click={() => document.getElementById('add-modal-file-input')?.click()}
+						       on:keydown={(e) => {
+							       if (e.key === 'Enter' || e.key === ' ')
+								       document.getElementById('add-modal-file-input')?.click();
+						       }}
+						       aria-label="Upload image"
+						       type="button"
+					       >
+						       <span class="material-symbols-outlined text-lg">upload</span>
+					       </button>
+					       <input
+						       id="add-modal-file-input"
+						       type="file"
+						       accept="image/*"
+						       class="hidden"
+						       on:change={handleFileUpload}
+					       />
+					       <button
+						       class="flex h-8 w-8 items-center justify-center text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
+						       on:click={closeAddItemModal}
+						       title="Close"
+						       tabindex="0"
+					       >
+						       <span class="material-symbols-outlined text-sm">close</span>
+					       </button>
+				       </div>
 
-				<!-- Google Image Search Results -->
-				{#if newItemText.trim().length > 2 && (searchResults.length > 0 || searching)}
-					<div class="mt-4 max-h-96 overflow-y-auto">
-						<div class="grid gap-2" style="grid-template-columns: repeat(3, minmax(0,1fr));">
-							{#each searchResults as result, idx}
-								<button
-									class="group animate-fadein-image overflow-hidden border border-gray-600 opacity-0 transition-colors hover:border-[rgb(var(--primary))] hover:bg-gray-700 focus:outline-none {highlightedImageIdx ===
-									idx
-										? 'ring-2 ring-[rgb(var(--primary))]'
-										: ''}"
-									style="animation-delay: {idx * 70}ms"
-									on:click={() => addSearchResult(result)}
-									on:mouseenter={() => (highlightedImageIdx = idx)}
-									on:mouseleave={() => (highlightedImageIdx = -1)}
-									tabindex="0"
-								>
-									<div class="relative aspect-square">
-										<img
-											src={result.url}
-											alt={result.title}
-											class="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
-											loading="lazy"
-										/>
-										<div
-											class="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 transition-opacity group-hover:opacity-100"
-										></div>
-									</div>
-									<div class="p-2">
-										<div class="truncate text-xs leading-tight text-gray-300">{result.title}</div>
-									</div>
-								</button>
-							{/each}
-							{#if searching && searchResults.length === 0}
-								{#each Array(6) as _, i}
-									<div
-										class="animate-pulse overflow-hidden border border-gray-600"
-										style="animation-delay: {i * 0.1}s"
-									>
-										<div class="aspect-square bg-gray-700"></div>
-										<div class="p-2">
-											<div
-												class="mb-1 h-3 bg-gray-700"
-												style="width: {60 + Math.random() * 30}%"
-											></div>
-											<div class="h-2 bg-gray-600" style="width: {40 + Math.random() * 40}%"></div>
-										</div>
-									</div>
-								{/each}
-							{/if}
-						</div>
-					</div>
-				{/if}
-				{#if searching}
-					<div class="mt-3 flex items-center space-x-3">
-						<div class="flex aspect-square h-6 w-6 items-center justify-center">
-							<LoadingIndicator size="sm" />
-						</div>
-						<span class="text-xs text-gray-400">Searching images…</span>
-					</div>
-				{/if}
-				{#if newItemText.trim() && (!searchResults.length || highlightedImageIdx === -1)}
-					<div class="mt-2 text-xs text-gray-500">Press <kbd>Enter</kbd> to add as text item</div>
-				{/if}
-			</div>
-		</div>
-	{/if}
+				       <!-- Google Image Search Results (only if logged in) -->
+				       {#if $currentUser}
+					       {#if newItemText.trim().length > 2 && (searchResults.length > 0 || searching)}
+						       <div class="mt-4 max-h-96 overflow-y-auto">
+							       <div class="grid gap-2" style="grid-template-columns: repeat(3, minmax(0,1fr));">
+								       {#each searchResults as result, idx}
+									       <button
+										       class="group animate-fadein-image overflow-hidden border border-gray-600 opacity-0 transition-colors hover:border-[rgb(var(--primary))] hover:bg-gray-700 focus:outline-none {highlightedImageIdx ===
+										       idx
+											       ? 'ring-2 ring-[rgb(var(--primary))]'
+											       : ''}"
+										       style="animation-delay: {idx * 70}ms"
+										       on:click={() => addSearchResult(result)}
+										       on:mouseenter={() => (highlightedImageIdx = idx)}
+										       on:mouseleave={() => (highlightedImageIdx = -1)}
+										       tabindex="0"
+									       >
+										       <div class="relative aspect-square">
+											       <img
+												       src={result.url}
+												       alt={result.title}
+												       class="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+												       loading="lazy"
+											       />
+											       <div
+												       class="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 transition-opacity group-hover:opacity-100"
+											       ></div>
+										       </div>
+										       <div class="p-2">
+											       <div class="truncate text-xs leading-tight text-gray-300">{result.title}</div>
+										       </div>
+									       </button>
+								       {/each}
+								       {#if searching && searchResults.length === 0}
+									       {#each Array(6) as _, i}
+										       <div
+											       class="animate-pulse overflow-hidden border border-gray-600"
+											       style="animation-delay: {i * 0.1}s"
+										       >
+											       <div class="aspect-square bg-gray-700"></div>
+											       <div class="p-2">
+												       <div
+													       class="mb-1 h-3 bg-gray-700"
+													       style="width: {60 + Math.random() * 30}%"
+												       ></div>
+												       <div class="h-2 bg-gray-600" style="width: {40 + Math.random() * 40}%"></div>
+											       </div>
+										       </div>
+									       {/each}
+								       {/if}
+							       </div>
+						       </div>
+					       {/if}
+					       {#if searching}
+						       <div class="mt-3 flex items-center space-x-3">
+							       <div class="flex aspect-square h-6 w-6 items-center justify-center">
+								       <LoadingIndicator size="sm" />
+							       </div>
+							       <span class="text-xs text-gray-400">Searching images…</span>
+						       </div>
+					       {/if}
+				       {:else}
+					       <div class="mt-4 flex flex-col items-center justify-center gap-2 p-4 text-center text-gray-400">
+						       <span class="material-symbols-outlined text-4xl mb-2">lock</span>
+						       <span>Sign in to search for images to add to your tier list.</span>
+						       <button class="mt-2 bg-accent px-4 py-2 text-white rounded" on:click={signInWithGoogle}>Sign in with Google</button>
+					       </div>
+				       {/if}
+				       {#if newItemText.trim() && (!$currentUser || (!searchResults.length || highlightedImageIdx === -1))}
+					       <div class="mt-2 text-xs text-gray-500">Press <kbd>Enter</kbd> to add as text item</div>
+				       {/if}
+			       </div>
+		       </div>
+	       {/if}
 
 	<!-- Search Results -->
 	{#if addItemType === 'search' && (searchResults.length > 0 || searching)}

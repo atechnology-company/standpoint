@@ -675,41 +675,24 @@
 					<div class="mb-4">
 						<div class="mb-2 text-sm" style="color: rgb(var(--primary-light-rgb));">Options</div>
 						<div class="space-y-2">
-							{#each pollData.options as option, i (option)}
-								{@const proximity =
-									derivedOptionProximity && derivedOptionProximity[i] !== undefined
-										? derivedOptionProximity[i] * 100
-										: 0}
-								<div class="p-3" style="background: rgba(var(--primary), 0.04);">
-									<div class="mb-1 flex items-center justify-between">
-										<span
-											class="flex items-center gap-2 text-sm break-words"
-											style="color: rgb(var(--primary-light-rgb));"
-										>
-											{#if pollData.gradients && pollData.gradients.colors && pollData.gradients.colors[i]}
+								{#if pollData && pollData.options && pollData.options.length > 0}
+									{@const optionValues = pollData.stats?.option_proximity || []}
+									{@const total = optionValues.reduce((a, b) => a + b, 0) || 1}
+									{#each pollData.options as option, i (option)}
+										{@const value = optionValues[i] || 0}
+										{@const percent = total ? (value / total) * 100 : 0}
+										<div class="p-3 flex items-center gap-2" style="background: rgba(var(--primary), 0.04);">
+											<span class="flex-1">{option}</span>
+											<span class="text-xs font-medium text-white">{percent.toFixed(1)}%</span>
+											<div class="relative h-2 w-32 overflow-hidden bg-white/10">
 												<div
-													class="h-4 w-4 flex-shrink-0"
-													style="border: 1px solid rgb(var(--primary-light-rgb)); background-color: {pollData
-														.gradients.colors[i]}"
+													class="h-2"
+													style="background: rgb(var(--primary-light-rgb)); width: {percent}%; transition: width 0.4s ease;"
 												></div>
-											{/if}
-											{option}
-										</span>
-										<span class="text-sm font-bold">{proximity.toFixed(1)}%</span>
-									</div>
-									<div class="relative h-2 w-full" style="background: rgba(var(--primary), 0.18);">
-										<div
-											class="absolute h-2 overflow-hidden"
-											style="background: rgba(var(--primary-light-rgb),0.25); width: 100%;"
-										>
-											<div
-												class="h-2"
-												style="background: rgb(var(--primary-light-rgb)); width: {proximity}%; transition: width 0.4s ease;"
-											></div>
+											</div>
 										</div>
-									</div>
-								</div>
-							{/each}
+									{/each}
+								{/if}
 						</div>
 					</div>
 

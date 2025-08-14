@@ -1,7 +1,7 @@
 {
 	"name": "standpoint",
 	"private": true,
-	"version": "0.5.0-beta",
+	"version": "0.5.2-beta",
 	"author": {
 		"name": "atechnology company",
 		"email": "imhere@atechnology.company"
@@ -55,8 +55,7 @@
 		"@tailwindcss/cli": "^4.1.8",
 		"canvas-confetti": "^1.9.3",
 		"dotenv": "^16.5.0",
-		"firebase": "^12.0.0",
-		"shadcn-svelte": "^0.14.2"
+		"firebase": "^12.0.0"
 	},
 	"engines": {
 		"node": ">=20"
