@@ -42,6 +42,9 @@ source src-sanic/bin/activate && python3 src-sanic/main.py
 
 ## Version History
 
+### v0.5.3
+- included gemini fallback in frontend
+
 ### v0.5.2
 - fixed bugs in adding tiers to tierlists and viewing it
 - fixed statistic bars

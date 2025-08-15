@@ -796,37 +796,67 @@
 		}
 		if (!aiEnabled) return;
 
-		fetchingSuggestions = true;
-		try {
-			const prompt = buildGeminiPrompt(title, usedItems, 30);
-			lastGeminiPrompt = prompt;
-			const res = await fetch('/api/gemini/tierlist-suggest', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					title,
-					used_items: usedItems,
-					n: 30
-				})
-			});
-			const data = await res.json();
-			lastGeminiRawResponse = data.raw ?? data.raw_response ?? data.error ?? JSON.stringify(data);
-			if (data.items) {
-				const usedSet = new Set(usedItems.map((i) => i.toLowerCase()));
-				suggestedItems = data.items.filter((item: any) => !usedSet.has(item.name.toLowerCase()));
-				await prefetchImagesForSuggestions(suggestedItems);
-			} else {
-				suggestedItems = [];
-			}
-			lastGeminiTitle = title;
-			lastFetchedTitle = title;
-		} catch (err) {
-			console.error('Failed to fetch Gemini suggestions:', err);
-			lastGeminiRawResponse = String(err);
-			suggestedItems = [];
-		} finally {
-			fetchingSuggestions = false;
-		}
+	       fetchingSuggestions = true;
+	       try {
+		       const prompt = buildGeminiPrompt(title, usedItems, 30);
+		       lastGeminiPrompt = prompt;
+		       let data = null;
+		       try {
+			       const res = await fetch('/api/gemini/tierlist-suggest', {
+				       method: 'POST',
+				       headers: { 'Content-Type': 'application/json' },
+				       body: JSON.stringify({
+					       title,
+					       used_items: usedItems,
+					       n: 30
+				       })
+			       });
+			       if (!res.ok) throw new Error('Gemini API error: ' + res.status);
+			       data = await res.json();
+		       } catch (err) {
+			       try {
+				       const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY;
+				       if (!apiKey) throw new Error('No Gemini API key available in frontend env');
+				       const geminiRes = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=' + apiKey, {
+					       method: 'POST',
+					       headers: { 'Content-Type': 'application/json' },
+					       body: JSON.stringify({
+						       contents: [{ role: 'user', parts: [{ text: prompt }] }]
+					       })
+				       });
+				       if (!geminiRes.ok) throw new Error('Gemini direct API error: ' + geminiRes.status);
+				       const geminiData = await geminiRes.json();
+				       let text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+			       try {
+				       let cleaned = text.trim();
+				       if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
+				       if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
+				       if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
+				       data = JSON.parse(cleaned.trim());
+			       } catch (e) {
+				       data = { error: 'Gemini fallback: Invalid JSON in response', raw: text };
+			       }
+			       } catch (fallbackErr) {
+				       data = { error: 'Gemini fallback failed: ' + fallbackErr };
+			       }
+		       }
+		       lastGeminiRawResponse = data.raw ?? data.raw_response ?? data.error ?? JSON.stringify(data);
+		       if (data.items) {
+			       const usedSet = new Set(usedItems.map((i) => i.toLowerCase()));
+			       suggestedItems = data.items.filter((item: any) => !usedSet.has(item.name.toLowerCase()));
+			       await prefetchImagesForSuggestions(suggestedItems);
+		       } else {
+			       suggestedItems = [];
+		       }
+		       lastGeminiTitle = title;
+		       lastFetchedTitle = title;
+	       } catch (err) {
+		       console.error('Failed to fetch Gemini suggestions:', err);
+		       lastGeminiRawResponse = String(err);
+		       suggestedItems = [];
+	       } finally {
+		       fetchingSuggestions = false;
+	       }
 	}
 
 	function buildGeminiPrompt(title: string, usedItems: string[], n: number) {
