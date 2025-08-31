@@ -144,6 +144,7 @@ _i want to sleep so bad_
 ### things i need done
 
 - saving tierlist as images
+- items can belong to groups which show in statistics and you can choose to see only certain groups
 - algorithmic feed and comments
 - half redesign -- in progress
 - change image api
