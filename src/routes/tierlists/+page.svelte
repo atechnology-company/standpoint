@@ -125,7 +125,7 @@
 	<title>Tier Lists - Standpoint</title>
 </svelte:head>
 
-<div class="min-h-screen bg-black">
+<div class="min-h-screen bg-black w-full overflow-x-hidden">
 	<!-- Hero Carousel -->
 	{#if heroSlides.length > 0}
 		<Hero slides={heroSlides} />
@@ -153,7 +153,7 @@
 		{:else}
 			<!-- Tierlist Grid -->
 			<div
-				class="grid grid-cols-1 gap-0 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6"
+				class="grid w-full grid-cols-1 gap-0 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
 			>
 				{#each tierLists as tierList}
 					<div

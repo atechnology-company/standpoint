@@ -2,7 +2,7 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { fade, scale } from 'svelte/transition';
+	import { fade, scale, slide } from 'svelte/transition';
 	import TierlistSidebar from '../../../components/tierlist-sidebar.svelte';
 	import Toast from '../../../components/toast.svelte';
 	import LoadingIndicator from '../../../components/loading-indicator.svelte';
@@ -10,33 +10,35 @@
 	import type { TierListResponse, TierItem, TierCreate } from '$lib/types';
 	import { currentUser, userGroup } from '$lib/stores';
 	import { addToast } from '$lib/toast';
-	import {
-		likeTierlist,
-		unlikeTierlist,
-		hasUserLikedTierlist
-	} from '$lib/firestore-polls-tierlists.js';
 	import { fadeImage } from '$lib/fadeImage';
+	import {
+		hasUserLikedTierlist,
+		likeTierlist,
+		unlikeTierlist
+	} from '$lib/firestore-polls-tierlists.js';
 
+	// Display model types
 	interface DisplayTier {
 		id: string;
 		name: string;
 		color: string;
-		position: number;
+		position?: number;
 		items: TierItem[];
 	}
 
 	interface DisplayTierList {
 		id: string;
 		title: string;
-		list_type: string;
+		description?: string;
+		list_type: 'classic' | 'dynamic';
 		tiers: DisplayTier[];
 		unassignedItems: TierItem[];
-		created_at?: string;
-		owner_displayName?: string;
-		banner_image?: string;
 		author?: string;
 		owner?: string;
-		description?: string;
+		owner_displayName?: string;
+		banner_image?: string;
+		created_at?: string;
+		redirectUids?: string[];
 	}
 
 	let tierList: DisplayTierList | null = null;
@@ -56,6 +58,30 @@
 	// Responsive layout state
 	let windowWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
 	let windowHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+
+	// Sidebar state (persistent per tierlist)
+	let showSidebar = true; // desktop default
+	let sidebarFloating = false; // mobile overlay mode
+	let isMobileView = windowWidth < 900;
+	let sidebarDragHandle: HTMLElement | null = null;
+	const SIDEBAR_STATE_KEY_PREFIX = 'tierlist_sidebar_open_';
+
+	function updateResponsiveFlags() {
+		isMobileView = windowWidth < 900;
+		if (isMobileView) {
+			// use persisted state if available, else closed by default
+			const persisted = tierListId ? localStorage.getItem(SIDEBAR_STATE_KEY_PREFIX + tierListId) : null;
+			if (persisted !== null) {
+				showSidebar = persisted === '1' || persisted === 'true';
+			} else {
+				showSidebar = false; // default closed on mobile until user opens
+			}
+			sidebarFloating = true;
+		} else {
+			showSidebar = true; // always visible desktop
+			sidebarFloating = false;
+		}
+	}
 
 	$: tierListId = $page.params.id;
 
@@ -158,11 +184,25 @@
 			if (typeof window !== 'undefined') {
 				windowWidth = window.innerWidth;
 				windowHeight = window.innerHeight;
+				updateResponsiveFlags();
 			}
 		};
 
+		// Restore persisted state after first render
+		if (typeof window !== 'undefined') {
+			queueMicrotask(() => {
+				if (tierListId) {
+					const persisted = localStorage.getItem(SIDEBAR_STATE_KEY_PREFIX + tierListId);
+					if (persisted !== null && isMobileView) {
+						showSidebar = persisted === '1';
+					}
+				}
+			});
+		}
+
 		if (typeof window !== 'undefined') {
 			window.addEventListener('resize', handleResize);
+			updateResponsiveFlags();
 		}
 
 		return () => {
@@ -283,6 +323,11 @@
 				author: response.owner_displayName || 'Anonymous',
 				created_at: response.created_at
 			};
+
+			// Initialize interaction counts (ensure numeric fallbacks)
+			likes = typeof response.likes === 'number' ? response.likes : 0;
+			comments = typeof response.comments === 'number' ? response.comments : 0;
+			forks = typeof response.forks === 'number' ? response.forks : 0;
 
 			if ($currentUser) {
 				liked = await hasUserLikedTierlist(tierList.id, $currentUser.uid);
@@ -481,65 +526,21 @@
 		return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 	}
 
-	// Calculates optimal grid layout for tier items in viewer mode
-	function getTierItemsStyle(itemCount: number): {
-		gridStyle: string;
-		itemHeight: string;
-		itemWidth: string;
-		margin: string;
-	} {
-		if (itemCount === 0)
-			return { gridStyle: '', itemHeight: '8rem', itemWidth: '8rem', margin: '0' };
-
-		// Calculate available height per tier dynamically
-		const totalTiers = tierList?.tiers.length || 4;
-		const topBarHeight = 80;
-		const availableScreenHeight = windowHeight;
-		const tierContainerHeight = Math.max(
-			120,
-			Math.floor((availableScreenHeight - topBarHeight) / totalTiers) - 32
-		);
-
-		const gap = 16;
-		const margin = 8;
-
-		// Available width (accounting for tier label area - 320px and sidebar - 320px and padding)
-		const availableWidth = windowWidth - 320 - 320 - 64;
-
-		// Try full height first
-		let itemHeight = Math.max(80, tierContainerHeight - gap * 2);
-		let itemWidth = itemHeight;
-
-		// Calculate how many full-height square items can fit in one row
-		const itemsPerRowFullHeight = Math.floor((availableWidth + gap) / (itemWidth + gap));
-
-		// Check if all items fit in one row at full height
-		if (itemCount <= itemsPerRowFullHeight) {
-			// All items fit at full height as squares
-			return {
-				gridStyle: `grid-template-columns: repeat(${itemCount}, ${itemWidth}px); height: ${tierContainerHeight}px;`,
-				itemHeight: `${itemHeight}px`,
-				itemWidth: `${itemWidth}px`,
-				margin: '0'
-			};
-		} else {
-			// Half size to fit more items in multiple rows
-			const maxRows = 2;
-			const halfHeight = Math.max(
-				40,
-				Math.floor((tierContainerHeight - gap * (maxRows - 1)) / maxRows) - margin
-			);
-			const halfItemWidth = halfHeight;
-
-			const itemsPerRowHalfHeight = Math.floor((availableWidth + gap) / (halfItemWidth + gap));
-
-			return {
-				gridStyle: `grid-template-columns: repeat(${itemsPerRowHalfHeight}, ${halfItemWidth}px); height: ${tierContainerHeight}px;`,
-				itemHeight: `${halfHeight}px`,
-				itemWidth: `${halfItemWidth}px`,
-				margin: `${margin}px`
-			};
+	// Simplified sizing: determine square size that fits row; allow wrapping naturally.
+	function computeClassicSizing(itemCount: number) {
+		const sidebarWidth = isMobileView ? 0 : 384; // desktop sidebar
+		const labelWidth = 160;
+		const paddingAllowance = 64;
+		const containerWidth = Math.max(300, windowWidth - sidebarWidth - labelWidth - paddingAllowance);
+		let target = 140;
+		const min = 80;
+		while (target > min) {
+			const perRow = Math.max(1, Math.floor(containerWidth / (target + 16)));
+			if (perRow * 2 >= itemCount || perRow >= itemCount) break; // accept 1-2 rows
+			target -= 10;
 		}
+		console.debug('[ClassicSizing]', { itemCount, containerWidth, chosen: target });
+		return { size: target };
 	}
 
 	function getDynamicGradient(): string {
@@ -595,6 +596,60 @@
 			}, 5000);
 		}
 	}
+
+	function toggleSidebar(forceOpen: boolean | null = null) {
+		// Desktop: always visible, non-collapsible
+		if (!isMobileView) {
+			showSidebar = true;
+			return;
+		}
+		if (forceOpen === true) {
+			showSidebar = true;
+		} else if (forceOpen === false) {
+			showSidebar = false;
+		} else {
+			showSidebar = !showSidebar;
+		}
+		sidebarFloating = true; // mobile uses floating bottom sheet
+		if (typeof window !== 'undefined' && tierListId) {
+			localStorage.setItem(SIDEBAR_STATE_KEY_PREFIX + tierListId, showSidebar ? '1' : '0');
+		}
+	}
+
+	let dragStartY = 0;
+	let dragActive = false;
+	const DEBUG_CLASSIC_ITEMS = typeof import.meta.env !== 'undefined' && !!import.meta.env.VITE_DEBUG_TIERLIST; // toggle via env
+	// Root cause note: Some users reported invisible tiles likely due to fadeImage style injection race where image not yet loaded keeps opacity:0 with no fallback. We add a visible placeholder background & ensure min-size + explicit bg color.
+	onMount(() => {
+		if (DEBUG_CLASSIC_ITEMS) {
+			setTimeout(() => {
+				const tiles = document.querySelectorAll('[data-item-id]');
+				console.debug('[TierClassic] Mounted tiles:', tiles.length);
+				tiles.forEach((el) => {
+					const r = (el as HTMLElement).getBoundingClientRect();
+					console.debug('[TileBBox]', (el as HTMLElement).dataset.itemId, r.width, r.height, r.top, r.left);
+				});
+			}, 300);
+		}
+	});
+	function handleDragStart(e: TouchEvent) {
+		if (!sidebarFloating || !isMobileView) return;
+		dragActive = true;
+		dragStartY = e.touches[0].clientY;
+	}
+	function handleDragMove(e: TouchEvent) {
+		if (!dragActive) return;
+		const diff = e.touches[0].clientY - dragStartY; // positive when dragging down
+		if (diff > 60) {
+			showSidebar = false; // swipe down to close
+			dragActive = false;
+		}
+	}
+
+			// (Debug moved inside loadTierList earlier)
+	function handleDragEnd() {
+		dragActive = false;
+	}
 </script>
 
 <svelte:head>
@@ -602,7 +657,7 @@
 </svelte:head>
 
 <!-- Fullscreen Tier List Viewer -->
-<div class="fixed inset-0 flex bg-black text-white">
+<div class="fixed inset-0 flex bg-black text-white h-screen">
 	{#if loading}
 		<div class="flex flex-1 items-center justify-center">
 			<LoadingIndicator size="lg" />
@@ -621,85 +676,71 @@
 		<div class="flex flex-1 flex-col">
 			{#if tierList.list_type === 'classic'}
 				<!-- Classic Mode -->
-				<div class="flex flex-1 flex-col">
+				<div class="flex flex-1 flex-col overflow-y-auto">
 					{#each tierList.tiers as tier, index (tier.id)}
-						<div
-							class="relative flex flex-1 transition-all duration-300"
-							style="background-color: {dimColor(tier.color || '#666666', 0.6)};"
-							in:fade={{ duration: 350 }}
-						>
-							<!-- Tier Items Area -->
-							<div class="relative flex-1 p-6">
-								<!-- Tier Controls -->
-								<div class="absolute top-0 right-0 flex h-full w-64 items-center justify-end pr-8">
-									<div class="flex flex-col items-end space-y-3" style="color: {tier.color};">
-										<!-- Tier Title -->
-										<div class="text-right text-4xl font-bold" style="color: {tier.color};">
-											{tier.name}
+						<div class="relative flex transition-all duration-300 py-2" style="background-color: {dimColor(tier.color || '#666666', 0.6)};" in:fade={{ duration: 350 }} data-tier-index={index}>
+							<!-- Items left, label column right -->
+							<div class="flex w-full">
+								<div class="flex-1 p-4 md:p-6">
+									{#if tier.items && tier.items.length > 0}
+										{@const sizing = computeClassicSizing(tier.items.length)}
+										<div class="relative flex flex-wrap content-start gap-3 min-h-[110px]">
+											{#if DEBUG_CLASSIC_ITEMS}
+											<div class="pointer-events-none absolute -top-2 -left-1 z-10 text-[10px] bg-black/50 px-2 py-0.5 rounded-full text-white/70">
+												{tier.items.length} item{tier.items.length === 1 ? '' : 's'}
+											</div>
+											{/if}
+											{#each tier.items as item, itemIndex (item.id)}
+												<div
+													class="group/item relative cursor-pointer overflow-hidden shadow-sm transition-shadow hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black rounded-md {selectedItem?.id === item.id ? 'ring-2 ring-orange-400' : ''} bg-gray-800/60"
+													style="height:{sizing.size}px;width:{sizing.size}px;display:flex;align-items:center;justify-content:center;min-width:80px;min-height:80px;background:#1f2937;position:relative;"
+													data-item-id={item.id}
+													data-item-index={itemIndex}
+													on:click|stopPropagation={() => selectItem(item)}
+													on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && selectItem(item)}
+													role="button"
+													tabindex="0"
+													aria-label={`View item ${item.text}`}
+													in:fade={{ duration: 250 }}
+												>
+													<!-- Placeholder always visible to avoid opacity:0 blank -->
+													<div class="absolute inset-0 bg-[linear-gradient(135deg,#374151,#111827)] animate-pulse" aria-hidden="true"></div>
+													{#if item.image}
+														<img use:fadeImage src={item.image} alt={item.text} class="sp-fade-image absolute inset-0 h-full w-full object-cover" loading="lazy" draggable="false" />
+														<div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"></div>
+													{:else if item.type === 'text'}
+														<div class="absolute inset-0 flex items-center justify-center p-2">
+															<span class="text-center text-sm leading-tight font-medium text-white">{item.text}</span>
+														</div>
+													{:else}
+														<span class="absolute inset-0 flex items-center justify-center text-xs text-white/70">{item.text}</span>
+													{/if}
+													{#if item.image}
+														<div class="absolute bottom-1 left-1 z-10">
+															<span class="text-xs md:text-sm font-medium text-white drop-shadow-lg line-clamp-2 max-w-[95%]">{item.text}</span>
+														</div>
+													{/if}
+													{#if DEBUG_CLASSIC_ITEMS}
+													<div class="pointer-events-none absolute inset-0 border border-white/10">
+														<div class="absolute top-0 left-0 text-[10px] bg-black/70 px-1 text-white/70 select-none">{itemIndex}</div>
+													</div>
+													{/if}
+												</div>
+											{/each}
 										</div>
+									{:else}
+										<div class="flex h-full items-center justify-center text-center">
+											<div class="text-white/70">
+												<div class="text-sm md:text-lg">No items in this tier</div>
+											</div>
+										</div>
+									{/if}
+								</div>
+								<div class="flex items-center justify-center px-4 border-l border-white/10" style="width:160px;">
+									<div class="text-center text-3xl md:text-4xl font-bold leading-tight break-words" style="color:{tier.color};">
+										{tier.name}
 									</div>
 								</div>
-
-								{#if tier.items && tier.items.length > 0}
-									{@const itemsStyle = getTierItemsStyle(tier.items.length)}
-									<div class="grid items-center gap-4 pr-80" style={itemsStyle.gridStyle}>
-										{#each tier.items as item, itemIndex (item.id)}
-											<!-- svelte-ignore a11y-no-static-element-interactions -->
-											<div
-												class="group/item relative cursor-pointer overflow-hidden shadow-sm transition-shadow hover:shadow-lg {selectedItem?.id ===
-												item.id
-													? 'ring-2 ring-orange-400'
-													: ''}"
-												style="height: {itemsStyle.itemHeight}; width: {itemsStyle.itemWidth}; margin: {itemsStyle.margin}; {item.image
-													? ''
-													: 'background: linear-gradient(135deg, #1f2937, #374151);'}"
-												on:click|stopPropagation={() => selectItem(item)}
-												on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && selectItem(item)}
-												role="button"
-												tabindex="0"
-												aria-label="View item {item.text}"
-												in:fade={{ duration: 250 }}
-											>
-												<!-- Gradient overlay -->
-												{#if item.image}
-													<img
-														use:fadeImage
-														src={item.image}
-														alt={item.text}
-														class="sp-fade-image absolute inset-0 h-full w-full object-cover"
-														loading="lazy"
-														draggable="false"
-													/>
-													<div
-														class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"
-													></div>
-												{/if}
-
-												<!-- Text positioning -->
-												{#if item.type === 'text' && !item.image}
-													<div class="absolute inset-0 z-10 flex items-center justify-center p-2">
-														<span class="text-center text-sm leading-tight font-medium text-white"
-															>{item.text}</span
-														>
-													</div>
-												{:else}
-													<div class="absolute bottom-2 left-2 z-10">
-														<span class="text-sm font-medium text-white drop-shadow-lg"
-															>{item.text}</span
-														>
-													</div>
-												{/if}
-											</div>
-										{/each}
-									</div>
-								{:else}
-									<!-- svelte-ignore a11y-no-static-element-interactions -->
-									<div class="flex h-full items-center justify-center pr-80 text-center">
-										<div class="text-white opacity-60">
-											<div class="text-lg">No items in this tier</div>
-										</div>
-									</div>
-								{/if}
 							</div>
 						</div>
 					{/each}
@@ -797,23 +838,115 @@
 		</div>
 
 		<!-- Sidebar -->
-		<div class="w-80 border-l border-gray-600 bg-gray-900">
-			<TierlistSidebar
-				title={tierList.title}
-				shareUrl={`${typeof window !== 'undefined' ? window.location.origin : ''}/tierlists/${tierList.id}`}
-				id={tierList.id}
-				tierListData={{
-					...tierList,
-					items: tierList.tiers
-						.flatMap((tier) => tier.items || [])
-						.concat(tierList.unassignedItems || []),
-					item_placements: []
-				} as any}
-				on:delete={handleSidebarDelete}
-				on:fork={forkTierlist}
-				on:edit={editTierlist}
-			/>
-		</div>
+		{#if isMobileView}
+			{#if showSidebar}
+				<!-- Mobile backdrop -->
+				<div
+					class="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+					on:click={() => toggleSidebar(false)}
+					role="button"
+					aria-label="Close tierlist sidebar"
+					tabindex="0"
+					on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSidebar(false)}
+				></div>
+				<div
+					id="tierlist-sidebar"
+					role="complementary"
+					aria-label="Tierlist information"
+					class="fixed z-50 left-0 right-0 bottom-0 w-full bg-gray-900/95 backdrop-blur-xl rounded-t-2xl shadow-2xl flex flex-col overflow-hidden transition-transform duration-300 ease-out"
+					in:slide={{ duration: 250, axis: 'y' }}
+					out:slide={{ duration: 220, axis: 'y' }}
+					on:touchstart={handleDragStart}
+					on:touchmove={handleDragMove}
+					on:touchend={handleDragEnd}
+				>
+					<div class="relative max-h-[70vh] flex-1 overflow-y-auto">
+						<div class="mx-auto mt-2 mb-4 h-1.5 w-12 rounded-full bg-white/20"></div>
+						<TierlistSidebar
+							title={tierList.title}
+							shareUrl={`${typeof window !== 'undefined' ? window.location.origin : ''}/tierlists/${tierList.id}`}
+							id={tierList.id}
+							tierListData={{
+								...tierList,
+								items: tierList.tiers
+									.flatMap((tier) => tier.items || [])
+									.concat(tierList.unassignedItems || []),
+								item_placements: []
+							} as any}
+							on:delete={handleSidebarDelete}
+							on:fork={forkTierlist}
+							on:edit={editTierlist}
+						/>
+					</div>
+				</div>
+			{/if}
+		{:else}
+			<!-- Desktop static sidebar -->
+			<div class="w-96 border-l border-gray-800 bg-gray-900/70 backdrop-blur-md overflow-y-auto">
+				<TierlistSidebar
+					title={tierList.title}
+					shareUrl={`${typeof window !== 'undefined' ? window.location.origin : ''}/tierlists/${tierList.id}`}
+					id={tierList.id}
+					tierListData={{
+						...tierList,
+						items: tierList.tiers
+							.flatMap((tier) => tier.items || [])
+							.concat(tierList.unassignedItems || []),
+						item_placements: []
+					} as any}
+					on:delete={handleSidebarDelete}
+					on:fork={forkTierlist}
+					on:edit={editTierlist}
+				/>
+			</div>
+		{/if}
+
+		{#if isMobileView}
+			{#if tierList}
+				<!-- Bottom full-width info bar (always visible). Clicking opens/closes floating sidebar on mobile -->
+				<button
+					on:click={() => toggleSidebar(showSidebar ? false : true)}
+					class="fixed inset-x-0 bottom-0 z-40 flex w-full items-center gap-4 border-t border-white/10 bg-gradient-to-t from-black/85 via-black/70 to-black/60 px-4 py-3 text-left backdrop-blur-md shadow-[0_-4px_12px_-2px_rgba(0,0,0,0.6)] transition-[background,color] active:bg-black/80"
+					aria-controls="tierlist-sidebar"
+					aria-expanded={showSidebar}
+					aria-label={showSidebar ? 'Hide tierlist info' : 'Show tierlist info'}
+					style="-webkit-tap-highlight-color: transparent;"
+					in:slide={{ duration: 250 }}
+				>
+					<div class="flex min-w-0 flex-1 flex-col">
+						<div class="truncate text-sm font-semibold leading-tight">
+							{tierList.title || 'Untitled Tierlist'}
+						</div>
+						<div class="mt-0.5 flex flex-wrap items-center gap-3 text-[11px] uppercase tracking-wide text-white/60">
+							<span class="truncate max-w-[50%]">{tierList.author || tierList.owner_displayName || 'Anonymous'}</span>
+							<div class="flex items-center gap-1"><span class="material-symbols-outlined text-base text-accent">favorite</span><span>{likes}</span></div>
+							<div class="flex items-center gap-1"><span class="material-symbols-outlined text-base text-accent">comment</span><span>{comments}</span></div>
+							<div class="flex items-center gap-1"><span class="material-symbols-outlined text-base text-accent">fork_right</span><span>{forks}</span></div>
+						</div>
+					</div>
+					<div class="ml-auto flex items-center gap-2 text-accent">
+						<span class="text-xs font-medium">{showSidebar ? 'HIDE' : 'INFO'}</span>
+						<span class="material-symbols-outlined text-lg transition-transform duration-300" style="transform: rotate({showSidebar ? 180 : 0}deg);">expand_less</span>
+					</div>
+				</button>
+			{:else}
+				<!-- Skeleton bottom bar while loading tierlist -->
+				<div class="fixed inset-x-0 bottom-0 z-40 flex w-full items-center gap-4 border-t border-white/10 bg-black/60 px-4 py-3 backdrop-blur-md">
+					<div class="flex min-w-0 flex-1 flex-col animate-pulse">
+						<div class="h-3 w-40 bg-white/10"></div>
+						<div class="mt-2 flex gap-3">
+							<div class="h-2 w-16 bg-white/10"></div>
+							<div class="h-2 w-10 bg-white/10"></div>
+							<div class="h-2 w-10 bg-white/10"></div>
+						</div>
+					</div>
+					<div class="ml-auto flex items-center gap-2 text-accent opacity-50">
+						<span class="text-xs font-medium">INFO</span>
+						<span class="material-symbols-outlined text-lg">expand_less</span>
+					</div>
+				</div>
+			{/if}
+		{/if}
 	{:else}
 		<!-- Debug: No tierList data -->
 		<div class="flex flex-1 items-center justify-center">
@@ -833,5 +966,4 @@
 	{/if}
 </div>
 
-<Toast />
 <Toast />

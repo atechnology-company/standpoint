@@ -27,6 +27,7 @@
 		unlikeTierlist,
 		hasUserLikedTierlist
 	} from '$lib/firestore-polls-tierlists.js';
+	import Modal from './modal.svelte';
 
 	export let title: string = '';
 	export let shareUrl: string = '';
@@ -87,9 +88,8 @@
 	}
 	function formatDateSafe(input: any): string {
 		const d = normalizeDate(input);
-		return d
-			? d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-			: 'Invalid date';
+		if (!d) return '—';
+		return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) + ' • ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 	}
 
 	function handleShare() {
@@ -105,9 +105,7 @@
 	}
 
 	function handleDelete() {
-		if (confirm(`Are you sure you want to delete this tier list? This action cannot be undone.`)) {
-			handleDeleteWithFallback();
-		}
+		showDeleteModal = true;
 	}
 
 	async function handleDeleteWithFallback() {
@@ -127,6 +125,16 @@
 		} catch (error) {
 			addToast('Failed to delete tierlist', 'error');
 		}
+	}
+
+	// Themed delete modal state and handlers
+	let showDeleteModal = false;
+	function confirmDelete() {
+		showDeleteModal = false;
+		handleDeleteWithFallback();
+	}
+	function cancelDelete() {
+		showDeleteModal = false;
 	}
 
 	async function toggleLike(event?: Event) {
@@ -511,6 +519,9 @@
 	let forkHover = false;
 	let commentPostHover = false;
 
+	// Safe accessors for optional fields not in the strict interface
+	$: safeLastEdited = (tierListData && (tierListData as any).last_edited) || null;
+
 	$: if (isLocal) {
 		isOwner = true;
 	} else if ($currentUser && tierListData) {
@@ -561,6 +572,26 @@
 	}
 
 	function handleEdit() {
+		// Enforce owner/redirect/dev permissions on client before dispatch
+		if (isLocal) {
+			// Always allow editing local copies
+			dispatch('edit');
+			return;
+		}
+		if (!$currentUser || !tierListData) {
+			addToast('Please sign in to edit tierlists', 'error');
+			return;
+		}
+		const isOriginalOwner = $currentUser.uid === tierListData.owner;
+		const redirectUids = tierListData.redirectUids || [];
+		const hasRedirectAccess = redirectUids.includes($currentUser.uid);
+		const isDevUser = $userGroup === 'dev';
+		const displayNameMatch = $currentUser.displayName === tierListData.owner_displayName;
+		const allowed = isOriginalOwner || hasRedirectAccess || isDevUser || displayNameMatch;
+		if (!allowed) {
+			addToast('You can only edit your own tierlists', 'error');
+			return;
+		}
 		dispatch('edit');
 	}
 </script>
@@ -629,9 +660,16 @@
 		</div>
 		<h1 class="mb-4 text-2xl font-bold break-words">{title || 'UNTITLED TIER LIST'}</h1>
 
-		<div class="mb-6 text-sm" style="color: rgb(var(--primary-light-rgb));">
-			{formatDateSafe(tierListData?.created_at)}
+		<div class="mb-2 text-sm" style="color: rgb(var(--primary-light-rgb));">
+			Created: {formatDateSafe(tierListData?.created_at)}
 		</div>
+		{#if safeLastEdited}
+			<div class="mb-6 text-sm" style="color: rgb(var(--primary-light-rgb));">
+				Last edited: {formatDateSafe(safeLastEdited)}
+			</div>
+		{:else}
+			<div class="mb-6"></div>
+		{/if}
 
 		<!-- Tier List Statistics Section (shown for all including local) -->
 		{#if tierListData}
@@ -912,6 +950,14 @@
 				<div class="flex items-center space-x-2">
 					{#if isOwner}
 						<button
+							class="flex h-10 w-10 flex-shrink-0 items-center justify-center text-white transition-colors duration-200"
+							style="background: var(--primary);"
+							on:click={handleEdit}
+							title="Edit tierlist"
+						>
+							<span class="material-symbols-outlined text-xl">edit</span>
+						</button>
+						<button
 							class="flex h-10 w-10 flex-shrink-0 items-center justify-center bg-red-600 text-white transition-colors duration-200 hover:bg-red-700"
 							on:click={handleDelete}
 							title="Delete tierlist"
@@ -923,21 +969,23 @@
 			</div>
 		</div>
 	</div>
+
+	<!-- Themed Delete Confirmation Modal -->
+	<Modal bind:open={showDeleteModal} on:close={cancelDelete}>
+		<div class="space-y-4">
+			<div class="text-lg font-semibold text-white">Delete tierlist?</div>
+			<p class="text-sm" style="color: rgb(var(--primary-light-rgb));">
+				This action cannot be undone. This will permanently delete the tierlist and remove its data.
+			</p>
+			<div class="flex justify-end gap-2">
+				<button class="px-3 py-1 text-sm" style="background: rgba(var(--primary), 0.12); color: rgb(var(--primary-light-rgb));" on:click={cancelDelete}>Cancel</button>
+				<button class="px-3 py-1 text-sm text-white bg-red-600 hover:bg-red-700" on:click={confirmDelete}>Delete</button>
+			</div>
+		</div>
+	</Modal>
 </div>
 
 <style>
-	.progress-bar {
-		background: rgba(var(--accent-light), 0.12);
-		border-radius: 4px;
-		overflow: hidden;
-	}
-
-	.progress-fill {
-		background: var(--accent-light);
-		height: 100%;
-		transition: width 0.4s ease;
-	}
-
 	.tier-bar-wrap {
 		width: 160px;
 	}
@@ -947,8 +995,5 @@
 	.tier-row.active-tier {
 		outline: 1px solid rgba(var(--primary-light-rgb), 0.8);
 		box-shadow: 0 0 0 2px rgba(var(--primary-light-rgb), 0.15) inset;
-	}
-	.active-tier-text {
-		font-weight: 600;
 	}
 </style>

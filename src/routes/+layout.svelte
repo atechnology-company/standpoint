@@ -56,30 +56,14 @@
 	<Onboarding bind:show={showOnboarding} on:complete={handleOnboardingComplete} />
 </main>
 
-<style global>
-	:root {
-		--default-font-family:
-			'Mozilla Text', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
-			Roboto, Arial, 'Noto Sans', sans-serif;
-		--font-sans:
-			'Mozilla Text', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
-			Roboto, Arial, 'Noto Sans', sans-serif;
+<style>
+	:global(:root) {
+		--default-font-family: 'Mozilla Text', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, 'Noto Sans', sans-serif;
+		--font-sans: 'Mozilla Text', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, 'Noto Sans', sans-serif;
 		--sidebar-bg: rgba(var(--primary-light, 255, 180, 120), 0.18);
 		--sidebar-bg-dark: rgba(var(--primary, 255, 120, 60), 0.85);
 	}
-	body,
-	html,
-	:host {
-		font-family:
-			'Mozilla Text',
-			ui-sans-serif,
-			system-ui,
-			-apple-system,
-			BlinkMacSystemFont,
-			'Segoe UI',
-			Roboto,
-			Arial,
-			'Noto Sans',
-			sans-serif !important;
+	:global(body), :global(html), :global(:host) {
+		font-family: 'Mozilla Text', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, 'Noto Sans', sans-serif !important;
 	}
 </style>

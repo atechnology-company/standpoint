@@ -26,8 +26,6 @@
 	let isDragging = false;
 	let carouselElement: HTMLElement;
 
-	let slideLikes: number[] = [];
-
 	// Shuffle slides on mount
 	function shuffleSlides(arr: Array<Slide>) {
 		let array = arr.slice();
@@ -40,23 +38,6 @@
 
 	onMount(async () => {
 		slides = shuffleSlides(slides);
-
-		slideLikes = slides.map((slide) => slide.likes || 0);
-		await Promise.all(
-			slides.map(async (slide, i) => {
-				if (slide.tierlist && slide.tierlist.id) {
-					try {
-						const res = await fetch(`/api/interactions/tierlist/${slide.tierlist.id}/likes`);
-						if (res.ok) {
-							const data = await res.json();
-							slideLikes[i] = data.likes ?? 0;
-							slide.likes = data.likes ?? 0;
-						}
-					} catch {}
-				}
-			})
-		);
-
 		startAutoplay();
 	});
 

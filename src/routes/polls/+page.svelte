@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { slide } from 'svelte/transition';
 	import { apiClient } from '$lib/api';
 	import { savePollToFirestore, getPollsFromFirestore } from '$lib/firestore-polls-tierlists';
 	import { getUserVote, saveUserVote, updatePollStatistics } from '$lib/poll-vote-functions';
@@ -17,7 +18,67 @@
 	let loading = true;
 	let error = '';
 	let selectedPoll: any = null;
-	let showSidebar = false;
+	let showSidebar = false; // poll detail sidebar
+	let isMobileView = typeof window !== 'undefined' ? window.innerWidth < 900 : false;
+	let sidebarFloating = isMobileView; // track floating mode for poll detail sidebar
+	// Collapsible poll list panel
+	let showPollList = true;
+	const POLL_LIST_STATE_KEY = 'poll_list_open';
+	// drag state for mobile poll detail sheet
+	let dragStartY = 0;
+	let dragActive = false;
+	const POLL_SIDEBAR_STATE_KEY_PREFIX = 'poll_sidebar_open_';
+
+	function persistSidebarState() {
+		if (typeof window === 'undefined' || !selectedPoll) return;
+		try {
+			localStorage.setItem(POLL_SIDEBAR_STATE_KEY_PREFIX + selectedPoll.id, showSidebar ? '1' : '0');
+		} catch {}
+	}
+
+	function restoreSidebarStateForPoll(pollId: string) {
+		if (typeof window === 'undefined') return false;
+		try {
+			return localStorage.getItem(POLL_SIDEBAR_STATE_KEY_PREFIX + pollId) === '1';
+		} catch {
+			return false;
+		}
+	}
+
+	function toggleSidebar(forceOpen: boolean | null = null) {
+		if (forceOpen === true) {
+			showSidebar = true;
+			sidebarFloating = isMobileView;
+		} else if (forceOpen === false) {
+			showSidebar = false;
+		} else {
+			showSidebar = !showSidebar;
+		}
+		persistSidebarState();
+	}
+	function updateViewport() {
+		if (typeof window !== 'undefined') {
+			isMobileView = window.innerWidth < 900;
+			if (!isMobileView) {
+				if (selectedPoll) {
+					showSidebar = restoreSidebarStateForPoll(selectedPoll.id) || !!selectedPoll;
+				}
+				sidebarFloating = false;
+				// restore poll list open state
+				try { const persisted = localStorage.getItem(POLL_LIST_STATE_KEY); if (persisted !== null) showPollList = persisted === '1'; } catch {}
+			} else {
+				sidebarFloating = true;
+				// on mobile always hide list when viewing detail? keep current state.
+			}
+		}
+	}
+
+function togglePollList(forceOpen: boolean | null = null) {
+	if (forceOpen === true) showPollList = true;
+	else if (forceOpen === false) showPollList = false;
+	else showPollList = !showPollList;
+	try { localStorage.setItem(POLL_LIST_STATE_KEY, showPollList ? '1' : '0'); } catch {}
+}
 	let showCreateModal = false;
 	let showProUpgradeModal = false;
 	let creating = false;
@@ -73,6 +134,9 @@
 
 	onMount(async () => {
 		await loadPolls();
+		if (typeof window !== 'undefined') {
+			window.addEventListener('resize', updateViewport);
+		}
 	});
 
 	async function loadPolls() {
@@ -117,7 +181,16 @@
 
 	function handlePollClick(poll: any) {
 		selectedPoll = { ...poll };
-		showSidebar = true;
+		// Do NOT auto-open sidebar; only restore if user previously opened it for this poll
+		const restored = restoreSidebarStateForPoll(poll.id);
+		showSidebar = restored; // will be false if never opened before
+		persistSidebarState();
+		if (isMobileView) {
+			// scroll to top of poll area
+			setTimeout(() => {
+				try { document.querySelector('#mobile-poll-root')?.scrollIntoView({ behavior: 'smooth' }); } catch {}
+			}, 50);
+		}
 	}
 
 	function handleLikesUpdated(event: CustomEvent) {
@@ -449,10 +522,16 @@
 </script>
 
 <div class="flex min-h-screen bg-black">
-	<!-- Poll List / Chart Area -->
-	<div class="flex flex-1">
-		<div class="h-screen w-96 bg-black">
-			<div class="h-full overflow-y-auto">
+	<!-- Collapsible Poll List -->
+	{#if showPollList}
+		<div class="h-screen w-80 md:w-96 bg-black border-r border-white/10 flex flex-col" transition:slide>
+			<div class="flex items-center justify-between px-4 py-3 border-b border-white/10 md:hidden">
+				<div class="text-sm font-semibold text-white/70">Polls</div>
+				<button class="text-white/60 p-1 active:scale-95" on:click={() => togglePollList(false)} aria-label="Hide poll list">
+					<span class="material-symbols-outlined text-xl">close</span>
+				</button>
+			</div>
+			<div class="h-full overflow-y-auto" id="poll-list-scroll">
 				{#if error}
 					<div class="mb-4 border border-red-500/40 bg-red-500/20 px-4 py-3 text-red-200">
 						{error}
@@ -510,13 +589,21 @@
 				{/if}
 			</div>
 		</div>
+	{/if}
 
-		<!-- Chart Area -->
-		<div class="flex h-screen flex-1 items-center justify-center bg-black">
+	<!-- Chart / Main Area -->
+	<div class="flex h-screen flex-1 items-center justify-center bg-black relative">
+		<!-- Show toggle control when list hidden -->
+		{#if !showPollList}
+			<button class="absolute top-4 left-4 z-20 bg-white/10 hover:bg-white/20 text-white px-3 py-2 text-xs rounded-md backdrop-blur active:scale-95" on:click={() => togglePollList(true)} aria-label="Show poll list">
+				<span class="material-symbols-outlined text-base align-middle mr-1">menu</span>LIST
+			</button>
+		{/if}
+		<div class="flex h-full w-full items-center justify-center">
 			{#if chartData}
 				<div
 					class="chart-container relative"
-					style="height: 90vh; width: 90vh; max-width: calc(100vw - 476px); max-height: 90vh;"
+					style="height: 90vh; width: 90vh; max-width: 100%; max-height: 90vh;"
 				>
 					<div class="relative h-full w-full overflow-hidden">
 						<ChartRenderer {chartData} {onVote} />
@@ -532,16 +619,82 @@
 		</div>
 	</div>
 
-	<!-- Sidebar -->
+	<!-- Poll Detail Sidebar / Sheet -->
 	{#if selectedPoll && showSidebar}
-		<div class="h-screen w-80 border-l border-white/20 bg-gray-900">
-			<PollSidebar
-				id={selectedPoll.id}
-				pollData={selectedPoll}
-				showComments={false}
-				on:delete={handleSidebarDelete}
-				on:likesUpdated={handleLikesUpdated}
-			/>
+		{#if isMobileView}
+			<!-- Backdrop -->
+			<div class="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm" on:click={() => toggleSidebar(false)} aria-hidden="true"></div>
+			<div
+				class="fixed left-0 right-0 bottom-0 z-40 max-h-[70vh] w-full rounded-t-2xl bg-gray-900/95 backdrop-blur-xl shadow-2xl overflow-hidden flex flex-col"
+				on:touchstart={(e) => { dragStartY = e.touches[0].clientY; dragActive = true; }}
+				on:touchmove={(e) => { if (dragActive) { const diff = e.touches[0].clientY - dragStartY; if (diff > 60) { showSidebar = false; dragActive = false; } } }}
+				on:touchend={() => { dragActive = false; }}
+			>
+				<div class="mx-auto mt-2 mb-3 h-1.5 w-12 rounded-full bg-white/20"></div>
+				<div class="flex-1 overflow-y-auto">
+					<PollSidebar
+						id={selectedPoll.id}
+						pollData={selectedPoll}
+						showComments={false}
+						on:delete={handleSidebarDelete}
+						on:likesUpdated={handleLikesUpdated}
+					/>
+				</div>
+			</div>
+		{:else}
+			<div class="w-80 border-l border-white/20 bg-gray-900 h-screen relative z-40 flex flex-col">
+				<PollSidebar
+					id={selectedPoll.id}
+					pollData={selectedPoll}
+					showComments={false}
+					on:delete={handleSidebarDelete}
+					on:likesUpdated={handleLikesUpdated}
+				/>
+			</div>
+		{/if}
+	{/if}
+
+	{#if isMobileView && selectedPoll}
+		<!-- Bottom full-width info bar for mobile to toggle poll sidebar -->
+		<button
+			on:click={() => toggleSidebar(true)}
+			class="fixed inset-x-0 bottom-0 z-40 flex w-full items-center gap-4 border-t border-white/10 bg-gradient-to-t from-black/85 via-black/70 to-black/60 px-4 py-3 text-left backdrop-blur-md active:scale-[0.985] active:bg-black/80 transition-all"
+			aria-controls="poll-sidebar"
+			aria-expanded={showSidebar}
+			aria-label={showSidebar ? 'Hide poll info' : 'Show poll info'}
+			style="-webkit-tap-highlight-color: transparent;"
+		>
+			<div class="flex min-w-0 flex-1 flex-col">
+				<div class="truncate text-sm font-semibold leading-tight">
+					{selectedPoll.title || 'Untitled Poll'}
+				</div>
+				<div class="mt-0.5 flex flex-wrap items-center gap-3 text-[11px] uppercase tracking-wide text-white/60">
+					<span class="truncate max-w-[50%]">{selectedPoll.owner_displayName || 'Anonymous'}</span>
+					<div class="flex items-center gap-1"><span class="material-symbols-outlined text-base text-accent">how_to_vote</span><span>{selectedPoll.stats?.total_votes || 0}</span></div>
+					{#if selectedPoll.likes !== undefined}
+						<div class="flex items-center gap-1"><span class="material-symbols-outlined text-base text-accent">favorite</span><span>{selectedPoll.likes}</span></div>
+					{/if}
+				</div>
+			</div>
+			<div class="ml-auto flex items-center gap-2 text-accent">
+				<span class="text-xs font-medium">{showSidebar ? 'HIDE' : 'INFO'}</span>
+				<span class="material-symbols-outlined text-lg transition-transform duration-300" style="transform: rotate({showSidebar ? 180 : 0}deg);">expand_less</span>
+			</div>
+		</button>
+	{:else if isMobileView}
+		<!-- Skeleton bottom bar when no poll selected yet -->
+		<div class="fixed inset-x-0 bottom-0 z-40 flex w-full items-center gap-4 border-t border-white/10 bg-black/60 px-4 py-3 backdrop-blur-md">
+			<div class="flex min-w-0 flex-1 flex-col animate-pulse">
+				<div class="h-3 w-36 bg-white/10"></div>
+				<div class="mt-2 flex gap-3">
+					<div class="h-2 w-14 bg-white/10"></div>
+					<div class="h-2 w-10 bg-white/10"></div>
+				</div>
+			</div>
+			<div class="ml-auto flex items-center gap-2 text-accent opacity-50">
+				<span class="text-xs font-medium">INFO</span>
+				<span class="material-symbols-outlined text-lg">expand_less</span>
+			</div>
 		</div>
 	{/if}
 

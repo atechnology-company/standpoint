@@ -675,9 +675,11 @@
 					<div class="mb-4">
 						<div class="mb-2 text-sm" style="color: rgb(var(--primary-light-rgb));">Options</div>
 						<div class="space-y-2">
-								{#if pollData && pollData.options && pollData.options.length > 0}
-									{@const optionValues = pollData.stats?.option_proximity || []}
-									{@const total = optionValues.reduce((a, b) => a + b, 0) || 1}
+									{#if pollData && pollData.options && pollData.options.length > 0}
+										{@const optionValues = (pollData.stats?.option_proximity && pollData.stats.option_proximity.length === pollData.options.length)
+											? pollData.stats.option_proximity
+											: (derivedOptionProximity || [])}
+									{@const total = optionValues.reduce((a: number, b: number) => a + b, 0) || 1}
 									{#each pollData.options as option, i (option)}
 										{@const value = optionValues[i] || 0}
 										{@const percent = total ? (value / total) * 100 : 0}
@@ -946,5 +948,4 @@
 			</div>
 		</div>
 	</div>
-	<!-- Ensure all opened divs are closed properly -->
 </div>

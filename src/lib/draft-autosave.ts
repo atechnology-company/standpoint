@@ -1,4 +1,4 @@
-import type { TierItem } from './api';
+import type { TierItem } from './types';
 
 export interface TierListDraft {
 	id: string;

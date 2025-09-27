@@ -366,10 +366,53 @@
 			}
 			uploadProgress = 1;
 			uploadingImages = false;
-			const id = await saveTierlistToFirestore(payload);
-			localStorage.removeItem('standpoint_tierlist_images');
-			localStorage.removeItem('standpoint_tierlist_banner');
-			goto(`/tierlists/${id}`);
+			if (editingTierlistId) {
+				// Build update payload without resetting owner/likes/comments
+				const itemMap = new Map<string, TierItem>();
+				tierList.tiers.forEach((t) => t.items.forEach((it) => itemMap.set(it.id, it)));
+				tierList.unassignedItems.forEach((it) => {
+					if (!itemMap.has(it.id)) itemMap.set(it.id, it);
+				});
+				const allItems = [...itemMap.values()];
+				const placements = tierList.tiers.flatMap((tier, tierIdx) =>
+					tier.items.map((item) => ({
+						item_id: item.id,
+						tier_position: tierIdx,
+						...(item.position && { position: item.position }),
+						...(item.size && { size: item.size })
+					}))
+				);
+				const updatePayload: any = {
+					title: tierList.title,
+					list_type: tierList.type,
+					...(payload.banner_image && { banner_image: payload.banner_image }),
+					tiers: tierList.tiers.map((t, index) => ({
+						name: t.name,
+						position: index / tierList.tiers.length,
+						color: t.color
+					})),
+					items: allItems.map((item) => ({
+						id: item.id,
+						text: item.text || item.name || '',
+						name: item.text || item.name || '',
+						...(item.url && { url: item.url }),
+						...(item.image && { image: item.image }),
+						...(item.type && { type: item.type }),
+						...(item.position && { position: item.position }),
+						...(item.size && { size: item.size })
+					})),
+					item_placements: placements
+				};
+				await updateTierlist(editingTierlistId, updatePayload);
+				localStorage.removeItem('standpoint_tierlist_images');
+				localStorage.removeItem('standpoint_tierlist_banner');
+				goto(`/tierlists/${editingTierlistId}`);
+			} else {
+				const id = await saveTierlistToFirestore(payload);
+				localStorage.removeItem('standpoint_tierlist_images');
+				localStorage.removeItem('standpoint_tierlist_banner');
+				goto(`/tierlists/${id}`);
+			}
 		} finally {
 			publishing = false;
 			showPublishMenu = false;
@@ -424,10 +467,53 @@
 			}
 			uploadProgress = 1;
 			uploadingImages = false;
-			const id = await saveTierlistUnlisted(payload, false);
-			localStorage.removeItem('standpoint_tierlist_images');
-			localStorage.removeItem('standpoint_tierlist_banner');
-			goto(`/tierlists/${id}`);
+			if (editingTierlistId) {
+				const itemMap = new Map<string, TierItem>();
+				tierList.tiers.forEach((t) => t.items.forEach((it) => itemMap.set(it.id, it)));
+				tierList.unassignedItems.forEach((it) => {
+					if (!itemMap.has(it.id)) itemMap.set(it.id, it);
+				});
+				const allItems = [...itemMap.values()];
+				const placements = tierList.tiers.flatMap((tier, tierIdx) =>
+					tier.items.map((item) => ({
+						item_id: item.id,
+						tier_position: tierIdx,
+						...(item.position && { position: item.position }),
+						...(item.size && { size: item.size })
+					}))
+				);
+				const updatePayload: any = {
+					title: tierList.title,
+					list_type: tierList.type,
+					...(payload.banner_image && { banner_image: payload.banner_image }),
+					tiers: tierList.tiers.map((t, index) => ({
+						name: t.name,
+						position: index / tierList.tiers.length,
+						color: t.color
+					})),
+					items: allItems.map((item) => ({
+						id: item.id,
+						text: item.text || item.name || '',
+						name: item.text || item.name || '',
+						...(item.url && { url: item.url }),
+						...(item.image && { image: item.image }),
+						...(item.type && { type: item.type }),
+						...(item.position && { position: item.position }),
+						...(item.size && { size: item.size })
+					})),
+					item_placements: placements,
+					visibility: 'unlisted'
+				};
+				await updateTierlist(editingTierlistId, updatePayload);
+				localStorage.removeItem('standpoint_tierlist_images');
+				localStorage.removeItem('standpoint_tierlist_banner');
+				goto(`/tierlists/${editingTierlistId}`);
+			} else {
+				const id = await saveTierlistUnlisted(payload, false);
+				localStorage.removeItem('standpoint_tierlist_images');
+				localStorage.removeItem('standpoint_tierlist_banner');
+				goto(`/tierlists/${id}`);
+			}
 		} finally {
 			publishing = false;
 			showPublishMenu = false;

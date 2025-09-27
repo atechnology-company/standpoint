@@ -38,6 +38,7 @@ export interface TierlistData {
 	ownerDisplayName?: string;
 	created_at: any;
 	updated_at?: any;
+	last_edited?: any;
 	likes?: number;
 	comments?: number;
 	forks?: number;
@@ -263,9 +264,19 @@ export async function updateTierlist(
 	updates: Record<string, unknown>
 ): Promise<void> {
 	const tierlistRef = doc(db, 'tierlists', tierlistId);
+	// Normalize owner if a display name/email was passed
+	if (typeof (updates as any).owner === 'string' && (updates as any).owner) {
+		try {
+			(updates as any).owner = await resolveUid((updates as any).owner as string);
+		} catch (e) {
+			// If resolve fails, keep provided owner as-is
+		}
+	}
 	const cleanedUpdates = cleanUndefinedValues({
 		...updates,
-		updated_at: serverTimestamp()
+	updated_at: serverTimestamp(),
+	// Explicit last_edited field to preserve original created_at and track edits separately
+	last_edited: serverTimestamp()
 	});
 	await updateDoc(tierlistRef, cleanedUpdates);
 }
@@ -729,8 +740,15 @@ export async function getAllVotesForPoll(pollId: string): Promise<{
 
 export async function updatePollStatistics(pollId: string): Promise<void> {
 	try {
-		const votesData = await getAllVotesForPoll(pollId);
-		const { vote_positions, vote_positions_2d } = votesData;
+	const votesData = await getAllVotesForPoll(pollId);
+	const { vote_positions, vote_positions_2d } = votesData;
+
+	// Fetch poll for response_type/options to compute option proximity
+	const pollRef = doc(db, 'polls', pollId);
+	const pollSnap = await getDoc(pollRef);
+	const pollData = pollSnap.exists() ? (pollSnap.data() as any) : null;
+	const response_type: number = pollData?.response_type || pollData?.responseType || 2;
+	const options: string[] = Array.isArray(pollData?.options) ? pollData.options : [];
 
 		// Calculate statistics
 		let average = 0;
@@ -812,7 +830,91 @@ export async function updatePollStatistics(pollId: string): Promise<void> {
 			range_y = Math.max(...y_values) - Math.min(...y_values);
 		}
 
-		const pollRef = doc(db, 'polls', pollId);
+		// Compute option proximity percentages (normalized weights per option)
+		let option_proximity: number[] | undefined = undefined;
+		if (response_type === 2) {
+			if (vote_positions && vote_positions.length > 0) {
+				let sumLeft = 0;
+				let sumRight = 0;
+				for (const v of vote_positions) {
+					if (typeof v === 'number') {
+						sumRight += v; // closeness to right endpoint
+						sumLeft += 1 - v; // closeness to left endpoint
+					}
+				}
+				const total = sumLeft + sumRight || 1;
+				const prox = [sumLeft / total, sumRight / total];
+				// Map to options length if options provided
+				if (options.length === 2) option_proximity = prox;
+				else if (options.length > 0) {
+					option_proximity = options.map((_, i) => prox[i % prox.length]);
+				} else option_proximity = prox;
+			}
+		} else if (response_type >= 3 && vote_positions_2d && vote_positions_2d.length > 0) {
+			// Build polygon points similar to the client
+			let shape: Array<{ x: number; y: number }> = [];
+			if (response_type === 3) {
+				shape = [
+					{ x: 0.5, y: 0.1 },
+					{ x: 0.1, y: 0.9 },
+					{ x: 0.9, y: 0.9 }
+				];
+			} else if (response_type === 4) {
+				shape = [
+					{ x: 0.1, y: 0.1 },
+					{ x: 0.9, y: 0.1 },
+					{ x: 0.9, y: 0.9 },
+					{ x: 0.1, y: 0.9 }
+				];
+			} else if (response_type === 5) {
+				const cx = 0.5,
+					cy = 0.5,
+					r = 0.45;
+				shape = Array.from({ length: 5 }, (_, i) => {
+					const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+					return { x: cx + r * Math.cos(a), y: cy * 1 + r * Math.sin(a) };
+				});
+			}
+			const anchors = shape.map((p, i) => {
+				const n = shape[(i + 1) % shape.length];
+				return { x: (p.x + n.x) / 2, y: (p.y + n.y) / 2 };
+			});
+			if (anchors.length > 0) {
+				const sums = new Array(anchors.length).fill(0);
+				const EPS = 1e-4;
+				for (const p of vote_positions_2d) {
+					let totalW = 0;
+					const weights: number[] = [];
+					for (let idx = 0; idx < anchors.length; idx++) {
+						const a = anchors[idx];
+						const dx = a.x - p.x;
+						const dy = a.y - p.y;
+						const d = Math.sqrt(dx * dx + dy * dy);
+						const w = 1 / (d + EPS);
+						weights[idx] = w;
+						totalW += w;
+					}
+					if (totalW) {
+						for (let idx = 0; idx < anchors.length; idx++) {
+							sums[idx] += weights[idx] / totalW;
+						}
+					}
+				}
+				const voteCount = vote_positions_2d.length || 1;
+				let proximities = sums.map((s) => s / voteCount);
+				// Map to options length if mismatch
+				if (options.length && options.length !== proximities.length) {
+					option_proximity = options.map((_, i) => {
+						const from = (i / options.length) * proximities.length;
+						const i0 = Math.floor(from) % proximities.length;
+						return proximities[i0];
+					});
+				} else {
+					option_proximity = proximities;
+				}
+			}
+		}
+
 		const statsUpdate: any = {
 			stats: {
 				vote_positions,
@@ -820,6 +922,7 @@ export async function updatePollStatistics(pollId: string): Promise<void> {
 				average,
 				std_dev,
 				total_votes: votesData.total_votes,
+				...(option_proximity && { option_proximity }),
 				...(average_2d && {
 					average_2d,
 					median_x,
