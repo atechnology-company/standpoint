@@ -28,12 +28,14 @@
 	// Auto scroll into view when (re)rendered / orientation changes
 	export let autoScroll: boolean = true;
 	// Debug flag (can be toggled via env VITE_DEBUG_POLL or parent prop)
-	export let debug: boolean = typeof import.meta.env !== 'undefined' && !!import.meta.env.VITE_DEBUG_POLL;
+  export let debug: boolean = typeof import.meta.env !== 'undefined' && !!import.meta.env.VITE_DEBUG_POLL;
+  // Allow overriding max polygon size from parent (desktop enhancement)
+  export let maxPolySize: number = 720;
 	// Phone threshold constant (enforced vertical below this)
 	const PHONE_THRESHOLD = 640; // px
 	// Minimum polygon size clamp
 	const POLY_MIN = 220; // px
-	const POLY_MAX = 600; // px
+  const POLY_MAX = 1100; // internal hard ceiling
 
   // Dynamic viewport-fit sizing for polygons
   let polyPixelSize = 0; // computed square side in px
@@ -58,13 +60,16 @@
     }
     const bottomGap = 24; // leave breathing room at bottom
     const availHFromTop = Math.max(POLY_MIN, windowHeight - topOffset - bottomGap);
-    // Choose the limiting dimension
-    let base = Math.min(availW, availHFromTop, POLY_MAX);
-    // For larger layouts keep previous behaviour but still respect height limit
+    // Desktop: use maxPolySize directly for bigger charts
     if (windowWidth > 900) {
-      base = Math.min(base, Math.min(Math.max(POLY_MIN, windowWidth * 0.85), POLY_MAX));
+      // Use the maxPolySize prop value (1000px) capped by POLY_MAX
+      polyPixelSize = Math.min(maxPolySize, POLY_MAX);
+    } else {
+      // Mobile: use available space
+      const base = Math.min(availW, availHFromTop);
+      polyPixelSize = Math.max(POLY_MIN, Math.min(base, maxPolySize, POLY_MAX));
     }
-    polyPixelSize = Math.max(POLY_MIN, Math.round(base));
+    polyPixelSize = Math.max(POLY_MIN, Math.round(polyPixelSize));
   }
 
   let scrollScheduled = false;

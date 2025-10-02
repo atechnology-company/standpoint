@@ -181,10 +181,17 @@ function togglePollList(forceOpen: boolean | null = null) {
 
 	function handlePollClick(poll: any) {
 		selectedPoll = { ...poll };
-		// Do NOT auto-open sidebar; only restore if user previously opened it for this poll
-		const restored = restoreSidebarStateForPoll(poll.id);
-		showSidebar = restored; // will be false if never opened before
-		persistSidebarState();
+		// Only close sidebars on mobile; keep them open on desktop
+		if (isMobileView) {
+			showSidebar = false;
+			showPollList = false;
+			persistSidebarState();
+		} else {
+			// On desktop, keep both sidebars open
+			showSidebar = true;
+			showPollList = true;
+			persistSidebarState();
+		}
 		if (isMobileView) {
 			// scroll to top of poll area
 			setTimeout(() => {
@@ -521,17 +528,17 @@ function togglePollList(forceOpen: boolean | null = null) {
 	$: chartData = renderChart(selectedPoll);
 </script>
 
-<div class="flex min-h-screen bg-black">
+<div class="flex min-h-[calc(100vh-5rem)] bg-black">
 	<!-- Collapsible Poll List -->
 	{#if showPollList}
-		<div class="h-screen w-80 md:w-96 bg-black border-r border-white/10 flex flex-col" transition:slide>
+		<div class="h-[calc(100vh-5rem)] w-80 md:w-96 bg-black border-r border-white/10 flex flex-col relative" transition:slide>
 			<div class="flex items-center justify-between px-4 py-3 border-b border-white/10 md:hidden">
 				<div class="text-sm font-semibold text-white/70">Polls</div>
 				<button class="text-white/60 p-1 active:scale-95" on:click={() => togglePollList(false)} aria-label="Hide poll list">
 					<span class="material-symbols-outlined text-xl">close</span>
 				</button>
 			</div>
-			<div class="h-full overflow-y-auto" id="poll-list-scroll">
+			<div class="flex-1 overflow-y-auto" id="poll-list-scroll">
 				{#if error}
 					<div class="mb-4 border border-red-500/40 bg-red-500/20 px-4 py-3 text-red-200">
 						{error}
@@ -582,17 +589,23 @@ function togglePollList(forceOpen: boolean | null = null) {
 									<div class="mt-4 text-sm text-white/60">
 										Avg: {(poll.stats.average * 100).toFixed(1)}%
 									</div>
-								{/if}
-							</div>
-						{/each}
+							{/if}
+						</div>
+					{/each}
 					</div>
 				{/if}
 			</div>
+			<!-- Add Button -->
+			<button
+				on:click={openCreateModal}
+				class="absolute bottom-4 left-4 w-14 h-14 bg-accent text-white flex items-center justify-center transition-all hover:bg-accent/90 active:scale-95 shadow-lg"
+				aria-label="Create new poll"
+			>
+				<span class="material-symbols-outlined text-3xl">add</span>
+			</button>
 		</div>
-	{/if}
-
-	<!-- Chart / Main Area -->
-	<div class="flex h-screen flex-1 items-center justify-center bg-black relative">
+	{/if}	<!-- Chart / Main Area -->
+	<div class="flex h-[calc(100vh-5rem)] flex-1 items-center justify-center bg-black relative">
 		<!-- Show toggle control when list hidden -->
 		{#if !showPollList}
 			<button class="absolute top-4 left-4 z-20 bg-white/10 hover:bg-white/20 text-white px-3 py-2 text-xs rounded-md backdrop-blur active:scale-95" on:click={() => togglePollList(true)} aria-label="Show poll list">
@@ -603,10 +616,10 @@ function togglePollList(forceOpen: boolean | null = null) {
 			{#if chartData}
 				<div
 					class="chart-container relative"
-					style="height: 90vh; width: 90vh; max-width: 100%; max-height: 90vh;"
+					style="--s: min(95vmin, 1100px); height: var(--s); width: var(--s); max-width: 100%; max-height: 100%;"
 				>
 					<div class="relative h-full w-full overflow-hidden">
-						<ChartRenderer {chartData} {onVote} />
+						<ChartRenderer {chartData} {onVote} maxPolySize={1100} />
 					</div>
 				</div>
 			{:else}
@@ -642,7 +655,7 @@ function togglePollList(forceOpen: boolean | null = null) {
 				</div>
 			</div>
 		{:else}
-			<div class="w-80 border-l border-white/20 bg-gray-900 h-screen relative z-40 flex flex-col">
+			<div class="w-80 border-l border-white/20 bg-gray-900 h-[calc(100vh-5rem)] relative z-40 flex flex-col">
 				<PollSidebar
 					id={selectedPoll.id}
 					pollData={selectedPoll}
@@ -654,22 +667,22 @@ function togglePollList(forceOpen: boolean | null = null) {
 		{/if}
 	{/if}
 
-	{#if isMobileView && selectedPoll}
-		<!-- Bottom full-width info bar for mobile to toggle poll sidebar -->
+	{#if isMobileView && selectedPoll && !showSidebar && selectedPoll.title}
+		<!-- Bottom full-width info bar for mobile to toggle poll sidebar (only shows when sidebar closed and has data) -->
 		<button
 			on:click={() => toggleSidebar(true)}
 			class="fixed inset-x-0 bottom-0 z-40 flex w-full items-center gap-4 border-t border-white/10 bg-gradient-to-t from-black/85 via-black/70 to-black/60 px-4 py-3 text-left backdrop-blur-md active:scale-[0.985] active:bg-black/80 transition-all"
 			aria-controls="poll-sidebar"
-			aria-expanded={showSidebar}
-			aria-label={showSidebar ? 'Hide poll info' : 'Show poll info'}
+			aria-expanded="false"
+			aria-label="Show poll info"
 			style="-webkit-tap-highlight-color: transparent;"
 		>
 			<div class="flex min-w-0 flex-1 flex-col">
-				<div class="truncate text-sm font-semibold leading-tight">
-					{selectedPoll.title || 'Untitled Poll'}
+				<div class="truncate text-sm font-semibold leading-tight text-white">
+					{selectedPoll.title}
 				</div>
 				<div class="mt-0.5 flex flex-wrap items-center gap-3 text-[11px] uppercase tracking-wide text-white/60">
-					<span class="truncate max-w-[50%]">{selectedPoll.owner_displayName || 'Anonymous'}</span>
+					<span class="truncate max-w-[50%]">{selectedPoll?.owner_displayName || 'Anonymous'}</span>
 					<div class="flex items-center gap-1"><span class="material-symbols-outlined text-base text-accent">how_to_vote</span><span>{selectedPoll.stats?.total_votes || 0}</span></div>
 					{#if selectedPoll.likes !== undefined}
 						<div class="flex items-center gap-1"><span class="material-symbols-outlined text-base text-accent">favorite</span><span>{selectedPoll.likes}</span></div>
@@ -681,7 +694,7 @@ function togglePollList(forceOpen: boolean | null = null) {
 				<span class="material-symbols-outlined text-lg transition-transform duration-300" style="transform: rotate({showSidebar ? 180 : 0}deg);">expand_less</span>
 			</div>
 		</button>
-	{:else if isMobileView}
+	{:else if isMobileView && !selectedPoll}
 		<!-- Skeleton bottom bar when no poll selected yet -->
 		<div class="fixed inset-x-0 bottom-0 z-40 flex w-full items-center gap-4 border-t border-white/10 bg-black/60 px-4 py-3 backdrop-blur-md">
 			<div class="flex min-w-0 flex-1 flex-col animate-pulse">
@@ -698,19 +711,7 @@ function togglePollList(forceOpen: boolean | null = null) {
 		</div>
 	{/if}
 
-	<!-- Add Button -->
-	{#if $userGroup === 'pro' || $userGroup === 'dev'}
-		<button
-			class="bg-accent hover:text-accent fixed bottom-6 left-6 z-50 flex h-16 w-16 items-center justify-center text-2xl font-bold text-white shadow-lg transition-all duration-300 hover:bg-white"
-			on:click={openCreateModal}
-			aria-label="Create new poll"
-		>
-			<svg class="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"
-				></path>
-			</svg>
-		</button>
-	{/if}
+
 
 	<!-- Create Poll Modal -->
 	{#if showCreateModal}

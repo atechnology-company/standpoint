@@ -1,4 +1,5 @@
 import { writable, derived } from 'svelte/store';
+import { browser } from '$app/environment';
 
 import { auth, firebaseUser, db } from './firebase';
 import {
@@ -34,7 +35,7 @@ export const userGroup = writable<string | null>(null);
 
 // Derived store for current user profile
 export const currentUserProfile = derived(firebaseUser, ($firebaseUser, set) => {
-	if ($firebaseUser) {
+	if (browser && $firebaseUser) {
 		getDoc(doc(db, 'users', $firebaseUser.uid)).then((userDoc) => {
 			set(userDoc.exists() ? { ...userDoc.data(), id: $firebaseUser.uid } : null);
 		});
@@ -43,33 +44,36 @@ export const currentUserProfile = derived(firebaseUser, ($firebaseUser, set) => 
 	}
 });
 
-// Listen for auth state changes
-onAuthStateChanged(auth, async (user) => {
-	currentUser.set(user);
-	if (user) {
-		let group = await getUserGroup(user.uid);
-		if (!group) {
-			group = 'user';
-			await setUserGroup(user.uid, group);
-		}
-		userGroup.set(group);
-		// Load user preferences (accent/theme)
-		try {
-			const snap = await getDoc(doc(db, 'users', user.uid));
-			if (snap.exists()) {
-				const prefs = (snap.data() as any)?.preferences;
-				if (prefs?.accent) setAccent(prefs.accent);
+// Listen for auth state changes (only in browser)
+if (browser) {
+	onAuthStateChanged(auth, async (user) => {
+		currentUser.set(user);
+		if (user) {
+			let group = await getUserGroup(user.uid);
+			if (!group) {
+				group = 'user';
+				await setUserGroup(user.uid, group);
 			}
-		} catch (e) {
-			console.warn('Failed loading user prefs', e);
+			userGroup.set(group);
+			// Load user preferences (accent/theme)
+			try {
+				const snap = await getDoc(doc(db, 'users', user.uid));
+				if (snap.exists()) {
+					const prefs = (snap.data() as any)?.preferences;
+					if (prefs?.accent) setAccent(prefs.accent);
+				}
+			} catch (e) {
+				console.warn('Failed loading user prefs', e);
+			}
+		} else {
+			userGroup.set(null);
 		}
-	} else {
-		userGroup.set(null);
-	}
-});
+	});
+}
 
 // Helper to persist theme mode (light/dark) [unfinished]
 export async function persistThemeMode(mode: 'light' | 'dark') {
+	if (!browser) return;
 	const user = auth.currentUser;
 	if (!user) return;
 	try {
@@ -79,12 +83,14 @@ export async function persistThemeMode(mode: 'light' | 'dark') {
 
 // Sign in with Google
 export async function signInWithGoogle() {
+	if (!browser) return;
 	const provider = new GoogleAuthProvider();
 	await signInWithPopup(auth, provider);
 }
 
 // Sign out
 export async function signOutUser() {
+	if (!browser) return;
 	await signOut(auth);
 }
 

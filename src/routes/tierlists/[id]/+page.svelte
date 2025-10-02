@@ -69,13 +69,7 @@
 	function updateResponsiveFlags() {
 		isMobileView = windowWidth < 900;
 		if (isMobileView) {
-			// use persisted state if available, else closed by default
-			const persisted = tierListId ? localStorage.getItem(SIDEBAR_STATE_KEY_PREFIX + tierListId) : null;
-			if (persisted !== null) {
-				showSidebar = persisted === '1' || persisted === 'true';
-			} else {
-				showSidebar = false; // default closed on mobile until user opens
-			}
+			showSidebar = false;
 			sidebarFloating = true;
 		} else {
 			showSidebar = true; // always visible desktop
@@ -526,21 +520,48 @@
 		return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 	}
 
-	// Simplified sizing: determine square size that fits row; allow wrapping naturally.
-	function computeClassicSizing(itemCount: number) {
+	// Dynamic viewport-filling sizing: tiers expand to fill available height (desktop only)
+	function computeClassicSizing(itemCount: number, tierIndex: number, totalTiers: number) {
 		const sidebarWidth = isMobileView ? 0 : 384; // desktop sidebar
 		const labelWidth = 160;
 		const paddingAllowance = 64;
 		const containerWidth = Math.max(300, windowWidth - sidebarWidth - labelWidth - paddingAllowance);
-		let target = 140;
-		const min = 80;
-		while (target > min) {
-			const perRow = Math.max(1, Math.floor(containerWidth / (target + 16)));
-			if (perRow * 2 >= itemCount || perRow >= itemCount) break; // accept 1-2 rows
-			target -= 10;
+
+		// Only apply viewport-filling on desktop; mobile uses natural scrolling
+		if (isMobileView) {
+			let target = 140;
+			const min = 80;
+			while (target > min) {
+				const perRow = Math.max(1, Math.floor(containerWidth / (target + 16)));
+				if (perRow * 2 >= itemCount || perRow >= itemCount) break;
+				target -= 10;
+			}
+			console.debug('[ClassicSizing Mobile]', { itemCount, containerWidth, chosen: target });
+			return { size: target, tierHeight: 0 }; // tierHeight unused on mobile
 		}
-		console.debug('[ClassicSizing]', { itemCount, containerWidth, chosen: target });
-		return { size: target };
+
+		// Desktop: Calculate ideal tier height to fill viewport
+		const availableHeight = windowHeight - 80; // reserve space for header/margins
+		const tierHeight = Math.floor(availableHeight / totalTiers);
+		const itemVerticalPadding = 48; // p-4/p-6 padding
+		const availableItemHeight = Math.max(100, tierHeight - itemVerticalPadding);
+
+		// Determine item size that fills height while maintaining square aspect and wrapping nicely
+		let target = Math.min(availableItemHeight, 180); // cap at reasonable max
+		const min = 80;
+		const gap = 12; // gap-3
+
+		// Adjust size to optimize row fitting
+		while (target > min) {
+			const perRow = Math.max(1, Math.floor((containerWidth + gap) / (target + gap)));
+			const rows = Math.ceil(itemCount / perRow);
+			const totalHeight = rows * target + (rows - 1) * gap;
+			if (totalHeight <= availableItemHeight) break;
+			target -= 5;
+		}
+
+		console.debug('[ClassicSizing Desktop]', { tierIndex, itemCount, tierHeight, availableItemHeight, chosen: target });
+		return { size: target, tierHeight };
 	}
 
 	function getDynamicGradient(): string {
@@ -676,14 +697,14 @@
 		<div class="flex flex-1 flex-col">
 			{#if tierList.list_type === 'classic'}
 				<!-- Classic Mode -->
-				<div class="flex flex-1 flex-col overflow-y-auto">
+				<div class="flex flex-1 flex-col {isMobileView ? 'overflow-y-auto' : 'overflow-hidden'}">
 					{#each tierList.tiers as tier, index (tier.id)}
-						<div class="relative flex transition-all duration-300 py-2" style="background-color: {dimColor(tier.color || '#666666', 0.6)};" in:fade={{ duration: 350 }} data-tier-index={index}>
+						{@const sizing = computeClassicSizing(tier.items?.length || 0, index, tierList.tiers.length)}
+						<div class="relative flex transition-all duration-300 {isMobileView ? 'py-2' : ''}" style="background-color: {dimColor(tier.color || '#666666', 0.6)}; {isMobileView ? '' : `min-height: ${sizing.tierHeight}px; flex: 1 1 0;`}" in:fade={{ duration: 350 }} data-tier-index={index}>
 							<!-- Items left, label column right -->
 							<div class="flex w-full">
 								<div class="flex-1 p-4 md:p-6">
 									{#if tier.items && tier.items.length > 0}
-										{@const sizing = computeClassicSizing(tier.items.length)}
 										<div class="relative flex flex-wrap content-start gap-3 min-h-[110px]">
 											{#if DEBUG_CLASSIC_ITEMS}
 											<div class="pointer-events-none absolute -top-2 -left-1 z-10 text-[10px] bg-black/50 px-2 py-0.5 rounded-full text-white/70">

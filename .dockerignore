@@ -1,0 +1,7 @@
+src-sanic/
+src-sanic/**
+src-sanic/venv/
+src-sanic/venv/**
+.vscode/
+*.pyc
+__pycache__/

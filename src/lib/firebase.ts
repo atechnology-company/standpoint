@@ -3,6 +3,7 @@ import { getFirestore, type Firestore } from 'firebase/firestore';
 import { getAuth, type Auth, onAuthStateChanged, type User } from 'firebase/auth';
 import { getStorage, type FirebaseStorage } from 'firebase/storage';
 import { writable } from 'svelte/store';
+import { browser } from '$app/environment';
 
 // Firebase config from environment variables
 const firebaseConfig = {
@@ -15,17 +16,25 @@ const firebaseConfig = {
 	measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
-// Initialize Firebase
-const app: FirebaseApp = initializeApp(firebaseConfig);
-const db: Firestore = getFirestore(app);
-const auth: Auth = getAuth(app);
-const storage: FirebaseStorage = getStorage(app);
+// Initialize Firebase only in browser
+let app: FirebaseApp;
+let db: Firestore;
+let auth: Auth;
+let storage: FirebaseStorage;
+
+if (browser) {
+	app = initializeApp(firebaseConfig);
+	db = getFirestore(app);
+	auth = getAuth(app);
+	storage = getStorage(app);
+
+	// Set up auth state listener
+	onAuthStateChanged(auth, (user) => {
+		firebaseUser.set(user);
+	});
+}
 
 export { app, db, auth, storage };
 
 // Svelte store for the current Firebase user
 export const firebaseUser = writable<User | null>(null);
-
-onAuthStateChanged(auth, (user) => {
-	firebaseUser.set(user);
-});
