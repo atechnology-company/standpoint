@@ -51,6 +51,7 @@ export class FirebaseFallbackClient {
 						std_dev: data.stats?.std_dev || 0,
 						total_votes: data.stats?.total_votes || 0,
 						vote_positions: data.stats?.vote_positions || [],
+						vote_positions_2d: data.stats?.vote_positions_2d || [],
 						average_2d: data.stats?.average_2d
 					},
 					user_vote: data.user_vote,
@@ -75,17 +76,6 @@ export class FirebaseFallbackClient {
 
 			const data = pollDoc.data();
 
-			let backendVotePositions2D = [];
-			try {
-				const response = await fetch(`http://127.0.0.1:8000/api/polls/${id}/backend-votes`);
-				if (response.ok) {
-					const backendData = await response.json();
-					backendVotePositions2D = backendData.vote_positions_2d || [];
-				}
-			} catch (error) {
-				console.log('No backend vote data available for Firebase poll');
-			}
-
 			return {
 				id: pollDoc.id,
 				title: data.title,
@@ -97,7 +87,7 @@ export class FirebaseFallbackClient {
 					std_dev: data.stats?.std_dev || 0,
 					total_votes: data.stats?.total_votes || 0,
 					vote_positions: data.stats?.vote_positions || [],
-					vote_positions_2d: backendVotePositions2D,
+					vote_positions_2d: data.stats?.vote_positions_2d || [],
 					average_2d: data.stats?.average_2d
 				},
 				user_vote: data.user_vote,
@@ -119,7 +109,8 @@ export class FirebaseFallbackClient {
 					average: 0,
 					std_dev: 0,
 					total_votes: 0,
-					vote_positions: []
+					vote_positions: [],
+					vote_positions_2d: []
 				},
 				created_at: serverTimestamp()
 			};
@@ -136,7 +127,8 @@ export class FirebaseFallbackClient {
 					average: 0,
 					std_dev: 0,
 					total_votes: 0,
-					vote_positions: []
+					vote_positions: [],
+					vote_positions_2d: []
 				},
 				created_at: new Date().toISOString(),
 				owner: 'anonymous'
@@ -159,25 +151,41 @@ export class FirebaseFallbackClient {
 			const pollData = pollDoc.data();
 			const currentVotes = pollData.stats?.vote_positions || [];
 			const newVotes = [...currentVotes, position];
+			const currentVotes2D = (pollData.stats?.vote_positions_2d || []) as {
+				x: number;
+				y: number;
+			}[];
+			const userVote2D = (additionalData?.position_2d as { x: number; y: number } | null) || null;
+			const newVotes2D = userVote2D ? [...currentVotes2D, userVote2D] : currentVotes2D;
 
 			const totalVotes = newVotes.length;
 			const average = newVotes.reduce((sum, vote) => sum + vote, 0) / totalVotes;
 			const variance =
 				newVotes.reduce((sum, vote) => sum + Math.pow(vote - average, 2), 0) / totalVotes;
 			const stdDev = Math.sqrt(variance);
+			let average2D = pollData.stats?.average_2d || null;
+			if (newVotes2D.length > 0) {
+				const avgX =
+					newVotes2D.reduce((sum: number, pos: { x: number; y: number }) => sum + pos.x, 0) /
+					newVotes2D.length;
+				const avgY =
+					newVotes2D.reduce((sum: number, pos: { x: number; y: number }) => sum + pos.y, 0) /
+					newVotes2D.length;
+				average2D = [avgX, avgY];
+			}
 
 			const newStats = {
 				average,
 				std_dev: stdDev,
 				total_votes: totalVotes,
-				vote_positions: newVotes
+				vote_positions: newVotes,
+				vote_positions_2d: newVotes2D,
+				average_2d: average2D
 			};
 
 			await updateDoc(pollRef, {
 				stats: newStats
 			});
-
-			const userVote2D = additionalData?.position_2d || null;
 
 			return {
 				id: pollId,

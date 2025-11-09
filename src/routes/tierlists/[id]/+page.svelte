@@ -525,7 +525,10 @@
 		const sidebarWidth = isMobileView ? 0 : 384; // desktop sidebar
 		const labelWidth = 160;
 		const paddingAllowance = 64;
-		const containerWidth = Math.max(300, windowWidth - sidebarWidth - labelWidth - paddingAllowance);
+		const containerWidth = Math.max(
+			300,
+			windowWidth - sidebarWidth - labelWidth - paddingAllowance
+		);
 
 		// Only apply viewport-filling on desktop; mobile uses natural scrolling
 		if (isMobileView) {
@@ -560,7 +563,13 @@
 			target -= 5;
 		}
 
-		console.debug('[ClassicSizing Desktop]', { tierIndex, itemCount, tierHeight, availableItemHeight, chosen: target });
+		console.debug('[ClassicSizing Desktop]', {
+			tierIndex,
+			itemCount,
+			tierHeight,
+			availableItemHeight,
+			chosen: target
+		});
 		return { size: target, tierHeight };
 	}
 
@@ -639,7 +648,8 @@
 
 	let dragStartY = 0;
 	let dragActive = false;
-	const DEBUG_CLASSIC_ITEMS = typeof import.meta.env !== 'undefined' && !!import.meta.env.VITE_DEBUG_TIERLIST; // toggle via env
+	const DEBUG_CLASSIC_ITEMS =
+		typeof import.meta.env !== 'undefined' && !!import.meta.env.VITE_DEBUG_TIERLIST; // toggle via env
 	// Root cause note: Some users reported invisible tiles likely due to fadeImage style injection race where image not yet loaded keeps opacity:0 with no fallback. We add a visible placeholder background & ensure min-size + explicit bg color.
 	onMount(() => {
 		if (DEBUG_CLASSIC_ITEMS) {
@@ -648,7 +658,14 @@
 				console.debug('[TierClassic] Mounted tiles:', tiles.length);
 				tiles.forEach((el) => {
 					const r = (el as HTMLElement).getBoundingClientRect();
-					console.debug('[TileBBox]', (el as HTMLElement).dataset.itemId, r.width, r.height, r.top, r.left);
+					console.debug(
+						'[TileBBox]',
+						(el as HTMLElement).dataset.itemId,
+						r.width,
+						r.height,
+						r.top,
+						r.left
+					);
 				});
 			}, 300);
 		}
@@ -667,7 +684,7 @@
 		}
 	}
 
-			// (Debug moved inside loadTierList earlier)
+	// (Debug moved inside loadTierList earlier)
 	function handleDragEnd() {
 		dragActive = false;
 	}
@@ -678,7 +695,7 @@
 </svelte:head>
 
 <!-- Fullscreen Tier List Viewer -->
-<div class="fixed inset-0 flex bg-black text-white h-screen">
+<div class="fixed inset-0 flex h-screen bg-black text-white">
 	{#if loading}
 		<div class="flex flex-1 items-center justify-center">
 			<LoadingIndicator size="lg" />
@@ -699,52 +716,95 @@
 				<!-- Classic Mode -->
 				<div class="flex flex-1 flex-col {isMobileView ? 'overflow-y-auto' : 'overflow-hidden'}">
 					{#each tierList.tiers as tier, index (tier.id)}
-						{@const sizing = computeClassicSizing(tier.items?.length || 0, index, tierList.tiers.length)}
-						<div class="relative flex transition-all duration-300 {isMobileView ? 'py-2' : ''}" style="background-color: {dimColor(tier.color || '#666666', 0.6)}; {isMobileView ? '' : `min-height: ${sizing.tierHeight}px; flex: 1 1 0;`}" in:fade={{ duration: 350 }} data-tier-index={index}>
+						{@const sizing = computeClassicSizing(
+							tier.items?.length || 0,
+							index,
+							tierList.tiers.length
+						)}
+						<div
+							class="relative flex transition-all duration-300 {isMobileView ? 'py-2' : ''}"
+							style="background-color: {dimColor(tier.color || '#666666', 0.6)}; {isMobileView
+								? ''
+								: `min-height: ${sizing.tierHeight}px; flex: 1 1 0;`}"
+							in:fade={{ duration: 350 }}
+							data-tier-index={index}
+						>
 							<!-- Items left, label column right -->
 							<div class="flex w-full">
 								<div class="flex-1 p-4 md:p-6">
 									{#if tier.items && tier.items.length > 0}
-										<div class="relative flex flex-wrap content-start gap-3 min-h-[110px]">
+										<div class="relative flex min-h-[110px] flex-wrap content-start gap-3">
 											{#if DEBUG_CLASSIC_ITEMS}
-											<div class="pointer-events-none absolute -top-2 -left-1 z-10 text-[10px] bg-black/50 px-2 py-0.5 rounded-full text-white/70">
-												{tier.items.length} item{tier.items.length === 1 ? '' : 's'}
-											</div>
+												<div
+													class="pointer-events-none absolute -top-2 -left-1 z-10 rounded-full bg-black/50 px-2 py-0.5 text-[10px] text-white/70"
+												>
+													{tier.items.length} item{tier.items.length === 1 ? '' : 's'}
+												</div>
 											{/if}
 											{#each tier.items as item, itemIndex (item.id)}
 												<div
-													class="group/item relative cursor-pointer overflow-hidden shadow-sm transition-shadow hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black rounded-md {selectedItem?.id === item.id ? 'ring-2 ring-orange-400' : ''} bg-gray-800/60"
+													class="group/item relative cursor-pointer overflow-hidden rounded-md shadow-sm transition-shadow hover:shadow-lg focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black focus-visible:outline-none {selectedItem?.id ===
+													item.id
+														? 'ring-2 ring-orange-400'
+														: ''} bg-gray-800/60"
 													style="height:{sizing.size}px;width:{sizing.size}px;display:flex;align-items:center;justify-content:center;min-width:80px;min-height:80px;background:#1f2937;position:relative;"
 													data-item-id={item.id}
 													data-item-index={itemIndex}
 													on:click|stopPropagation={() => selectItem(item)}
-													on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && selectItem(item)}
+													on:keydown={(e) =>
+														(e.key === 'Enter' || e.key === ' ') && selectItem(item)}
 													role="button"
 													tabindex="0"
 													aria-label={`View item ${item.text}`}
 													in:fade={{ duration: 250 }}
 												>
 													<!-- Placeholder always visible to avoid opacity:0 blank -->
-													<div class="absolute inset-0 bg-[linear-gradient(135deg,#374151,#111827)] animate-pulse" aria-hidden="true"></div>
+													<div
+														class="absolute inset-0 animate-pulse bg-[linear-gradient(135deg,#374151,#111827)]"
+														aria-hidden="true"
+													></div>
 													{#if item.image}
-														<img use:fadeImage src={item.image} alt={item.text} class="sp-fade-image absolute inset-0 h-full w-full object-cover" loading="lazy" draggable="false" />
-														<div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"></div>
+														<img
+															use:fadeImage
+															src={item.image}
+															alt={item.text}
+															class="sp-fade-image absolute inset-0 h-full w-full object-cover"
+															loading="lazy"
+															draggable="false"
+														/>
+														<div
+															class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"
+														></div>
 													{:else if item.type === 'text'}
 														<div class="absolute inset-0 flex items-center justify-center p-2">
-															<span class="text-center text-sm leading-tight font-medium text-white">{item.text}</span>
+															<span class="text-center text-sm leading-tight font-medium text-white"
+																>{item.text}</span
+															>
 														</div>
 													{:else}
-														<span class="absolute inset-0 flex items-center justify-center text-xs text-white/70">{item.text}</span>
+														<span
+															class="absolute inset-0 flex items-center justify-center text-xs text-white/70"
+															>{item.text}</span
+														>
 													{/if}
 													{#if item.image}
 														<div class="absolute bottom-1 left-1 z-10">
-															<span class="text-xs md:text-sm font-medium text-white drop-shadow-lg line-clamp-2 max-w-[95%]">{item.text}</span>
+															<span
+																class="line-clamp-2 max-w-[95%] text-xs font-medium text-white drop-shadow-lg md:text-sm"
+																>{item.text}</span
+															>
 														</div>
 													{/if}
 													{#if DEBUG_CLASSIC_ITEMS}
-													<div class="pointer-events-none absolute inset-0 border border-white/10">
-														<div class="absolute top-0 left-0 text-[10px] bg-black/70 px-1 text-white/70 select-none">{itemIndex}</div>
-													</div>
+														<div
+															class="pointer-events-none absolute inset-0 border border-white/10"
+														>
+															<div
+																class="absolute top-0 left-0 bg-black/70 px-1 text-[10px] text-white/70 select-none"
+															>
+																{itemIndex}
+															</div>
+														</div>
 													{/if}
 												</div>
 											{/each}
@@ -757,8 +817,14 @@
 										</div>
 									{/if}
 								</div>
-								<div class="flex items-center justify-center px-4 border-l border-white/10" style="width:160px;">
-									<div class="text-center text-3xl md:text-4xl font-bold leading-tight break-words" style="color:{tier.color};">
+								<div
+									class="flex items-center justify-center border-l border-white/10 px-4"
+									style="width:160px;"
+								>
+									<div
+										class="text-center text-3xl leading-tight font-bold break-words md:text-4xl"
+										style="color:{tier.color};"
+									>
 										{tier.name}
 									</div>
 								</div>
@@ -874,7 +940,7 @@
 					id="tierlist-sidebar"
 					role="complementary"
 					aria-label="Tierlist information"
-					class="fixed z-50 left-0 right-0 bottom-0 w-full bg-gray-900/95 backdrop-blur-xl rounded-t-2xl shadow-2xl flex flex-col overflow-hidden transition-transform duration-300 ease-out"
+					class="fixed right-0 bottom-0 left-0 z-50 flex w-full flex-col overflow-hidden rounded-t-2xl bg-gray-900/95 shadow-2xl backdrop-blur-xl transition-transform duration-300 ease-out"
 					in:slide={{ duration: 250, axis: 'y' }}
 					out:slide={{ duration: 220, axis: 'y' }}
 					on:touchstart={handleDragStart}
@@ -903,7 +969,7 @@
 			{/if}
 		{:else}
 			<!-- Desktop static sidebar -->
-			<div class="w-96 border-l border-gray-800 bg-gray-900/70 backdrop-blur-md overflow-y-auto">
+			<div class="w-96 overflow-y-auto border-l border-gray-800 bg-gray-900/70 backdrop-blur-md">
 				<TierlistSidebar
 					title={tierList.title}
 					shareUrl={`${typeof window !== 'undefined' ? window.location.origin : ''}/tierlists/${tierList.id}`}
@@ -927,7 +993,7 @@
 				<!-- Bottom full-width info bar (always visible). Clicking opens/closes floating sidebar on mobile -->
 				<button
 					on:click={() => toggleSidebar(showSidebar ? false : true)}
-					class="fixed inset-x-0 bottom-0 z-40 flex w-full items-center gap-4 border-t border-white/10 bg-gradient-to-t from-black/85 via-black/70 to-black/60 px-4 py-3 text-left backdrop-blur-md shadow-[0_-4px_12px_-2px_rgba(0,0,0,0.6)] transition-[background,color] active:bg-black/80"
+					class="fixed inset-x-0 bottom-0 z-40 flex w-full items-center gap-4 border-t border-white/10 bg-gradient-to-t from-black/85 via-black/70 to-black/60 px-4 py-3 text-left shadow-[0_-4px_12px_-2px_rgba(0,0,0,0.6)] backdrop-blur-md transition-[background,color] active:bg-black/80"
 					aria-controls="tierlist-sidebar"
 					aria-expanded={showSidebar}
 					aria-label={showSidebar ? 'Hide tierlist info' : 'Show tierlist info'}
@@ -935,25 +1001,46 @@
 					in:slide={{ duration: 250 }}
 				>
 					<div class="flex min-w-0 flex-1 flex-col">
-						<div class="truncate text-sm font-semibold leading-tight">
+						<div class="truncate text-sm leading-tight font-semibold">
 							{tierList.title || 'Untitled Tierlist'}
 						</div>
-						<div class="mt-0.5 flex flex-wrap items-center gap-3 text-[11px] uppercase tracking-wide text-white/60">
-							<span class="truncate max-w-[50%]">{tierList.author || tierList.owner_displayName || 'Anonymous'}</span>
-							<div class="flex items-center gap-1"><span class="material-symbols-outlined text-base text-accent">favorite</span><span>{likes}</span></div>
-							<div class="flex items-center gap-1"><span class="material-symbols-outlined text-base text-accent">comment</span><span>{comments}</span></div>
-							<div class="flex items-center gap-1"><span class="material-symbols-outlined text-base text-accent">fork_right</span><span>{forks}</span></div>
+						<div
+							class="mt-0.5 flex flex-wrap items-center gap-3 text-[11px] tracking-wide text-white/60 uppercase"
+						>
+							<span class="max-w-[50%] truncate"
+								>{tierList.author || tierList.owner_displayName || 'Anonymous'}</span
+							>
+							<div class="flex items-center gap-1">
+								<span class="material-symbols-outlined text-accent text-base">favorite</span><span
+									>{likes}</span
+								>
+							</div>
+							<div class="flex items-center gap-1">
+								<span class="material-symbols-outlined text-accent text-base">comment</span><span
+									>{comments}</span
+								>
+							</div>
+							<div class="flex items-center gap-1">
+								<span class="material-symbols-outlined text-accent text-base">fork_right</span><span
+									>{forks}</span
+								>
+							</div>
 						</div>
 					</div>
-					<div class="ml-auto flex items-center gap-2 text-accent">
+					<div class="text-accent ml-auto flex items-center gap-2">
 						<span class="text-xs font-medium">{showSidebar ? 'HIDE' : 'INFO'}</span>
-						<span class="material-symbols-outlined text-lg transition-transform duration-300" style="transform: rotate({showSidebar ? 180 : 0}deg);">expand_less</span>
+						<span
+							class="material-symbols-outlined text-lg transition-transform duration-300"
+							style="transform: rotate({showSidebar ? 180 : 0}deg);">expand_less</span
+						>
 					</div>
 				</button>
 			{:else}
 				<!-- Skeleton bottom bar while loading tierlist -->
-				<div class="fixed inset-x-0 bottom-0 z-40 flex w-full items-center gap-4 border-t border-white/10 bg-black/60 px-4 py-3 backdrop-blur-md">
-					<div class="flex min-w-0 flex-1 flex-col animate-pulse">
+				<div
+					class="fixed inset-x-0 bottom-0 z-40 flex w-full items-center gap-4 border-t border-white/10 bg-black/60 px-4 py-3 backdrop-blur-md"
+				>
+					<div class="flex min-w-0 flex-1 animate-pulse flex-col">
 						<div class="h-3 w-40 bg-white/10"></div>
 						<div class="mt-2 flex gap-3">
 							<div class="h-2 w-16 bg-white/10"></div>
@@ -961,7 +1048,7 @@
 							<div class="h-2 w-10 bg-white/10"></div>
 						</div>
 					</div>
-					<div class="ml-auto flex items-center gap-2 text-accent opacity-50">
+					<div class="text-accent ml-auto flex items-center gap-2 opacity-50">
 						<span class="text-xs font-medium">INFO</span>
 						<span class="material-symbols-outlined text-lg">expand_less</span>
 					</div>

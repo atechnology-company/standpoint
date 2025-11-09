@@ -10,7 +10,14 @@
 </script>
 
 {#if open}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" on:click={close}>
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+		on:click={close}
+		on:keydown={(e) => e.key === 'Escape' && close()}
+		role="button"
+		tabindex="-1"
+		aria-label="Close modal"
+	>
 		<div class="relative w-full max-w-sm min-w-[320px] border border-white bg-black p-8 shadow-lg">
 			<button
 				class="absolute top-3 right-3 m-0 border-0 bg-transparent p-0 text-2xl font-bold text-white hover:text-[#ff5705] focus:outline-none"
@@ -35,9 +42,3 @@
 		</div>
 	</div>
 {/if}
-
-<style>
-	.modal-btn {
-		border-radius: 0 !important;
-	}
-</style>

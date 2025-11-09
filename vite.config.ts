@@ -1,7 +1,7 @@
 import tailwindcss from '@tailwindcss/vite';
 import { svelteTesting } from '@testing-library/svelte/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import { fileURLToPath, URL } from 'node:url';
 
 export default defineConfig({
@@ -37,11 +37,6 @@ export default defineConfig({
 				}
 			}
 		]
-	},
-	server: {
-		proxy: {
-			'/api': 'http://localhost:8000'
-		}
 	},
 	preview: {
 		allowedHosts: ['standpoint.atechnology.company']

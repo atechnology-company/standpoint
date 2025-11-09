@@ -1,7 +1,7 @@
-src-sanic/
-src-sanic/**
-src-sanic/venv/
-src-sanic/venv/**
+node_modules/
 .vscode/
+.svelte-kit/
+.env
+.env.*
 *.pyc
 __pycache__/

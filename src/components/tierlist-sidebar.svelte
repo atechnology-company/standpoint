@@ -89,7 +89,11 @@
 	function formatDateSafe(input: any): string {
 		const d = normalizeDate(input);
 		if (!d) return '—';
-		return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) + ' • ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+		return (
+			d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) +
+			' • ' +
+			d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+		);
 	}
 
 	function handleShare() {
@@ -978,8 +982,15 @@
 				This action cannot be undone. This will permanently delete the tierlist and remove its data.
 			</p>
 			<div class="flex justify-end gap-2">
-				<button class="px-3 py-1 text-sm" style="background: rgba(var(--primary), 0.12); color: rgb(var(--primary-light-rgb));" on:click={cancelDelete}>Cancel</button>
-				<button class="px-3 py-1 text-sm text-white bg-red-600 hover:bg-red-700" on:click={confirmDelete}>Delete</button>
+				<button
+					class="px-3 py-1 text-sm"
+					style="background: rgba(var(--primary), 0.12); color: rgb(var(--primary-light-rgb));"
+					on:click={cancelDelete}>Cancel</button
+				>
+				<button
+					class="bg-red-600 px-3 py-1 text-sm text-white hover:bg-red-700"
+					on:click={confirmDelete}>Delete</button
+				>
 			</div>
 		</div>
 	</Modal>

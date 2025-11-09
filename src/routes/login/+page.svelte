@@ -18,8 +18,9 @@
 <div class="flex h-screen flex-col items-center justify-center">
 	<h1 class="mb-4 text-2xl font-bold">Login Required</h1>
 	<p class="mb-8">
-		Please <a href="#" role="button" tabindex="0" on:click|preventDefault={showLoginModal}
-			>sign in</a
+		Please <button
+			class="text-accent font-inherit cursor-pointer border-0 bg-transparent p-0 underline hover:no-underline"
+			on:click={showLoginModal}>sign in</button
 		> to access this page.
 	</p>
 </div>

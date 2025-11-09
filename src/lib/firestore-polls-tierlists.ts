@@ -274,9 +274,9 @@ export async function updateTierlist(
 	}
 	const cleanedUpdates = cleanUndefinedValues({
 		...updates,
-	updated_at: serverTimestamp(),
-	// Explicit last_edited field to preserve original created_at and track edits separately
-	last_edited: serverTimestamp()
+		updated_at: serverTimestamp(),
+		// Explicit last_edited field to preserve original created_at and track edits separately
+		last_edited: serverTimestamp()
 	});
 	await updateDoc(tierlistRef, cleanedUpdates);
 }
@@ -740,15 +740,15 @@ export async function getAllVotesForPoll(pollId: string): Promise<{
 
 export async function updatePollStatistics(pollId: string): Promise<void> {
 	try {
-	const votesData = await getAllVotesForPoll(pollId);
-	const { vote_positions, vote_positions_2d } = votesData;
+		const votesData = await getAllVotesForPoll(pollId);
+		const { vote_positions, vote_positions_2d } = votesData;
 
-	// Fetch poll for response_type/options to compute option proximity
-	const pollRef = doc(db, 'polls', pollId);
-	const pollSnap = await getDoc(pollRef);
-	const pollData = pollSnap.exists() ? (pollSnap.data() as any) : null;
-	const response_type: number = pollData?.response_type || pollData?.responseType || 2;
-	const options: string[] = Array.isArray(pollData?.options) ? pollData.options : [];
+		// Fetch poll for response_type/options to compute option proximity
+		const pollRef = doc(db, 'polls', pollId);
+		const pollSnap = await getDoc(pollRef);
+		const pollData = pollSnap.exists() ? (pollSnap.data() as any) : null;
+		const response_type: number = pollData?.response_type || pollData?.responseType || 2;
+		const options: string[] = Array.isArray(pollData?.options) ? pollData.options : [];
 
 		// Calculate statistics
 		let average = 0;

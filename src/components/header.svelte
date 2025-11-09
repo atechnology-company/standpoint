@@ -33,7 +33,6 @@
 	let tierlistsEl: HTMLElement | null = null;
 	let draftsEl: HTMLElement | null = null;
 
-
 	function updateIsMobile() {
 		if (typeof window !== 'undefined') isMobile = window.innerWidth < 768;
 	}
@@ -124,61 +123,115 @@
 		role="region"
 		bind:this={navGroupEl}
 	>
-		<a href="/" bind:this={homeEl}
+		<a
+			href="/"
+			bind:this={homeEl}
 			class={`relative overflow-hidden transition-all duration-300 ease-out ${mobileOpen ? 'h-12 w-20' : 'h-2 w-4'} group-hover:h-12 group-hover:w-20 ${$page.url.pathname === '/' ? 'bg-[rgb(var(--primary))] text-white' : 'bg-gray-300 text-gray-900 hover:bg-gray-400/70'}`}
 			style="transform-origin: top center;"
 			ontouchstart={startMobileNav}
 			ontouchmove={moveMobileNav}
 			ontouchend={endMobileNav}
 		>
-			<div class="absolute inset-0 flex items-center justify-center group-hover:justify-start group-hover:pl-2 px-2">
-				<span class="text-lg font-bold whitespace-nowrap opacity-0 transition-opacity delay-150 duration-300 group-hover:opacity-100 text-center" class:opacity-100={mobileOpen}>HOME</span>
+			<div
+				class="absolute inset-0 flex items-center justify-center px-2 group-hover:justify-start group-hover:pl-2"
+			>
+				<span
+					class="text-center text-lg font-bold whitespace-nowrap opacity-0 transition-opacity delay-150 duration-300 group-hover:opacity-100"
+					class:opacity-100={mobileOpen}>HOME</span
+				>
 			</div>
 		</a>
 
-		<a href="/polls" bind:this={pollsEl}
+		<a
+			href="/polls"
+			bind:this={pollsEl}
 			class={`relative overflow-hidden transition-all duration-300 ease-out ${mobileOpen ? 'h-12 w-32' : 'h-2 w-6'} group-hover:h-12 group-hover:w-32 ${$page.url.pathname.startsWith('/polls') ? 'bg-[rgb(var(--primary))] text-white' : 'bg-gray-300 text-gray-900 hover:bg-gray-400/70'}`}
-			style="transform-origin: top center;">
-			<div class="absolute inset-0 flex items-center justify-center group-hover:justify-start group-hover:pl-2 px-2">
-				<span class="text-lg font-bold whitespace-nowrap opacity-0 transition-opacity delay-150 duration-300 group-hover:opacity-100 text-center" class:opacity-100={mobileOpen}>POLLS</span>
+			style="transform-origin: top center;"
+		>
+			<div
+				class="absolute inset-0 flex items-center justify-center px-2 group-hover:justify-start group-hover:pl-2"
+			>
+				<span
+					class="text-center text-lg font-bold whitespace-nowrap opacity-0 transition-opacity delay-150 duration-300 group-hover:opacity-100"
+					class:opacity-100={mobileOpen}>POLLS</span
+				>
 			</div>
 		</a>
 
-		<a href="/tierlists" bind:this={tierlistsEl}
+		<a
+			href="/tierlists"
+			bind:this={tierlistsEl}
 			class={`relative overflow-hidden transition-all duration-300 ease-out ${mobileOpen ? 'h-12 w-44' : 'h-2 w-8'} group-hover:h-12 group-hover:w-44 ${$page.url.pathname.startsWith('/tierlists') && !$page.url.pathname.startsWith('/tierlists/drafts') ? 'bg-[rgb(var(--primary))] text-white' : 'bg-gray-300 text-gray-900 hover:bg-gray-400/70'}`}
-			style="transform-origin: top center;">
-			<div class="absolute inset-0 flex items-center justify-center group-hover:justify-start group-hover:pl-2 px-2">
-				<span class="text-lg font-bold whitespace-nowrap opacity-0 transition-opacity delay-150 duration-300 group-hover:opacity-100 text-center" class:opacity-100={mobileOpen}>TIERLISTS</span>
+			style="transform-origin: top center;"
+		>
+			<div
+				class="absolute inset-0 flex items-center justify-center px-2 group-hover:justify-start group-hover:pl-2"
+			>
+				<span
+					class="text-center text-lg font-bold whitespace-nowrap opacity-0 transition-opacity delay-150 duration-300 group-hover:opacity-100"
+					class:opacity-100={mobileOpen}>TIERLISTS</span
+				>
 			</div>
 		</a>
 
-		<a href="/tierlists/drafts" bind:this={draftsEl}
+		<a
+			href="/tierlists/drafts"
+			bind:this={draftsEl}
 			class={`relative overflow-hidden transition-all duration-300 ease-out ${mobileOpen ? 'h-12 w-24' : 'h-2 w-4'} group-hover:h-12 group-hover:w-24 ${$page.url.pathname.startsWith('/tierlists/drafts') ? 'bg-[rgb(var(--primary))] text-white opacity-100' : 'bg-gray-300 text-gray-900 hover:bg-gray-400/70'} ${!$page.url.pathname.startsWith('/tierlists/drafts') && !mobileOpen ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'}`}
-			style="transform-origin: top center;">
-			<div class="absolute inset-0 flex items-center justify-center group-hover:justify-start group-hover:pl-2 px-2">
-				<span class="text-lg font-bold whitespace-nowrap opacity-0 transition-opacity delay-150 duration-300 group-hover:opacity-100 text-center" class:opacity-100={mobileOpen}>DRAFTS</span>
+			style="transform-origin: top center;"
+		>
+			<div
+				class="absolute inset-0 flex items-center justify-center px-2 group-hover:justify-start group-hover:pl-2"
+			>
+				<span
+					class="text-center text-lg font-bold whitespace-nowrap opacity-0 transition-opacity delay-150 duration-300 group-hover:opacity-100"
+					class:opacity-100={mobileOpen}>DRAFTS</span
+				>
 			</div>
 		</a>
 	</div>
 
-	<div class="search-shell mt-5 flex h-10 items-center gap-2 transition-all duration-500 ease-out" class:overlay-active={searchActive}>
-		<button type="button" class="material-symbols-outlined hover:text-accent text-xl text-gray-500 transition-colors select-none focus:outline-none" onclick={() => inputEl?.focus()} aria-label="Focus search input">search</button>
-		<input bind:this={inputEl} bind:value={searchQuery} placeholder="SEARCH" class="flex-1 bg-transparent text-white placeholder:text-white/40 focus:text-white focus:outline-none" />
+	<div
+		class="search-shell mt-5 flex h-10 items-center gap-2 transition-all duration-500 ease-out"
+		class:overlay-active={searchActive}
+	>
+		<button
+			type="button"
+			class="material-symbols-outlined hover:text-accent text-xl text-gray-500 transition-colors select-none focus:outline-none"
+			onclick={() => inputEl?.focus()}
+			aria-label="Focus search input">search</button
+		>
+		<input
+			bind:this={inputEl}
+			bind:value={searchQuery}
+			placeholder="SEARCH"
+			class="flex-1 bg-transparent text-white placeholder:text-white/40 focus:text-white focus:outline-none"
+		/>
 	</div>
 
 	<div class="ml-auto flex h-full items-center justify-end">
 		{#if $currentUser}
 			<div class="flex h-full items-center" role="group">
-				<a href={'/user/' + $currentUser.uid} class="group/avatar hover:shadow-accent/30 hover:ring-accent h-full w-[80px] cursor-pointer overflow-hidden bg-gray-300 transition-all duration-300 hover:shadow-lg hover:ring-10" title={$currentUser.displayName || $currentUser.email}>
+				<a
+					href={'/user/' + $currentUser.uid}
+					class="group/avatar hover:shadow-accent/30 hover:ring-accent h-full w-[80px] cursor-pointer overflow-hidden bg-gray-300 transition-all duration-300 hover:shadow-lg hover:ring-10"
+					title={$currentUser.displayName || $currentUser.email}
+				>
 					{#if avatarUrl}
 						<img src={avatarUrl} alt="Profile" class="h-full w-full object-cover" />
 					{:else}
-						<div class="flex h-full w-full items-center justify-center"><span class="material-symbols-outlined text-4xl text-gray-500">person</span></div>
+						<div class="flex h-full w-full items-center justify-center">
+							<span class="material-symbols-outlined text-4xl text-gray-500">person</span>
+						</div>
 					{/if}
 				</a>
 			</div>
 		{:else}
-			<button class="flex h-full items-center gap-2 border border-gray-300 bg-white px-4 py-2 font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-100" onclick={handleGoogleLogin} aria-label="Sign in with Google">Sign in with Google</button>
+			<button
+				class="flex h-full items-center gap-2 border border-gray-300 bg-white px-4 py-2 font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-100"
+				onclick={handleGoogleLogin}
+				aria-label="Sign in with Google">Sign in with Google</button
+			>
 		{/if}
 	</div>
 </div>

@@ -32,7 +32,10 @@
 	function persistSidebarState() {
 		if (typeof window === 'undefined' || !selectedPoll) return;
 		try {
-			localStorage.setItem(POLL_SIDEBAR_STATE_KEY_PREFIX + selectedPoll.id, showSidebar ? '1' : '0');
+			localStorage.setItem(
+				POLL_SIDEBAR_STATE_KEY_PREFIX + selectedPoll.id,
+				showSidebar ? '1' : '0'
+			);
 		} catch {}
 	}
 
@@ -65,7 +68,10 @@
 				}
 				sidebarFloating = false;
 				// restore poll list open state
-				try { const persisted = localStorage.getItem(POLL_LIST_STATE_KEY); if (persisted !== null) showPollList = persisted === '1'; } catch {}
+				try {
+					const persisted = localStorage.getItem(POLL_LIST_STATE_KEY);
+					if (persisted !== null) showPollList = persisted === '1';
+				} catch {}
 			} else {
 				sidebarFloating = true;
 				// on mobile always hide list when viewing detail? keep current state.
@@ -73,12 +79,14 @@
 		}
 	}
 
-function togglePollList(forceOpen: boolean | null = null) {
-	if (forceOpen === true) showPollList = true;
-	else if (forceOpen === false) showPollList = false;
-	else showPollList = !showPollList;
-	try { localStorage.setItem(POLL_LIST_STATE_KEY, showPollList ? '1' : '0'); } catch {}
-}
+	function togglePollList(forceOpen: boolean | null = null) {
+		if (forceOpen === true) showPollList = true;
+		else if (forceOpen === false) showPollList = false;
+		else showPollList = !showPollList;
+		try {
+			localStorage.setItem(POLL_LIST_STATE_KEY, showPollList ? '1' : '0');
+		} catch {}
+	}
 	let showCreateModal = false;
 	let showProUpgradeModal = false;
 	let creating = false;
@@ -195,7 +203,9 @@ function togglePollList(forceOpen: boolean | null = null) {
 		if (isMobileView) {
 			// scroll to top of poll area
 			setTimeout(() => {
-				try { document.querySelector('#mobile-poll-root')?.scrollIntoView({ behavior: 'smooth' }); } catch {}
+				try {
+					document.querySelector('#mobile-poll-root')?.scrollIntoView({ behavior: 'smooth' });
+				} catch {}
 			}, 50);
 		}
 	}
@@ -531,10 +541,17 @@ function togglePollList(forceOpen: boolean | null = null) {
 <div class="flex min-h-[calc(100vh-5rem)] bg-black">
 	<!-- Collapsible Poll List -->
 	{#if showPollList}
-		<div class="h-[calc(100vh-5rem)] w-80 md:w-96 bg-black border-r border-white/10 flex flex-col relative" transition:slide>
-			<div class="flex items-center justify-between px-4 py-3 border-b border-white/10 md:hidden">
+		<div
+			class="relative flex h-[calc(100vh-5rem)] w-80 flex-col border-r border-white/10 bg-black md:w-96"
+			transition:slide
+		>
+			<div class="flex items-center justify-between border-b border-white/10 px-4 py-3 md:hidden">
 				<div class="text-sm font-semibold text-white/70">Polls</div>
-				<button class="text-white/60 p-1 active:scale-95" on:click={() => togglePollList(false)} aria-label="Hide poll list">
+				<button
+					class="p-1 text-white/60 active:scale-95"
+					on:click={() => togglePollList(false)}
+					aria-label="Hide poll list"
+				>
 					<span class="material-symbols-outlined text-xl">close</span>
 				</button>
 			</div>
@@ -589,27 +606,32 @@ function togglePollList(forceOpen: boolean | null = null) {
 									<div class="mt-4 text-sm text-white/60">
 										Avg: {(poll.stats.average * 100).toFixed(1)}%
 									</div>
-							{/if}
-						</div>
-					{/each}
+								{/if}
+							</div>
+						{/each}
 					</div>
 				{/if}
 			</div>
 			<!-- Add Button -->
 			<button
 				on:click={openCreateModal}
-				class="absolute bottom-4 left-4 w-14 h-14 bg-accent text-white flex items-center justify-center transition-all hover:bg-accent/90 active:scale-95 shadow-lg"
+				class="bg-accent hover:bg-accent/90 absolute bottom-4 left-4 flex h-14 w-14 items-center justify-center text-white shadow-lg transition-all active:scale-95"
 				aria-label="Create new poll"
 			>
 				<span class="material-symbols-outlined text-3xl">add</span>
 			</button>
 		</div>
-	{/if}	<!-- Chart / Main Area -->
-	<div class="flex h-[calc(100vh-5rem)] flex-1 items-center justify-center bg-black relative">
+	{/if}
+	<!-- Chart / Main Area -->
+	<div class="relative flex h-[calc(100vh-5rem)] flex-1 items-center justify-center bg-black">
 		<!-- Show toggle control when list hidden -->
 		{#if !showPollList}
-			<button class="absolute top-4 left-4 z-20 bg-white/10 hover:bg-white/20 text-white px-3 py-2 text-xs rounded-md backdrop-blur active:scale-95" on:click={() => togglePollList(true)} aria-label="Show poll list">
-				<span class="material-symbols-outlined text-base align-middle mr-1">menu</span>LIST
+			<button
+				class="absolute top-4 left-4 z-20 rounded-md bg-white/10 px-3 py-2 text-xs text-white backdrop-blur hover:bg-white/20 active:scale-95"
+				on:click={() => togglePollList(true)}
+				aria-label="Show poll list"
+			>
+				<span class="material-symbols-outlined mr-1 align-middle text-base">menu</span>LIST
 			</button>
 		{/if}
 		<div class="flex h-full w-full items-center justify-center">
@@ -636,12 +658,29 @@ function togglePollList(forceOpen: boolean | null = null) {
 	{#if selectedPoll && showSidebar}
 		{#if isMobileView}
 			<!-- Backdrop -->
-			<div class="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm" on:click={() => toggleSidebar(false)} aria-hidden="true"></div>
 			<div
-				class="fixed left-0 right-0 bottom-0 z-40 max-h-[70vh] w-full rounded-t-2xl bg-gray-900/95 backdrop-blur-xl shadow-2xl overflow-hidden flex flex-col"
-				on:touchstart={(e) => { dragStartY = e.touches[0].clientY; dragActive = true; }}
-				on:touchmove={(e) => { if (dragActive) { const diff = e.touches[0].clientY - dragStartY; if (diff > 60) { showSidebar = false; dragActive = false; } } }}
-				on:touchend={() => { dragActive = false; }}
+				class="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm"
+				on:click={() => toggleSidebar(false)}
+				aria-hidden="true"
+			></div>
+			<div
+				class="fixed right-0 bottom-0 left-0 z-40 flex max-h-[70vh] w-full flex-col overflow-hidden rounded-t-2xl bg-gray-900/95 shadow-2xl backdrop-blur-xl"
+				on:touchstart={(e) => {
+					dragStartY = e.touches[0].clientY;
+					dragActive = true;
+				}}
+				on:touchmove={(e) => {
+					if (dragActive) {
+						const diff = e.touches[0].clientY - dragStartY;
+						if (diff > 60) {
+							showSidebar = false;
+							dragActive = false;
+						}
+					}
+				}}
+				on:touchend={() => {
+					dragActive = false;
+				}}
 			>
 				<div class="mx-auto mt-2 mb-3 h-1.5 w-12 rounded-full bg-white/20"></div>
 				<div class="flex-1 overflow-y-auto">
@@ -655,7 +694,9 @@ function togglePollList(forceOpen: boolean | null = null) {
 				</div>
 			</div>
 		{:else}
-			<div class="w-80 border-l border-white/20 bg-gray-900 h-[calc(100vh-5rem)] relative z-40 flex flex-col">
+			<div
+				class="relative z-40 flex h-[calc(100vh-5rem)] w-80 flex-col border-l border-white/20 bg-gray-900"
+			>
 				<PollSidebar
 					id={selectedPoll.id}
 					pollData={selectedPoll}
@@ -671,47 +712,60 @@ function togglePollList(forceOpen: boolean | null = null) {
 		<!-- Bottom full-width info bar for mobile to toggle poll sidebar (only shows when sidebar closed and has data) -->
 		<button
 			on:click={() => toggleSidebar(true)}
-			class="fixed inset-x-0 bottom-0 z-40 flex w-full items-center gap-4 border-t border-white/10 bg-gradient-to-t from-black/85 via-black/70 to-black/60 px-4 py-3 text-left backdrop-blur-md active:scale-[0.985] active:bg-black/80 transition-all"
+			class="fixed inset-x-0 bottom-0 z-40 flex w-full items-center gap-4 border-t border-white/10 bg-gradient-to-t from-black/85 via-black/70 to-black/60 px-4 py-3 text-left backdrop-blur-md transition-all active:scale-[0.985] active:bg-black/80"
 			aria-controls="poll-sidebar"
 			aria-expanded="false"
 			aria-label="Show poll info"
 			style="-webkit-tap-highlight-color: transparent;"
 		>
 			<div class="flex min-w-0 flex-1 flex-col">
-				<div class="truncate text-sm font-semibold leading-tight text-white">
+				<div class="truncate text-sm leading-tight font-semibold text-white">
 					{selectedPoll.title}
 				</div>
-				<div class="mt-0.5 flex flex-wrap items-center gap-3 text-[11px] uppercase tracking-wide text-white/60">
-					<span class="truncate max-w-[50%]">{selectedPoll?.owner_displayName || 'Anonymous'}</span>
-					<div class="flex items-center gap-1"><span class="material-symbols-outlined text-base text-accent">how_to_vote</span><span>{selectedPoll.stats?.total_votes || 0}</span></div>
+				<div
+					class="mt-0.5 flex flex-wrap items-center gap-3 text-[11px] tracking-wide text-white/60 uppercase"
+				>
+					<span class="max-w-[50%] truncate">{selectedPoll?.owner_displayName || 'Anonymous'}</span>
+					<div class="flex items-center gap-1">
+						<span class="material-symbols-outlined text-accent text-base">how_to_vote</span><span
+							>{selectedPoll.stats?.total_votes || 0}</span
+						>
+					</div>
 					{#if selectedPoll.likes !== undefined}
-						<div class="flex items-center gap-1"><span class="material-symbols-outlined text-base text-accent">favorite</span><span>{selectedPoll.likes}</span></div>
+						<div class="flex items-center gap-1">
+							<span class="material-symbols-outlined text-accent text-base">favorite</span><span
+								>{selectedPoll.likes}</span
+							>
+						</div>
 					{/if}
 				</div>
 			</div>
-			<div class="ml-auto flex items-center gap-2 text-accent">
+			<div class="text-accent ml-auto flex items-center gap-2">
 				<span class="text-xs font-medium">{showSidebar ? 'HIDE' : 'INFO'}</span>
-				<span class="material-symbols-outlined text-lg transition-transform duration-300" style="transform: rotate({showSidebar ? 180 : 0}deg);">expand_less</span>
+				<span
+					class="material-symbols-outlined text-lg transition-transform duration-300"
+					style="transform: rotate({showSidebar ? 180 : 0}deg);">expand_less</span
+				>
 			</div>
 		</button>
 	{:else if isMobileView && !selectedPoll}
 		<!-- Skeleton bottom bar when no poll selected yet -->
-		<div class="fixed inset-x-0 bottom-0 z-40 flex w-full items-center gap-4 border-t border-white/10 bg-black/60 px-4 py-3 backdrop-blur-md">
-			<div class="flex min-w-0 flex-1 flex-col animate-pulse">
+		<div
+			class="fixed inset-x-0 bottom-0 z-40 flex w-full items-center gap-4 border-t border-white/10 bg-black/60 px-4 py-3 backdrop-blur-md"
+		>
+			<div class="flex min-w-0 flex-1 animate-pulse flex-col">
 				<div class="h-3 w-36 bg-white/10"></div>
 				<div class="mt-2 flex gap-3">
 					<div class="h-2 w-14 bg-white/10"></div>
 					<div class="h-2 w-10 bg-white/10"></div>
 				</div>
 			</div>
-			<div class="ml-auto flex items-center gap-2 text-accent opacity-50">
+			<div class="text-accent ml-auto flex items-center gap-2 opacity-50">
 				<span class="text-xs font-medium">INFO</span>
 				<span class="material-symbols-outlined text-lg">expand_less</span>
 			</div>
 		</div>
 	{/if}
-
-
 
 	<!-- Create Poll Modal -->
 	{#if showCreateModal}

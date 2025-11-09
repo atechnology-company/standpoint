@@ -125,7 +125,7 @@
 	<title>Tier Lists - Standpoint</title>
 </svelte:head>
 
-<div class="min-h-screen bg-black w-full overflow-x-hidden">
+<div class="min-h-screen w-full overflow-x-hidden bg-black">
 	<!-- Hero Carousel -->
 	{#if heroSlides.length > 0}
 		<Hero slides={heroSlides} />

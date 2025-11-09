@@ -23,7 +23,7 @@ one day im going to have to pay for a bunch of gemini api credits and then im go
 ## standpoint is made with
 
 - **Frontend**: Svelte + SvelteKit + TailwindCSS
-- **Backend**: Sanic + Pydantic
+- **Server**: SvelteKit endpoints (Stripe, Firebase helpers)
 - **Database**: Firebase Firestore
 - **Authentication**: Firebase Auth
 - **AI**: Gemini 2.5 Flash Lite
@@ -33,27 +33,36 @@ one day im going to have to pay for a bunch of gemini api credits and then im go
 # run dev server
 
 ```bash
-# Frontend
 pnpm dev
-
-# Backend
-source src-sanic/bin/activate && python3 src-sanic/main.py
 ```
 
 ## Version History
 
+### v0.7.0 - Pure SvelteKit Release
+
+- **removed Python/Sanic backend entirely** - now pure SvelteKit with Firebase
+- **migrated Stripe to SvelteKit server routes** - checkout and verification working
+- all data operations now use Firebase directly (polls, tierlists, votes)
+- simplified architecture: one runtime, one deployment
+- fixed all TypeScript and accessibility warnings
+- updated dev workflow to single `pnpm dev` command
+
 ### v0.6.0
+
 - mobile version
 - fixed tierlist sizing
 
 ### v0.5.3
+
 - included gemini fallback in frontend
 
 ### v0.5.2
+
 - fixed bugs in adding tiers to tierlists and viewing it
 - fixed statistic bars
 
 ### v0.5.1
+
 - weird z index issues (wasn't in my browser) on create page
 
 ### v0.5.0 - beta
@@ -154,7 +163,7 @@ _i want to sleep so bad_
 - change image api
 - multiplayer
 - live
-- fixing stripe and pro purchasing
+- ~~fixing stripe and pro purchasing~~ ✅
 - make search more efficient with a firebase searching service
 - fix half baked mobile ui
 - finish accent color implementation and theming and update settings display
@@ -173,7 +182,6 @@ _i want to sleep so bad_
 - add different accents based on sepia taiga nord dracula light and dark
 - hash checking as to not upload duplicate images
 - localisation in various languages
-
 
 ### things i wanna do
 

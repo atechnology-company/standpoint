@@ -675,26 +675,31 @@
 					<div class="mb-4">
 						<div class="mb-2 text-sm" style="color: rgb(var(--primary-light-rgb));">Options</div>
 						<div class="space-y-2">
-									{#if pollData && pollData.options && pollData.options.length > 0}
-										{@const optionValues = (pollData.stats?.option_proximity && pollData.stats.option_proximity.length === pollData.options.length)
-											? pollData.stats.option_proximity
-											: (derivedOptionProximity || [])}
-									{@const total = optionValues.reduce((a: number, b: number) => a + b, 0) || 1}
-									{#each pollData.options as option, i (option)}
-										{@const value = optionValues[i] || 0}
-										{@const percent = total ? (value / total) * 100 : 0}
-										<div class="p-3 flex items-center gap-2" style="background: rgba(var(--primary), 0.04);">
-											<span class="flex-1">{option}</span>
-											<span class="text-xs font-medium text-white">{percent.toFixed(1)}%</span>
-											<div class="relative h-2 w-32 overflow-hidden bg-white/10">
-												<div
-													class="h-2"
-													style="background: rgb(var(--primary-light-rgb)); width: {percent}%; transition: width 0.4s ease;"
-												></div>
-											</div>
+							{#if pollData && pollData.options && pollData.options.length > 0}
+								{@const optionValues =
+									pollData.stats?.option_proximity &&
+									pollData.stats.option_proximity.length === pollData.options.length
+										? pollData.stats.option_proximity
+										: derivedOptionProximity || []}
+								{@const total = optionValues.reduce((a: number, b: number) => a + b, 0) || 1}
+								{#each pollData.options as option, i (option)}
+									{@const value = optionValues[i] || 0}
+									{@const percent = total ? (value / total) * 100 : 0}
+									<div
+										class="flex items-center gap-2 p-3"
+										style="background: rgba(var(--primary), 0.04);"
+									>
+										<span class="flex-1">{option}</span>
+										<span class="text-xs font-medium text-white">{percent.toFixed(1)}%</span>
+										<div class="relative h-2 w-32 overflow-hidden bg-white/10">
+											<div
+												class="h-2"
+												style="background: rgb(var(--primary-light-rgb)); width: {percent}%; transition: width 0.4s ease;"
+											></div>
 										</div>
-									{/each}
-								{/if}
+									</div>
+								{/each}
+							{/if}
 						</div>
 					</div>
 
