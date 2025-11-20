@@ -190,5 +190,6 @@ _i want to sleep so bad_
 - moderation
 - sharing links create a toast that allows you to follow people
 - add more themes
+- quizzes like 8values
 
 ## licensed under mpl 2 i really dont care what you do though
