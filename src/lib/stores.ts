@@ -61,6 +61,15 @@ if (browser) {
 				if (snap.exists()) {
 					const prefs = (snap.data() as any)?.preferences;
 					if (prefs?.accent) setAccent(prefs.accent);
+					// If the user has per-theme accents stored in preferences, copy them
+					// into localStorage so the theme system picks them up on the client.
+					if (prefs?.themeAccents) {
+						try {
+							localStorage.setItem('standpoint_theme_accents', JSON.stringify(prefs.themeAccents));
+						} catch (e) {
+							console.warn('Failed to sync theme accents to localStorage', e);
+						}
+					}
 				}
 			} catch (e) {
 				console.warn('Failed loading user prefs', e);
@@ -78,7 +87,9 @@ export async function persistThemeMode(mode: 'light' | 'dark') {
 	if (!user) return;
 	try {
 		await setDoc(doc(db, 'users', user.uid), { preferences: { theme: mode } }, { merge: true });
-	} catch {}
+	} catch (e) {
+		console.warn('Failed to persist theme mode', e);
+	}
 }
 
 // Sign in with Google

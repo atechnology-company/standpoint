@@ -31,11 +31,30 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({ success: false, error: 'Missing session_id or uid' }, { status: 400 });
 	}
 
+	// Validate types
+	if (typeof payload.session_id !== 'string' || typeof payload.uid !== 'string') {
+		return json({ success: false, error: 'Invalid parameter types' }, { status: 400 });
+	}
+
+	// Validate session_id format (Stripe session IDs start with cs_)
+	if (!payload.session_id.startsWith('cs_') || payload.session_id.length > 200) {
+		return json({ success: false, error: 'Invalid session_id format' }, { status: 400 });
+	}
+
+	// Validate UID format
+	if (payload.uid.length < 10 || payload.uid.length > 128) {
+		return json({ success: false, error: 'Invalid uid format' }, { status: 400 });
+	}
+
+	// Sanitize inputs
+	const sanitizedUid = payload.uid.replace(/[^a-zA-Z0-9_-]/g, '');
+	const sanitizedSessionId = payload.session_id.replace(/[^a-zA-Z0-9_]/g, '');
+
 	try {
-		const session = await stripe.checkout.sessions.retrieve(payload.session_id);
+		const session = await stripe.checkout.sessions.retrieve(sanitizedSessionId);
 
 		const paymentComplete =
-			session.payment_status === 'paid' && session.metadata?.uid === payload.uid;
+			session.payment_status === 'paid' && session.metadata?.uid === sanitizedUid;
 
 		if (paymentComplete) {
 			return json({ success: true });

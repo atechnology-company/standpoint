@@ -28,8 +28,19 @@ export const POST: RequestHandler = async ({ request, url }) => {
 		return json({ error: 'Invalid JSON payload' }, { status: 400 });
 	}
 
-	if (!payload?.uid) {
-		return json({ error: 'Missing uid' }, { status: 400 });
+	if (!payload?.uid || typeof payload.uid !== 'string') {
+		return json({ error: 'Missing or invalid uid' }, { status: 400 });
+	}
+
+	// Validate UID format (Firebase UIDs are typically 28 characters)
+	if (payload.uid.length < 10 || payload.uid.length > 128) {
+		return json({ error: 'Invalid uid format' }, { status: 400 });
+	}
+
+	// Sanitize UID - only allow alphanumeric and basic chars
+	const sanitizedUid = payload.uid.replace(/[^a-zA-Z0-9_-]/g, '');
+	if (sanitizedUid !== payload.uid) {
+		return json({ error: 'Invalid uid characters' }, { status: 400 });
 	}
 
 	try {
@@ -44,7 +55,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 			mode: 'payment',
 			success_url: `${url.origin}/pro?session_id={CHECKOUT_SESSION_ID}`,
 			cancel_url: `${url.origin}/pro`,
-			metadata: { uid: payload.uid }
+			metadata: { uid: sanitizedUid }
 		});
 
 		if (!session.url) {

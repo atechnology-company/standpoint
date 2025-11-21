@@ -51,9 +51,12 @@
 	<title>Search{data.query ? ` - ${data.query}` : ''} - Standpoint</title>
 </svelte:head>
 
-<div class="min-h-screen bg-black text-white">
+<div class="theme-transition min-h-screen" style="background-color: var(--bg); color: var(--text);">
 	<!-- Search Header -->
-	<div class="sticky top-0 z-10 border-b border-gray-700 bg-gray-900/90 backdrop-blur-md">
+	<div
+		class="sticky top-0 z-10 border-b border-gray-700 backdrop-blur-md"
+		style="background: rgba(var(--surface-rgb), 0.9);"
+	>
 		<div class="container mx-auto px-6 py-4">
 			<div class="flex items-center gap-4">
 				<!-- Search Input -->
@@ -64,7 +67,7 @@
 						bind:value={searchQuery}
 						on:keydown={handleKeydown}
 						placeholder="Search tierlists, polls, and users..."
-						class="w-full border border-gray-600 bg-gray-800 px-4 py-3 text-white placeholder-gray-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none"
+						class="w-full border border-gray-600 bg-gray-800 px-4 py-3 text-white placeholder-gray-400 focus:border-[rgb(var(--primary))] focus:ring-2 focus:ring-[rgb(var(--primary))]/20 focus:outline-none"
 					/>
 					<div class="absolute top-1/2 right-3 -translate-y-1/2 transform">
 						<button
@@ -74,7 +77,7 @@
 						>
 							{#if isSearching}
 								<div
-									class="h-5 w-5 animate-spin border-2 border-orange-500 border-t-transparent"
+									class="h-5 w-5 animate-spin border-2 border-[rgb(var(--primary))] border-t-transparent"
 								></div>
 							{:else}
 								<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -94,7 +97,7 @@
 				<div class="flex bg-gray-800 p-1">
 					<button
 						class="px-4 py-2 text-sm transition-all {searchType === 'all'
-							? 'bg-orange-500 text-white'
+							? 'bg-[rgb(var(--primary))] text-white'
 							: 'text-gray-400 hover:text-white'}"
 						on:click={() => (searchType = 'all')}
 					>
@@ -102,7 +105,7 @@
 					</button>
 					<button
 						class="px-4 py-2 text-sm transition-all {searchType === 'tierlists'
-							? 'bg-orange-500 text-white'
+							? 'bg-[rgb(var(--primary))] text-white'
 							: 'text-gray-400 hover:text-white'}"
 						on:click={() => (searchType = 'tierlists')}
 					>
@@ -110,7 +113,7 @@
 					</button>
 					<button
 						class="px-4 py-2 text-sm transition-all {searchType === 'polls'
-							? 'bg-orange-500 text-white'
+							? 'bg-[rgb(var(--primary))] text-white'
 							: 'text-gray-400 hover:text-white'}"
 						on:click={() => (searchType = 'polls')}
 					>
@@ -118,7 +121,7 @@
 					</button>
 					<button
 						class="px-4 py-2 text-sm transition-all {searchType === 'users'
-							? 'bg-orange-500 text-white'
+							? 'bg-[rgb(var(--primary))] text-white'
 							: 'text-gray-400 hover:text-white'}"
 						on:click={() => (searchType = 'users')}
 					>
@@ -150,7 +153,7 @@
 					<div class="flex justify-center gap-4">
 						<a
 							href="/tierlists"
-							class="bg-orange-500 px-6 py-3 text-white transition-colors hover:bg-orange-600"
+							class="bg-[rgb(var(--primary))] px-6 py-3 text-white transition-colors hover:bg-[rgb(var(--primary))]"
 						>
 							Browse Tierlists
 						</a>
@@ -171,7 +174,7 @@
 							Tierlists ({filteredResults.tierlists.length})
 						</h2>
 						<div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-							{#each filteredResults.tierlists as tierlist}
+							{#each filteredResults.tierlists as tierlist (tierlist.id)}
 								<a href="/tierlists/{tierlist.id}" class="group block">
 									<div
 										class="border border-white/10 bg-gray-800/50 p-4 backdrop-blur-sm transition-all duration-300 hover:scale-105 hover:bg-gray-700/50"
@@ -212,7 +215,7 @@
 							Polls ({filteredResults.polls.length})
 						</h2>
 						<div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-							{#each filteredResults.polls as poll}
+							{#each filteredResults.polls as poll (poll.id)}
 								<a href="/polls/{poll.id}" class="group block">
 									<div
 										class="border border-white/10 bg-gray-800/50 p-4 backdrop-blur-sm transition-all duration-300 hover:scale-105 hover:bg-gray-700/50"
@@ -241,7 +244,7 @@
 							Users ({filteredResults.users.length})
 						</h2>
 						<div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-							{#each filteredResults.users as user}
+							{#each filteredResults.users as user (user.uid)}
 								<a href="/user/{user.uid}" class="group block">
 									<div
 										class="border border-white/10 bg-gray-800/50 p-6 backdrop-blur-sm transition-all duration-300 hover:scale-105 hover:bg-gray-700/50"
@@ -287,9 +290,9 @@
 				<div class="mb-8">
 					<h3 class="mb-4 text-lg font-semibold">Popular Searches</h3>
 					<div class="flex flex-wrap justify-center gap-2">
-						{#each ['movies', 'anime', 'games', 'music', 'food', 'sports'] as tag}
+						{#each ['movies', 'anime', 'games', 'music', 'food', 'sports'] as tag (tag)}
 							<button
-								class="bg-gray-800 px-4 py-2 text-white transition-colors hover:bg-orange-500"
+								class="bg-gray-800 px-4 py-2 text-white transition-colors hover:bg-[rgb(var(--primary))]"
 								on:click={() => {
 									searchQuery = tag;
 									handleSearch();
@@ -305,7 +308,7 @@
 				<div class="flex justify-center gap-4">
 					<a
 						href="/tierlists"
-						class="bg-orange-500 px-6 py-3 text-white transition-colors hover:bg-orange-600"
+						class="bg-[rgb(var(--primary))] px-6 py-3 text-white transition-colors hover:bg-[rgb(var(--primary))]"
 					>
 						Browse Tierlists
 					</a>

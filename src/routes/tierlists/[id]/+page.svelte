@@ -695,7 +695,10 @@
 </svelte:head>
 
 <!-- Fullscreen Tier List Viewer -->
-<div class="fixed inset-0 flex h-screen bg-black text-white">
+<div
+	class="theme-transition fixed inset-0 flex h-screen"
+	style="background-color: var(--bg); color: var(--text);"
+>
 	{#if loading}
 		<div class="flex flex-1 items-center justify-center">
 			<LoadingIndicator size="lg" />

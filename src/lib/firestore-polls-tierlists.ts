@@ -481,7 +481,7 @@ export async function likeTierlist(tierlistId: string, userId: string): Promise<
 		});
 
 		const tierlistData = tierlistDoc.data();
-		if (tierlistData.owner) {
+		if (tierlistData.owner && tierlistData.owner !== userId) {
 			try {
 				const userDoc = await getDoc(doc(db, 'users', tierlistData.owner));
 				if (userDoc.exists()) {
@@ -492,6 +492,23 @@ export async function likeTierlist(tierlistId: string, userId: string): Promise<
 					await updateDoc(doc(db, 'users', tierlistData.owner), {
 						aura: newAura,
 						totalLikes: newTotalLikes
+					});
+
+					// Get liker's display name
+					const likerDoc = await getDoc(doc(db, 'users', userId));
+					const likerName = likerDoc.exists()
+						? likerDoc.data().displayName || 'Someone'
+						: 'Someone';
+
+					// Create bundled notification
+					const { createBundledNotification } = await import('./notification-bundler');
+					await createBundledNotification(tierlistData.owner, {
+						type: 'like',
+						contentType: 'tierlist',
+						contentId: tierlistId,
+						contentTitle: tierlistData.title || 'Untitled Tierlist',
+						fromUserId: userId,
+						fromUserName: likerName
 					});
 				}
 			} catch (error) {
@@ -577,7 +594,7 @@ export async function likePoll(pollId: string, userId: string): Promise<void> {
 			updated_at: serverTimestamp()
 		});
 
-		if (ownerId) {
+		if (ownerId && ownerId !== userId) {
 			const ownerRef = doc(db, 'users', ownerId);
 			const ownerSnap = await getDoc(ownerRef);
 			if (ownerSnap.exists()) {
@@ -585,6 +602,21 @@ export async function likePoll(pollId: string, userId: string): Promise<void> {
 				await updateDoc(ownerRef, {
 					aura: (ownerData.aura || 0) + 1,
 					totalLikes: (ownerData.totalLikes || 0) + 1
+				});
+
+				// Get liker's display name
+				const likerDoc = await getDoc(doc(db, 'users', userId));
+				const likerName = likerDoc.exists() ? likerDoc.data().displayName || 'Someone' : 'Someone';
+
+				// Create bundled notification
+				const { createBundledNotification } = await import('./notification-bundler');
+				await createBundledNotification(ownerId, {
+					type: 'like',
+					contentType: 'poll',
+					contentId: pollId,
+					contentTitle: pollData.title || 'Untitled Poll',
+					fromUserId: userId,
+					fromUserName: likerName
 				});
 			}
 		}

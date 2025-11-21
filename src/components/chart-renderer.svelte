@@ -59,11 +59,15 @@
 		if (polyContainerEl) {
 			try {
 				topOffset = polyContainerEl.getBoundingClientRect().top;
-			} catch {}
+			} catch (e) {
+				void e;
+			}
 		} else if (containerEl) {
 			try {
 				topOffset = containerEl.getBoundingClientRect().top;
-			} catch {}
+			} catch (e) {
+				void e;
+			}
 		}
 		const bottomGap = 24; // leave breathing room at bottom
 		const availHFromTop = Math.max(POLY_MIN, windowHeight - topOffset - bottomGap);
@@ -272,7 +276,9 @@
 			setTimeout(() => {
 				try {
 					containerEl?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-				} catch {}
+				} catch (e) {
+					void e;
+				}
 			}, 50);
 		}
 	}
@@ -537,7 +543,7 @@
 									></div>
 								{/if}
 								{#if lineBuckets.length}
-									{#each lineBuckets as b}
+									{#each lineBuckets as b (b.x)}
 										{#if effectiveOrientation === 'vertical'}
 											<div
 												class="absolute right-0 left-0 -translate-y-1/2"
@@ -564,15 +570,19 @@
 									{/each}
 								{/if}
 								{#if effectiveOrientation === 'vertical'}
-									{#each [0.25, 0.5, 0.75] as g}<div
+									{#each [0.25, 0.5, 0.75] as g (g)}
+										<div
 											class="absolute right-0 left-0 h-px bg-white/10"
 											style="top:{(1 - g) * 100}%"
-										></div>{/each}
+										></div>
+									{/each}
 								{:else}
-									{#each [0.25, 0.5, 0.75] as g}<div
+									{#each [0.25, 0.5, 0.75] as g (g)}
+										<div
 											class="absolute top-0 bottom-0 w-px bg-white/10"
 											style="left:{g * 100}%"
-										></div>{/each}
+										></div>
+									{/each}
 								{/if}
 								{#if effectiveOrientation === 'vertical'}
 									<div
@@ -700,7 +710,7 @@
 									<defs>
 										<clipPath id="clip-{instanceId}"><path d={pathD} /></clipPath>
 										{#if chartData.poll.gradients?.enabled && chartData.poll.gradients.colors && edgeMidpoints.length === chartData.poll.gradients.colors.length}
-											{#each edgeMidpoints as m, i}
+											{#each edgeMidpoints as m, i (i)}
 												<radialGradient
 													id="edge-grad-{instanceId}-{i}"
 													cx={m.x * 100 + '%'}
@@ -723,7 +733,7 @@
 										{/if}
 									</defs>
 									{#if chartData.poll.gradients?.enabled && chartData.poll.gradients.colors && edgeMidpoints.length === chartData.poll.gradients.colors.length}
-										{#each edgeMidpoints as m, i}
+										{#each edgeMidpoints as m, i (i)}
 											<circle
 												cx={m.x}
 												cy={m.y}
@@ -740,7 +750,7 @@
 										stroke-width="0.005"
 									/>
 									{#if clusters.length}
-										{#each clusters as c}
+										{#each clusters as c (c.x + '-' + c.y)}
 											<circle
 												class="vote-cloud"
 												cx={c.x}

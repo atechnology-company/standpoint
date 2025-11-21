@@ -10,7 +10,10 @@
 	<title>{status} - Standpoint</title>
 </svelte:head>
 
-<div class="flex min-h-screen items-center justify-center bg-black px-4">
+<div
+	class="theme-transition flex min-h-screen items-center justify-center px-4"
+	style="background-color: var(--bg);"
+>
 	<div class="mx-auto max-w-md text-center">
 		<div class="mb-8">
 			<div class="mb-4 text-6xl font-bold text-white">{status}</div>

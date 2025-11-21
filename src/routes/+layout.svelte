@@ -5,8 +5,9 @@
 	let { children } = $props();
 
 	import { writable } from 'svelte/store';
-	import { setContext } from 'svelte';
+	import { setContext, onMount } from 'svelte';
 	import { fade } from 'svelte/transition';
+	import { currentTheme } from '$lib/themes';
 
 	const navHoverStore = writable(false);
 	setContext('navHover', navHoverStore);
@@ -16,6 +17,18 @@
 	function handleOnboardingComplete() {
 		showOnboarding = false;
 	}
+
+	// Apply theme on mount and subscribe to changes
+	onMount(() => {
+		currentTheme.applyCurrentTheme();
+
+		// Subscribe to theme changes
+		const unsubscribe = currentTheme.subscribe(() => {
+			// Theme already applied by setTheme, but we can trigger re-render if needed
+		});
+
+		return unsubscribe;
+	});
 </script>
 
 <svelte:head>
@@ -41,11 +54,12 @@
 	</script>
 </svelte:head>
 
-<main class="h-full w-full bg-black font-sans">
+<main class="h-full w-full font-sans" style="background-color: var(--bg, #000000);">
 	<Header />
 	{#if $navHoverStore}
 		<div
-			class="pointer-events-none fixed inset-0 z-40 bg-black opacity-90"
+			class="pointer-events-none fixed inset-0 z-40 opacity-90"
+			style="background-color: var(--bg, #000000);"
 			transition:fade={{ duration: 300 }}
 		></div>
 	{/if}

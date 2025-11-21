@@ -11,6 +11,13 @@
 	--primary-soft: var(--primary-soft, 0 0 0);
 	--primary-rgb: 255, 107, 53;
 	--primary-light-rgb: 255, 180, 120;
+
+	/* Theme system defaults */
+	--bg: #0f0f0f;
+	--surface: #1a1a1a;
+	--text: #ffffff;
+	--text-secondary: #a0a0a0;
+	--border: #333333;
 }
 
 .text-accent-soft {
@@ -119,4 +126,36 @@ html {
 		'wght' 400,
 		'GRAD' 0,
 		'opsz' 24;
+}
+
+/* Theme-aware classes */
+.theme-bg {
+	background-color: var(--bg);
+}
+
+.theme-surface {
+	background-color: var(--surface);
+}
+
+.theme-text {
+	color: var(--text);
+}
+
+.theme-text-secondary {
+	color: var(--text-secondary);
+}
+
+.theme-border {
+	border-color: var(--border);
+}
+
+/* Smooth theme transitions - selective application */
+:root,
+body,
+main,
+.theme-transition {
+	transition:
+		background-color 0.3s ease,
+		color 0.3s ease,
+		border-color 0.3s ease;
 }

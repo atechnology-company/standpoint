@@ -32,7 +32,7 @@
 	<title>Drafts - Standpoint</title>
 </svelte:head>
 
-<div class="min-h-screen bg-black text-white">
+<div class="theme-transition min-h-screen" style="background-color: var(--bg); color: var(--text);">
 	<div class="container mx-auto max-w-4xl px-6 py-8">
 		<div class="mb-8">
 			<h1 class="mb-2 text-3xl font-bold">Tier List Drafts</h1>
@@ -50,7 +50,7 @@
 				</p>
 				<a
 					href="/tierlists/create"
-					class="bg-orange-500 px-6 py-3 font-bold text-white transition-colors hover:bg-orange-600"
+					class="bg-[rgb(var(--primary))] px-6 py-3 font-bold text-white transition-colors hover:bg-[rgb(var(--primary))]"
 				>
 					Create Tier List
 				</a>
@@ -87,7 +87,7 @@
 							<div class="ml-4 flex flex-col gap-2">
 								<a
 									href="/tierlists/create?draft={draft.id}"
-									class="bg-orange-500 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-orange-600"
+									class="bg-[rgb(var(--primary))] px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-[rgb(var(--primary))]"
 								>
 									Continue Editing
 								</a>

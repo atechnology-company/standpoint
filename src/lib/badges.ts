@@ -27,8 +27,10 @@ export const BADGES: Badge[] = [
 		name: 'Pro',
 		description: 'Standpoint Pro subscriber',
 		icon: '✨',
-		color: 'from-yellow-400 to-orange-500',
-		borderColor: 'border-yellow-400',
+		// Use theme-based gradient for Pro so it responds to user's selected accents
+		color: 'linear-gradient(90deg, rgb(var(--primary)), rgb(var(--secondary)))',
+		// borderColor as CSS value so components can apply it directly
+		borderColor: 'rgb(var(--primary))',
 		requirement: (stats) => stats.pro
 	},
 	{
@@ -36,8 +38,8 @@ export const BADGES: Badge[] = [
 		name: 'Developer',
 		description: 'Standpoint Developer',
 		icon: '⚡',
-		color: 'from-cyan-400 to-blue-500',
-		borderColor: 'border-cyan-400',
+		color: 'linear-gradient(90deg, rgb(var(--secondary)), rgb(var(--primary)))',
+		borderColor: 'rgb(var(--secondary))',
 		requirement: (stats) => stats.dev
 	}
 ];

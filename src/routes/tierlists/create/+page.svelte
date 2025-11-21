@@ -1985,10 +1985,10 @@
 	>
 </svelte:head>
 <div
-	class="fixed inset-0 flex flex-col bg-black text-white {tierList.type === 'dynamic'
+	class="theme-transition fixed inset-0 flex flex-col {tierList.type === 'dynamic'
 		? 'dynamic-gradient-bg'
 		: ''}"
-	style="height: 100vh;"
+	style="background-color: var(--bg); color: var(--text); height: 100vh;"
 >
 	<!-- Banner-->
 	{#if tierList.bannerImage}
@@ -1999,7 +1999,8 @@
 	{/if}
 	<!-- Header -->
 	<div
-		class="relative z-10 flex min-h-[56px] items-center justify-between border-b border-gray-700 bg-black/80 px-6 py-4"
+		class="theme-transition relative z-10 flex min-h-[56px] items-center justify-between border-b px-6 py-4"
+		style="border-color: var(--border); background-color: rgba(0, 0, 0, 0.8);"
 		in:fade={{ duration: 400 }}
 		out:fade={{ duration: 200 }}
 	>
@@ -3167,7 +3168,7 @@
 							</button>
 						{/if}
 						<button
-							class="w-full bg-orange-500 px-4 py-2 font-bold text-white transition-colors hover:bg-orange-600"
+							class="w-full bg-[rgb(var(--primary))] px-4 py-2 font-bold text-white transition-colors hover:bg-[rgb(var(--primary))]"
 							on:click={closeColorPicker}
 						>
 							Done
@@ -3314,7 +3315,7 @@
 					Delete Item
 				</button>
 				<button
-					class="flex-1 bg-orange-500 px-4 py-2 font-bold text-white transition-colors hover:bg-orange-600"
+					class="flex-1 bg-[rgb(var(--primary))] px-4 py-2 font-bold text-white transition-colors hover:bg-[rgb(var(--primary))]"
 					on:click={updateItem}
 				>
 					Save Changes
@@ -3335,7 +3336,7 @@
 			>
 				&times;
 			</button>
-			<h2 class="mb-4 text-2xl font-bold text-orange-400">Gemini Debug Info</h2>
+			<h2 class="mb-4 text-2xl font-bold" style="color: rgb(var(--primary));">Gemini Debug Info</h2>
 			<div class="mb-6">
 				<div class="mb-2 text-sm font-semibold text-gray-300">Prompt Sent to Gemini:</div>
 				<pre

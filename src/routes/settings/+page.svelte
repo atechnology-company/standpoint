@@ -11,6 +11,11 @@
 	import { goto } from '$app/navigation';
 	import Toast from '../../components/toast.svelte';
 	import LoadingIndicator from '../../components/loading-indicator.svelte';
+	import UploadProgress from '../../components/upload-progress.svelte';
+	import { currentTheme, themes, setThemeAccent } from '$lib/themes';
+
+	// Preset accent swatches available per-theme
+	const accentPresets = ['#FF6B35', '#FF356B', '#C0FF05', '#05FFAC', '#00FFFF', '#B400FF'];
 
 	export let data: { userProfile: UserProfile | null };
 
@@ -54,6 +59,27 @@
 		fontSize: 'medium'
 	};
 
+	// Local hex values for custom accent pickers
+	let primaryHex = '#ff6b35';
+	let secondaryHex = '#ffb478';
+
+	function hexToRgbString(hex: string) {
+		if (!hex) return '255, 107, 53';
+		const h = hex.replace('#', '');
+		const bigint = parseInt(h, 16);
+		const r = (bigint >> 16) & 255;
+		const g = (bigint >> 8) & 255;
+		const b = bigint & 255;
+		return `${r}, ${g}, ${b}`;
+	}
+
+	function rgbStringToHex(rgb: string) {
+		const parts = rgb.split(',').map((p) => Number(p.trim()));
+		if (parts.length < 3) return '#ff6b35';
+		const [r, g, b] = parts;
+		return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+	}
+
 	let aiForm = {
 		enableAI: false,
 		aiSuggestions: false,
@@ -64,14 +90,30 @@
 	let avatarFileInput: HTMLInputElement;
 	let bannerFileInput: HTMLInputElement;
 
+	// Upload progress tracking
+	let uploadProgress = 0;
+	let isUploading = false;
+	let uploadType = '';
+
 	// File upload handlers
 	async function handleAvatarUpload(event: Event) {
 		const target = event.target as HTMLInputElement;
 		const file = target.files?.[0];
 		if (file && $currentUser) {
 			try {
-				addToast('Uploading avatar...', 'info');
-				const downloadURL = await uploadProfileImage(file, $currentUser.uid, 'avatar');
+				isUploading = true;
+				uploadType = 'avatar';
+				uploadProgress = 0;
+
+				const downloadURL = await uploadProfileImage(
+					file,
+					$currentUser.uid,
+					'avatar',
+					(progress) => {
+						uploadProgress = progress;
+					}
+				);
+
 				profileForm.avatarUrl = downloadURL;
 
 				await updateUserProfile($currentUser.uid, {
@@ -88,6 +130,8 @@
 			} catch (error) {
 				console.error('Error uploading avatar:', error);
 				addToast('Failed to upload avatar', 'error');
+			} finally {
+				isUploading = false;
 			}
 		}
 	}
@@ -97,8 +141,19 @@
 		const file = target.files?.[0];
 		if (file && $currentUser) {
 			try {
-				addToast('Uploading banner...', 'info');
-				const downloadURL = await uploadProfileImage(file, $currentUser.uid, 'banner');
+				isUploading = true;
+				uploadType = 'banner';
+				uploadProgress = 0;
+
+				const downloadURL = await uploadProfileImage(
+					file,
+					$currentUser.uid,
+					'banner',
+					(progress) => {
+						uploadProgress = progress;
+					}
+				);
+
 				profileForm.bannerUrl = downloadURL;
 
 				await updateUserProfile($currentUser.uid, {
@@ -109,6 +164,8 @@
 			} catch (error) {
 				console.error('Error uploading banner:', error);
 				addToast('Failed to upload banner', 'error');
+			} finally {
+				isUploading = false;
 			}
 		}
 	}
@@ -149,6 +206,11 @@
 			fontSize: userProfile.fontSize || 'medium'
 		};
 		setAccent(themeForm.colorScheme);
+
+		// initialize custom accent picker values from the selected theme
+		const selected = themes.find((t) => t.id === themeForm.theme) || themes[0];
+		primaryHex = rgbStringToHex(selected.colors.primary);
+		secondaryHex = rgbStringToHex(selected.colors.secondary);
 
 		aiForm = {
 			enableAI: userProfile.enableAI ?? false,
@@ -363,13 +425,17 @@
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
-<div class="min-h-screen bg-[#060606] text-white">
+<div class="theme-transition min-h-screen" style="background-color: var(--bg); color: var(--text);">
 	<div class="container mx-auto px-6 py-8">
 		<!-- Header -->
 		<div class="mb-8">
 			<h1 class="mb-2 text-4xl font-bold">Settings</h1>
 			<p class="text-gray-400">Manage your account preferences and privacy settings</p>
 		</div>
+
+		{#if isUploading}
+			<UploadProgress progress={uploadProgress} message="Uploading {uploadType}..." />
+		{/if}
 
 		{#if !userProfile}
 			<!-- Loading State -->
@@ -389,7 +455,7 @@
 								return 4 + idx * (40 + 4) + 'px';
 							})()}"
 						></div>
-						{#each [{ id: 'profile', icon: 'person', label: 'Profile' }, { id: 'notifications', icon: 'notifications', label: 'Notifications' }, { id: 'privacy', icon: 'privacy_tip', label: 'Privacy' }, { id: 'theme', icon: 'palette', label: 'Theme', pro: true }, { id: 'ai', icon: 'smart_toy', label: 'AI Features', pro: true }] as item}
+						{#each [{ id: 'profile', icon: 'person', label: 'Profile' }, { id: 'notifications', icon: 'notifications', label: 'Notifications' }, { id: 'privacy', icon: 'privacy_tip', label: 'Privacy' }, { id: 'theme', icon: 'palette', label: 'Theme', pro: true }, { id: 'ai', icon: 'smart_toy', label: 'AI Features', pro: true }] as item (item.id)}
 							<button
 								on:click={() => (activeSection = item.id)}
 								class="relative z-10 flex h-10 w-full items-center px-4 text-left text-sm font-medium tracking-wide transition-colors {activeSection ===
@@ -492,14 +558,16 @@
 												<button
 													type="button"
 													on:click={() => bannerFileInput?.click()}
-													class="bg-black/50 px-4 py-2 text-sm text-white transition-colors hover:bg-black/70"
+													class="theme-transition px-4 py-2 text-sm transition-colors"
+													style="background-color: rgba(0,0,0,0.5); color: var(--text);"
 												>
 													Change Banner
 												</button>
 											{:else}
 												<button
 													disabled
-													class="cursor-not-allowed bg-black/50 px-4 py-2 text-sm text-gray-400"
+													class="theme-transition cursor-not-allowed px-4 py-2 text-sm"
+													style="background-color: rgba(0,0,0,0.5); color: var(--text-secondary);"
 												>
 													Change Banner
 												</button>
@@ -851,51 +919,117 @@
 					{#if activeSection === 'theme'}
 						<div class="border border-gray-700 bg-gray-800/50 p-8 backdrop-blur-sm">
 							<h2 class="mb-6 text-2xl font-bold">Theme & Appearance</h2>
-							{#if $hasProAccessStore}
-								<div class="space-y-6">
-									<!--<div>
-										<label for="theme" class="mb-2 block text-sm font-medium text-gray-300">
-											Theme
-										</label>
-										<select
-											id="theme"
-											bind:value={themeForm.theme}
-											class="w-full border border-gray-600 bg-gray-700 px-4 py-3 text-white focus:border-transparent focus:ring-2 focus:ring-[rgb(var(--primary))]"
-										>
-											<option value="dark">Dark</option>
-											<option value="light">Light</option>
-											<option value="auto">Auto</option>
-										</select>
-									</div>-->
-
-									<div>
-										<label for="colorScheme" class="mb-2 block text-sm font-medium text-gray-300">
-											Color Scheme
-										</label>
-										<div class="flex flex-wrap gap-2">
-											{#each [{ value: 'orange', label: 'Orange', hex: '#FF6B35' }, { value: 'red', label: 'Red', hex: '#FF356B' }, { value: 'lime', label: 'Lime', hex: '#C0FF05' }, { value: 'green', label: 'Green', hex: '#05FFAC' }, { value: 'blue', label: 'Blue', hex: '#00FFFF' }, { value: 'purple', label: 'Purple', hex: '#B400FF' }] as accent}
-												<button
-													type="button"
-													class="h-10 w-20 border-2 border-gray-700 font-semibold text-white transition-all duration-150 focus:ring-2 focus:ring-white focus:outline-none"
-													style="background: {accent.hex}; opacity: {themeForm.colorScheme ===
-													accent.value
-														? 1
-														: 0.7}; box-shadow: {themeForm.colorScheme === accent.value
-														? '0 0 0 2px white'
-														: 'none'};"
-													aria-label={accent.label}
-													on:click={() => {
-														themeForm.colorScheme = accent.value;
-														setAccent(accent.value);
-													}}
+							<div class="space-y-6">
+								<div>
+									<label for="theme" class="mb-3 block text-sm font-medium text-gray-300">
+										Theme Style
+									</label>
+									<div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+										{#each themes as theme (theme.id)}
+											<button
+												type="button"
+												on:click={() => {
+													themeForm.theme = theme.id;
+													currentTheme.setTheme(theme.id);
+												}}
+												class="group relative overflow-hidden border-2 p-4 text-left transition-all hover:scale-105 {themeForm.theme ===
+												theme.id
+													? 'border-[rgb(var(--primary))] shadow-lg shadow-[rgb(var(--primary))]/30'
+													: 'border-gray-600 hover:border-gray-500'}"
+												style="background: {theme.colors.surface};"
+											>
+												<div class="mb-2 flex items-center justify-between">
+													<span class="text-sm font-bold" style="color: {theme.colors.text};">
+														{theme.name}
+													</span>
+													{#if themeForm.theme === theme.id}
+														<span
+															class="material-symbols-outlined text-sm"
+															style="color: rgb(var(--primary));">check_circle</span
+														>
+													{/if}
+												</div>
+												<p
+													class="mb-3 text-xs opacity-70"
+													style="color: {theme.colors.textSecondary};"
 												>
-													{accent.label}
-												</button>
-											{/each}
+													{theme.description}
+												</p>
+												<div class="flex gap-1">
+													<div
+														class="h-6 w-6 border border-gray-500"
+														style="background: rgb({theme.colors.primary});"
+													></div>
+													<div
+														class="h-6 w-6 border border-gray-500"
+														style="background: {theme.colors.background};"
+													></div>
+													<div
+														class="h-6 w-6 border border-gray-500"
+														style="background: {theme.colors.surface};"
+													></div>
+												</div>
+											</button>
+										{/each}
+									</div>
+								</div>
+
+								<div>
+									<label for="colorScheme" class="mb-2 block text-sm font-medium text-gray-300">
+										Accent (pick or use custom)
+									</label>
+									<div class="mb-3 flex items-center gap-2">
+										{#each accentPresets as preset (preset)}
+											<button
+												type="button"
+												class="h-8 w-8 transform rounded-full border-2 transition-transform hover:scale-110"
+												style="background: {preset}; border-color: rgba(255,255,255,0.12);"
+												aria-label="Select accent {preset}"
+												on:click={() => {
+													// apply per-theme accent (store as rgb)
+													const rgb = hexToRgbString(preset);
+													setThemeAccent(themeForm.theme, rgb, rgb);
+													primaryHex = preset;
+												}}
+											></button>
+										{/each}
+									</div>
+								</div>
+
+								<!-- Custom accent pickers -->
+								<div>
+									<div class="mb-2 block text-sm font-medium text-gray-300">Custom Accent</div>
+									<div class="flex items-center gap-4">
+										<div class="flex items-center gap-2">
+											<label for="primaryAccent" class="text-sm text-gray-300">Primary</label>
+											<input
+												id="primaryAccent"
+												type="color"
+												bind:value={primaryHex}
+												on:input={() => {
+													const rgb = hexToRgbString(primaryHex);
+													setThemeAccent(themeForm.theme, rgb, hexToRgbString(secondaryHex));
+													addToast('Primary accent applied', 'success');
+												}}
+											/>
+										</div>
+										<div class="flex items-center gap-2">
+											<label for="secondaryAccent" class="text-sm text-gray-300">Secondary</label>
+											<input
+												id="secondaryAccent"
+												type="color"
+												bind:value={secondaryHex}
+												on:input={() => {
+													const rgb = hexToRgbString(secondaryHex);
+													setThemeAccent(themeForm.theme, hexToRgbString(primaryHex), rgb);
+													addToast('Secondary accent applied', 'success');
+												}}
+											/>
 										</div>
 									</div>
+								</div>
 
-									<!--<div>
+								<!--<div>
 										<label for="fontSize" class="mb-2 block text-sm font-medium text-gray-300">
 											Font Size
 										</label>
@@ -917,26 +1051,7 @@
 									>
 										{saving ? 'Saving...' : 'Save Theme'}
 									</button>-->
-								</div>
-							{:else}
-								<div class="py-12 text-center">
-									<div class="mb-4">
-										<span class="text-6xl">🎨</span>
-									</div>
-									<h3 class="mb-2 text-xl font-bold text-white">Pro Feature</h3>
-									<p class="mb-6 text-gray-400">
-										Unlock advanced theme customization with Standpoint Pro
-									</p>
-									<a
-										href="/pro"
-										class="inline-flex items-center px-6 py-3 font-medium text-white transition-all"
-										style="background:linear-gradient(90deg,var(--pro-grad-stop-1),var(--pro-grad-stop-2),var(--pro-grad-stop-3));"
-									>
-										<span>✨</span>
-										<span class="ml-2">Upgrade to Pro</span>
-									</a>
-								</div>
-							{/if}
+							</div>
 						</div>
 					{/if}
 

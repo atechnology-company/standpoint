@@ -221,7 +221,10 @@
 	<title>{userProfile?.displayName || 'User Profile'} - Standpoint</title>
 </svelte:head>
 
-<div class="flex min-h-screen flex-col bg-black text-white">
+<div
+	class="theme-transition flex min-h-screen flex-col"
+	style="background-color: var(--bg); color: var(--text);"
+>
 	{#if userProfile}
 		<!-- Profile Header Section -->
 		<div class="relative w-full">
@@ -237,7 +240,10 @@
 							style="opacity:0.5;"
 						/>
 					{:else}
-						<div class="bg-opacity-30 absolute inset-0 z-0 h-full w-full bg-black"></div>
+						<div
+							class="absolute inset-0 z-0 h-full w-full"
+							style="background-color: var(--bg); opacity: 0.3;"
+						></div>
 					{/if}
 				</div>
 				<div
@@ -260,7 +266,13 @@
 							<div class="mb-2 flex flex-wrap gap-3">
 								{#each userBadges.slice(0, 4) as badge}
 									<div
-										class="flex items-center gap-1.5 border bg-gray-900 px-3 py-1.5 text-sm text-white {badge.borderColor}"
+										class="theme-transition flex items-center gap-1.5 border px-3 py-1.5 text-sm"
+										style="background: {badge.color &&
+										badge.color.startsWith &&
+										badge.color.startsWith('linear')
+											? badge.color
+											: 'var(--surface)'}; color: var(--text); border-color: {badge.borderColor ||
+											'var(--border)'}"
 										title={badge.description}
 									>
 										<span>{badge.icon}</span>
@@ -270,7 +282,10 @@
 							</div>
 						{/if}
 						<!-- Username (UID) -->
-						<div class="mb-1 font-mono text-xs text-gray-400">
+						<div
+							class="theme-transition mb-1 font-mono text-xs"
+							style="color: var(--text-secondary);"
+						>
 							@{resolvedUid}
 						</div>
 						<!-- Name -->
@@ -281,20 +296,27 @@
 									bind:value={editingValue}
 									on:keydown={(e) => handleKeydown(e, 'displayName')}
 									on:blur={() => saveField('displayName')}
-									class="font-display border-b-2 border-orange-500 bg-transparent text-4xl font-bold text-white focus:outline-none"
+									class="font-display theme-transition border-b-2 bg-transparent text-4xl font-bold focus:outline-none"
+									style="border-color: rgb(var(--primary)); color: var(--text);"
 									placeholder="Enter display name"
 								/>
 							{:else if isOwnProfile}
 								<button
 									type="button"
-									class="font-display cursor-pointer text-left text-4xl font-bold text-white transition-all duration-300 hover:text-orange-400"
+									class="font-display theme-transition cursor-pointer text-left text-4xl font-bold transition-all duration-300"
+									style="color: var(--text);"
 									on:click={() => startEdit('displayName', userProfile.displayName || '')}
+									on:mouseenter={(e) => (e.currentTarget.style.color = 'rgb(var(--primary))')}
+									on:mouseleave={(e) => (e.currentTarget.style.color = 'var(--text)')}
 									title="Click to edit"
 								>
 									{userProfile.displayName || 'Anonymous User'}
 								</button>
 							{:else}
-								<h1 class="font-display text-4xl font-bold text-white">
+								<h1
+									class="font-display theme-transition text-4xl font-bold"
+									style="color: var(--text);"
+								>
 									{userProfile.displayName || 'Anonymous User'}
 								</h1>
 							{/if}
@@ -306,21 +328,28 @@
 									bind:value={editingValue}
 									on:keydown={(e) => handleKeydown(e, 'bio')}
 									on:blur={() => saveField('bio')}
-									class="font-body w-full resize-none border border-gray-600 bg-transparent p-2 text-gray-300 focus:border-orange-500 focus:outline-none"
+									class="font-body theme-transition w-full resize-none border bg-transparent p-2 focus:outline-none"
+									style="border-color: var(--border); color: var(--text-secondary); focus:border-color: rgb(var(--primary));"
 									placeholder="Tell us about yourself..."
 									rows="2"
 								></textarea>
 							{:else if isOwnProfile}
 								<button
 									type="button"
-									class="font-body w-full cursor-pointer text-left text-sm text-gray-300 transition-colors hover:text-white"
+									class="font-body theme-transition w-full cursor-pointer text-left text-sm transition-colors"
+									style="color: var(--text-secondary);"
 									on:click={() => startEdit('bio', userProfile.bio || '')}
+									on:mouseenter={(e) => (e.currentTarget.style.color = 'var(--text)')}
+									on:mouseleave={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
 									title="Click to edit"
 								>
 									{userProfile.bio || 'Click to add a bio...'}
 								</button>
 							{:else}
-								<p class="font-body text-sm whitespace-pre-line text-gray-300">
+								<p
+									class="font-body theme-transition text-sm whitespace-pre-line"
+									style="color: var(--text-secondary);"
+								>
 									{userProfile.bio || ''}
 								</p>
 							{/if}
@@ -331,8 +360,15 @@
 						<div class="flex flex-wrap gap-8">
 							{#each [{ value: stats.aura, label: 'aura' }, { value: stats.followers, label: 'followers' }, { value: stats.following, label: 'following' }] as stat}
 								<div class="flex items-center gap-2">
-									<div class="text-2xl font-bold text-white">{stat.value}</div>
-									<div class="text-sm tracking-wide text-gray-400 uppercase">{stat.label}</div>
+									<div class="theme-transition text-2xl font-bold" style="color: var(--text);">
+										{stat.value}
+									</div>
+									<div
+										class="theme-transition text-sm tracking-wide uppercase"
+										style="color: var(--text-secondary);"
+									>
+										{stat.label}
+									</div>
 								</div>
 							{/each}
 						</div>
@@ -346,7 +382,8 @@
 										href={link.href}
 										target="_blank"
 										rel="noopener noreferrer"
-										class="text-gray-400 transition-colors hover:text-white"
+										class="theme-transition transition-colors hover:brightness-125"
+										style="color: var(--text-secondary);"
 										title={link.title}
 										aria-label="Visit {link.title.toLowerCase()}"
 									>
@@ -403,9 +440,10 @@
 								<button
 									on:click={toggleFollow}
 									disabled={followLoading}
-									class="px-4 py-2 text-sm font-semibold tracking-wide transition-colors disabled:opacity-50 {isFollowingUser
-										? 'bg-gray-700 text-white hover:bg-gray-600'
-										: 'bg-orange-500 text-white hover:bg-orange-600'}"
+									class="theme-transition px-4 py-2 text-sm font-semibold tracking-wide transition-all"
+									style={isFollowingUser
+										? 'background-color: var(--surface); color: var(--text);'
+										: 'background-color: rgb(var(--primary)); color: white;'}
 								>
 									{followLoading
 										? isFollowingUser
@@ -423,7 +461,12 @@
 						<div class="absolute top-4 right-4 z-10">
 							<a
 								href="/settings"
-								class="flex items-center gap-1.5 bg-black/50 px-3 py-1.5 text-sm text-white transition-colors hover:bg-black/70"
+								class="theme-transition flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors"
+								style="background-color: rgba(0, 0, 0, 0.5); color: var(--text);"
+								on:mouseenter={(e) =>
+									(e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.7)')}
+								on:mouseleave={(e) =>
+									(e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.5)')}
 								title="Change banner image in settings"
 							>
 								<svg
@@ -451,16 +494,18 @@
 			</div>
 		</div>
 
-		<div class="mt-8 border-b border-gray-800 bg-black">
+		<div
+			class="theme-transition mt-8 border-b"
+			style="border-color: var(--border); background-color: var(--bg);"
+		>
 			<div class="relative container mx-auto px-0">
 				<nav class="relative flex space-x-12 overflow-x-auto px-6">
 					{#each [{ id: 'creations', label: 'All Creations' }, { id: 'tierlists', label: `Tierlists ${stats.creations}` }, { id: 'polls', label: `Polls ${stats.polls}` }] as tab, i}
 						<button
-							class="relative py-4 text-sm font-bold tracking-wide whitespace-nowrap uppercase transition-colors"
-							class:text-white={selectedTab === tab.id}
-							class:text-gray-500={selectedTab !== tab.id}
-							class:opacity-100={selectedTab === tab.id}
-							class:opacity-60={selectedTab !== tab.id}
+							class="theme-transition relative py-4 text-sm font-bold tracking-wide whitespace-nowrap uppercase transition-colors"
+							style="color: {selectedTab === tab.id
+								? 'var(--text)'
+								: 'var(--text-secondary)'}; opacity: {selectedTab === tab.id ? 1 : 0.6};"
 							on:click={() => (selectedTab = tab.id)}
 						>
 							<span
@@ -470,12 +515,15 @@
 						</button>
 					{/each}
 					<div
-						class="absolute bottom-0 h-[2px] w-20 bg-orange-500 transition-all duration-500 ease-out"
-						style="left:{(() => {
+						class="theme-transition absolute bottom-0 left-6 h-[3px] w-32"
+						style="background-color: rgb(var(--primary)); transform: translateX({(() => {
 							const tabs = ['creations', 'tierlists', 'polls'];
 							const idx = tabs.indexOf(selectedTab);
-							return 24 + idx * (100 / tabs.length) + '%';
-						})()}"
+							const spacing = 48;
+							if (idx === 0) return '0px';
+							if (idx === 1) return `calc(128px + ${spacing}px)`;
+							return `calc(256px + ${spacing * 2}px)`;
+						})()}); transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);"
 					></div>
 				</nav>
 			</div>
@@ -487,17 +535,19 @@
 			{#if selectedTab === 'creations'}
 				{#if userTierlists.length === 0 && userPolls.length === 0}
 					<div class="flex h-48 items-center justify-center">
-						<p class="text-gray-400">No creations found</p>
+						<p class="theme-transition" style="color: var(--text-secondary);">No creations found</p>
 					</div>
 				{:else}
 					{#if userTierlists.length > 0}
 						<div class="mb-8">
-							<h3 class="mb-4 px-6 text-xl font-bold text-white">Tierlists</h3>
+							<h3 class="theme-transition mb-4 px-6 text-xl font-bold" style="color: var(--text);">
+								Tierlists
+							</h3>
 							<div class="grid grid-cols-1 gap-4 px-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
 								{#each userTierlists as tierlist}
 									<div
-										class="relative h-80 cursor-pointer overflow-hidden border border-gray-800 transition-all duration-200 hover:brightness-110"
-										style={tierlist.banner_image || tierlist.thumbnail
+										class="theme-transition relative h-80 cursor-pointer overflow-hidden border transition-all duration-200 hover:brightness-110"
+										style="border-color: var(--border); {tierlist.banner_image || tierlist.thumbnail
 											? `background-image: url('${tierlist.banner_image || tierlist.thumbnail}'); background-size: cover; background-position: center;`
 											: `background-color: ${
 													[
@@ -509,7 +559,7 @@
 														'#FFB5B5',
 														'#B5E5FF'
 													][Math.floor(Math.random() * 7)]
-												};`}
+												};`}"
 										on:click={() => goto(`/tierlists/${tierlist.id}`)}
 										on:keydown={(e) => e.key === 'Enter' && goto(`/tierlists/${tierlist.id}`)}
 										role="button"
@@ -531,7 +581,10 @@
 
 											<!-- Forked indicator -->
 											{#if tierlist.isForked}
-												<div class="mb-2 text-xs text-orange-400">
+												<div
+													class="theme-transition mb-2 text-xs"
+													style="color: rgb(var(--primary));"
+												>
 													<span class="inline-flex items-center">
 														<svg
 															xmlns="http://www.w3.org/2000/svg"
@@ -554,7 +607,10 @@
 											{/if}
 
 											<!-- Stats -->
-											<div class="flex justify-between text-xs text-gray-300">
+											<div
+												class="theme-transition flex justify-between text-xs"
+												style="color: var(--text-secondary);"
+											>
 												<div class="flex items-center space-x-1">
 													<span class="material-symbols-outlined text-xs">favorite</span>
 													<span>{formatNumber(tierlist.likes || 0)}</span>
@@ -578,26 +634,38 @@
 					<!-- Polls -->
 					{#if userPolls.length > 0}
 						<div>
-							<h3 class="mb-4 px-6 text-xl font-bold text-white">Polls</h3>
+							<h3 class="theme-transition mb-4 px-6 text-xl font-bold" style="color: var(--text);">
+								Polls
+							</h3>
 							<div class="grid grid-cols-1 gap-4 px-6 md:grid-cols-2 lg:grid-cols-3">
 								{#each userPolls as poll}
 									<a
 										href="/polls/{poll.id}"
-										class="group relative overflow-hidden bg-gray-900 transition-transform hover:scale-105"
+										class="group theme-transition relative overflow-hidden transition-transform hover:scale-105"
+										style="background-color: var(--surface);"
 									>
 										<!-- Content -->
 										<div class="flex aspect-video flex-col justify-between p-5">
 											<div>
-												<div class="mb-1 text-xs text-gray-400">
+												<div
+													class="theme-transition mb-1 text-xs"
+													style="color: var(--text-secondary);"
+												>
 													{formatDateFull(poll.created_at)}
 												</div>
-												<h3 class="mb-2 line-clamp-2 text-lg font-bold text-white">
+												<h3
+													class="theme-transition mb-2 line-clamp-2 text-lg font-bold"
+													style="color: var(--text);"
+												>
 													{poll.title}
 												</h3>
 											</div>
 
 											<!-- Stats -->
-											<div class="flex justify-between text-xs text-gray-400">
+											<div
+												class="theme-transition flex justify-between text-xs"
+												style="color: var(--text-secondary);"
+											>
 												<div class="flex items-center space-x-1">
 													<span class="material-symbols-outlined text-xs">favorite</span>
 													<span>{formatNumber(poll.likes || 0)}</span>
@@ -621,11 +689,11 @@
 			{:else if selectedTab === 'tierlists'}
 				{#if userTierlists.length === 0}
 					<div class="flex h-48 items-center justify-center">
-						<p class="text-gray-400">No tierlists found</p>
+						<p class="theme-transition" style="color: var(--text-secondary);">No tierlists found</p>
 					</div>
 				{:else}
 					<div class="flex h-48 items-center justify-center">
-						<p class="text-gray-400">No tierlists found</p>
+						<p class="theme-transition" style="color: var(--text-secondary);">No tierlists found</p>
 					</div>
 				{/if}
 			{:else if selectedTab === 'polls'}
@@ -634,19 +702,29 @@
 						{#each userPolls as poll}
 							<a
 								href="/polls/{poll.id}"
-								class="group relative overflow-hidden bg-gray-900 transition-transform hover:scale-105"
+								class="group theme-transition relative overflow-hidden transition-transform hover:scale-105"
+								style="background-color: var(--surface);"
 							>
 								<div class="flex aspect-video flex-col justify-between p-5">
 									<div>
-										<div class="mb-1 text-xs text-gray-400">
+										<div
+											class="theme-transition mb-1 text-xs"
+											style="color: var(--text-secondary);"
+										>
 											{new Date(poll.created_at).toLocaleDateString()}
 										</div>
-										<h3 class="mb-2 line-clamp-2 text-lg font-bold text-white">
+										<h3
+											class="theme-transition mb-2 line-clamp-2 text-lg font-bold"
+											style="color: var(--text);"
+										>
 											{poll.title}
 										</h3>
 									</div>
 
-									<div class="flex justify-between text-xs text-gray-400">
+									<div
+										class="theme-transition flex justify-between text-xs"
+										style="color: var(--text-secondary);"
+									>
 										<div class="flex items-center space-x-1">
 											<span class="material-symbols-outlined text-xs">favorite</span>
 											<span>{formatNumber(poll.likes || 0)}</span>
@@ -666,7 +744,7 @@
 					</div>
 				{:else}
 					<div class="flex h-48 items-center justify-center">
-						<p class="text-gray-400">No polls found</p>
+						<p class="theme-transition" style="color: var(--text-secondary);">No polls found</p>
 					</div>
 				{/if}
 			{/if}
@@ -674,8 +752,10 @@
 	{:else}
 		<div class="flex h-screen items-center justify-center">
 			<div class="text-center">
-				<div class="mb-4 text-xl text-red-400">User not found</div>
-				<a href="/" class="text-orange-400 hover:text-orange-300">← Go Home</a>
+				<div class="mb-4 text-xl" style="color: rgb(var(--primary));">User not found</div>
+				<a href="/" class="transition-all hover:brightness-125" style="color: rgb(var(--primary));"
+					>← Go Home</a
+				>
 			</div>
 		</div>
 	{/if}

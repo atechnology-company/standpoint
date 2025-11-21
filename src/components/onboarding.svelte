@@ -215,7 +215,7 @@
 				</button>
 
 				<div class="flex space-x-2">
-					{#each Array(totalSteps) as _, index}
+					{#each Array(totalSteps) as _, index (index)}
 						<button
 							on:click={() => (currentStep = index)}
 							class="h-3 w-3 transition-colors {index === currentStep

@@ -36,14 +36,17 @@
 				POLL_SIDEBAR_STATE_KEY_PREFIX + selectedPoll.id,
 				showSidebar ? '1' : '0'
 			);
-		} catch {}
+		} catch (e) {
+			void e;
+		}
 	}
 
 	function restoreSidebarStateForPoll(pollId: string) {
 		if (typeof window === 'undefined') return false;
 		try {
 			return localStorage.getItem(POLL_SIDEBAR_STATE_KEY_PREFIX + pollId) === '1';
-		} catch {
+		} catch (e) {
+			void e;
 			return false;
 		}
 	}
@@ -71,7 +74,9 @@
 				try {
 					const persisted = localStorage.getItem(POLL_LIST_STATE_KEY);
 					if (persisted !== null) showPollList = persisted === '1';
-				} catch {}
+				} catch (e) {
+					void e;
+				}
 			} else {
 				sidebarFloating = true;
 				// on mobile always hide list when viewing detail? keep current state.
@@ -538,11 +543,12 @@
 	$: chartData = renderChart(selectedPoll);
 </script>
 
-<div class="flex min-h-[calc(100vh-5rem)] bg-black">
+<div class="theme-transition flex min-h-[calc(100vh-5rem)]" style="background-color: var(--bg);">
 	<!-- Collapsible Poll List -->
 	{#if showPollList}
 		<div
-			class="relative flex h-[calc(100vh-5rem)] w-80 flex-col border-r border-white/10 bg-black md:w-96"
+			class="theme-transition relative flex h-[calc(100vh-5rem)] w-80 flex-col border-r border-white/10 md:w-96"
+			style="background-color: var(--bg);"
 			transition:slide
 		>
 			<div class="flex items-center justify-between border-b border-white/10 px-4 py-3 md:hidden">
@@ -572,7 +578,7 @@
 					</div>
 				{:else}
 					<div class="overflow-hidden">
-						{#each polls as poll}
+						{#each polls as poll (poll.id)}
 							<div
 								class="hover:border-accent cursor-pointer border-2 border-transparent bg-white/10 p-6 backdrop-blur transition-all duration-300 hover:bg-white/20"
 								class:bg-accent={selectedPoll?.id === poll.id}
@@ -587,7 +593,7 @@
 								</div>
 
 								<div class="flex flex-wrap gap-2 overflow-hidden text-xs">
-									{#each poll.options as option, i}
+									{#each poll.options as option, i (i)}
 										<span
 											class="flex flex-shrink-0 items-center space-x-1 bg-white/10 px-2 py-1 text-white/80"
 										>
@@ -623,7 +629,10 @@
 		</div>
 	{/if}
 	<!-- Chart / Main Area -->
-	<div class="relative flex h-[calc(100vh-5rem)] flex-1 items-center justify-center bg-black">
+	<div
+		class="theme-transition relative flex h-[calc(100vh-5rem)] flex-1 items-center justify-center"
+		style="background-color: var(--bg);"
+	>
 		<!-- Show toggle control when list hidden -->
 		{#if !showPollList}
 			<button
@@ -829,7 +838,7 @@
 							<span>{responseTypes.find((t) => t.value === poll.responseType)?.label}</span>
 						</div>
 						<div class="flex flex-wrap gap-2 text-xs">
-							{#each poll.customOptions as option, index}
+							{#each poll.customOptions as option, index (index)}
 								<span class="flex items-center space-x-2 bg-white/10 px-3 py-1 text-white/80">
 									<div
 										class="h-3 w-3 border border-white/30"

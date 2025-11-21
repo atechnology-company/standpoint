@@ -74,7 +74,8 @@
 </script>
 
 <div
-	class="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden bg-neutral-950"
+	class="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden"
+	style="background-color: var(--bg); color: var(--text);"
 >
 	<div class="absolute inset-0 -z-10">
 		<svg
@@ -96,7 +97,7 @@
 		</svg>
 	</div>
 	<div class="flex w-full max-w-3xl flex-col items-center px-6 py-20">
-		<h1 class="mb-6 text-5xl font-extrabold tracking-tight text-white md:text-6xl">
+		<h1 class="mb-6 text-5xl font-extrabold tracking-tight md:text-6xl" style="color: var(--text);">
 			Standpoint Pro
 		</h1>
 		<div class="mx-auto mb-8 max-w-2xl text-xl font-medium text-neutral-200 md:text-2xl">
@@ -104,14 +105,14 @@
 				>One-time purchase: <span class="font-bold text-indigo-400">$40</span></span
 			>
 		</div>
-		<ul class="mb-12 grid w-full grid-cols-1 gap-6 text-lg text-neutral-200 md:grid-cols-2">
+		<ul class="mb-12 grid w-full grid-cols-1 gap-6 text-lg md:grid-cols-2">
 			<li class="flex items-center gap-3 border border-neutral-800 bg-neutral-900/80 px-6 py-5">
-				<span class="material-symbols-outlined text-indigo-400">palette</span> Customise accent color,
-				backgrounds, and fonts
+				<span class="material-symbols-outlined" style="color: rgb(var(--primary))">palette</span> Customise
+				accent color, backgrounds, and fonts
 			</li>
 			<li class="flex items-center gap-3 border border-neutral-800 bg-neutral-900/80 px-6 py-5">
-				<span class="material-symbols-outlined text-orange-400">poll</span> Create unlimited polls with
-				advanced analytics
+				<span class="material-symbols-outlined" style="color: rgb(var(--primary))">poll</span> Create
+				unlimited polls with advanced analytics
 			</li>
 			<li class="flex items-center gap-3 border border-neutral-800 bg-neutral-900/80 px-6 py-5">
 				<span class="material-symbols-outlined text-pink-400">auto_awesome</span> AI-powered tierlist
@@ -134,8 +135,8 @@
 				content performance
 			</li>
 			<li class="flex items-center gap-3 border border-neutral-800 bg-neutral-900/80 px-6 py-5">
-				<span class="material-symbols-outlined text-red-400">verified</span> Verified Pro badge on your
-				profile
+				<span class="material-symbols-outlined" style="color: rgb(var(--primary))">verified</span> Verified
+				Pro badge on your profile
 			</li>
 		</ul>
 		{#if loading}
@@ -149,7 +150,8 @@
 				<div class="mb-2 text-red-400">{error}</div>
 			{/if}
 			<button
-				class="animated-buy-btn w-full bg-indigo-600 px-10 py-4 text-xl font-bold text-white shadow-lg transition-all duration-200 hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-300 focus:outline-none md:w-auto"
+				class="animated-buy-btn w-full px-10 py-4 text-xl font-bold text-white shadow-lg transition-all duration-200 md:w-auto"
+				style="background-color: rgb(var(--primary));"
 				on:click={handlePurchase}
 				disabled={!user}
 			>

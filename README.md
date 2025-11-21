@@ -38,14 +38,28 @@ pnpm dev
 
 ## Version History
 
+### v0.7.1
+- visual improvements
+- (need to fix a few things i cbf rn)
+- will put this on lts sometime i got other things to do
+
 ### v0.7.0 - Pure SvelteKit Release
 
 - **removed Python/Sanic backend entirely** - now pure SvelteKit with Firebase
 - **migrated Stripe to SvelteKit server routes** - checkout and verification working
+- **XSS prevention & security hardening** - input sanitization, CSP headers, validated inputs
+- **notification system with bundling** - like/comment/fork notifications bundle together intelligently
+- **upload progress indicators** - visual progress for image uploads
+- **image deduplication** - perceptual hashing prevents duplicate uploads
+- **theme system** - 10 beautiful themes (Dark, Light, Sepia, Nord, Dracula, Neo Tokyo, Taiga, Sunset, Midnight, Sakura)
+- **fork attribution** - tierlists properly link back to originals
+- **profile picture loading** - fixed avatar display in header
 - all data operations now use Firebase directly (polls, tierlists, votes)
 - simplified architecture: one runtime, one deployment
+- fixed polls page preloading error
 - fixed all TypeScript and accessibility warnings
 - updated dev workflow to single `pnpm dev` command
+- editing tierlists
 
 ### v0.6.0
 
@@ -163,24 +177,13 @@ _i want to sleep so bad_
 - change image api
 - multiplayer
 - live
-- ~~fixing stripe and pro purchasing~~ ✅
 - make search more efficient with a firebase searching service
-- fix half baked mobile ui
-- finish accent color implementation and theming and update settings display
-- uploading indicators
-- **editing tierlists after publishing**
-- fix linking forking to its original tierlist
-- xss prevention
-- notifications
 - image logic after transferring to new implementation is cooked
 - image cropping after placing and more tools
 - item colors
 - on hover parse items to gemini to explain them
 - ai powered pattern analysis in polls and tierlists
 - update accents to be part of poll presets
-- light and dark mode (add sepia, taiga, nord, dracula, neo tokyo and more)
-- add different accents based on sepia taiga nord dracula light and dark
-- hash checking as to not upload duplicate images
 - localisation in various languages
 
 ### things i wanna do

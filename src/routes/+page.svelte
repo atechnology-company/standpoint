@@ -24,7 +24,7 @@
 	/>
 </svelte:head>
 
-<div class="min-h-screen bg-black text-white">
+<div class="theme-transition min-h-screen" style="background-color: var(--bg); color: var(--text);">
 	<!-- Hero Section -->
 	<div class="flex min-h-screen flex-col items-center justify-center px-6">
 		<div class="mx-auto max-w-4xl text-center">

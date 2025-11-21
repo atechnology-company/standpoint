@@ -10,6 +10,8 @@
 		signOutUser,
 		hasProAccessStore
 	} from '../lib/stores';
+	import NotificationBell from './notification-bell.svelte';
+	import { getUserProfile } from '../lib/user-profile';
 
 	const navHoverStore = getContext<Writable<boolean>>('navHover');
 
@@ -35,6 +37,33 @@
 
 	function updateIsMobile() {
 		if (typeof window !== 'undefined') isMobile = window.innerWidth < 768;
+	}
+
+	// Load user avatar when user changes
+	$: if ($currentUser) {
+		loadUserAvatar();
+	} else {
+		avatarUrl = null;
+	}
+
+	async function loadUserAvatar() {
+		if (!$currentUser) return;
+
+		// Try photoURL from Firebase Auth first
+		if ($currentUser.photoURL) {
+			avatarUrl = $currentUser.photoURL;
+			return;
+		}
+
+		// Fall back to user profile
+		try {
+			const profile = await getUserProfile($currentUser.uid);
+			if (profile?.photoURL) {
+				avatarUrl = profile.photoURL;
+			}
+		} catch (error) {
+			console.error('Error loading avatar:', error);
+		}
 	}
 
 	onMount(() => {
@@ -205,16 +234,25 @@
 			bind:this={inputEl}
 			bind:value={searchQuery}
 			placeholder="SEARCH"
-			class="flex-1 bg-transparent text-white placeholder:text-white/40 focus:text-white focus:outline-none"
+			class="flex-1 bg-transparent text-white placeholder:bg-transparent placeholder:text-white/40 focus:text-white focus:outline-none"
 		/>
 	</div>
 
-	<div class="ml-auto flex h-full items-center justify-end">
+	<div class="ml-auto flex h-full items-center justify-end gap-4">
 		{#if $currentUser}
-			<div class="flex h-full items-center" role="group">
+			<NotificationBell />
+			<div class="group relative flex h-full items-center" role="group">
 				<a
 					href={'/user/' + $currentUser.uid}
-					class="group/avatar hover:shadow-accent/30 hover:ring-accent h-full w-[80px] cursor-pointer overflow-hidden bg-gray-300 transition-all duration-300 hover:shadow-lg hover:ring-10"
+					class="relative h-full w-[80px] cursor-pointer overflow-hidden bg-gray-300 transition-all duration-300 hover:scale-110 hover:brightness-110"
+					style="box-shadow: 0 0 0 0px rgba(var(--primary), 0); transition: transform 0.3s ease, box-shadow 0.3s ease, filter 0.3s ease;"
+					onmouseenter={(e) => {
+						e.currentTarget.style.boxShadow =
+							'0 10px 30px rgba(var(--primary), 0.4), 0 0 0 3px rgba(var(--primary), 0.6)';
+					}}
+					onmouseleave={(e) => {
+						e.currentTarget.style.boxShadow = '0 0 0 0px rgba(var(--primary), 0)';
+					}}
 					title={$currentUser.displayName || $currentUser.email}
 				>
 					{#if avatarUrl}
@@ -224,6 +262,15 @@
 							<span class="material-symbols-outlined text-4xl text-gray-500">person</span>
 						</div>
 					{/if}
+				</a>
+				<!-- Settings button on hover -->
+				<a
+					href="/settings"
+					class="absolute top-0 right-0 flex h-8 w-8 items-center justify-center bg-[rgb(var(--primary))] text-white opacity-0 transition-all duration-300 group-hover:opacity-100 hover:brightness-110"
+					title="Settings"
+					style="z-index: 10;"
+				>
+					<span class="material-symbols-outlined text-lg">settings</span>
 				</a>
 			</div>
 		{:else}

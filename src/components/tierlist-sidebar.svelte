@@ -938,14 +938,15 @@
 				{#if !isLocal}
 					<!-- Copyable link at bottom left -->
 					<button
-						class="flex-1 truncate pr-4 text-left text-sm text-orange-300 transition-colors hover:text-orange-200"
+						class="flex-1 truncate pr-4 text-left text-sm transition-colors"
 						on:click={copyShareUrl}
 						title="Click to copy link"
+						style="color: rgb(var(--primary));"
 					>
 						{shareUrl}
 					</button>
 				{:else}
-					<div class="flex-1 pr-4 text-left text-xs text-orange-400">
+					<div class="flex-1 pr-4 text-left text-xs" style="color: rgb(var(--primary));">
 						Local draft (not shareable)
 					</div>
 				{/if}

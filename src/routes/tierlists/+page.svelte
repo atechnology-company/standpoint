@@ -125,7 +125,10 @@
 	<title>Tier Lists - Standpoint</title>
 </svelte:head>
 
-<div class="min-h-screen w-full overflow-x-hidden bg-black">
+<div
+	class="theme-transition min-h-screen w-full overflow-x-hidden"
+	style="background-color: var(--bg);"
+>
 	<!-- Hero Carousel -->
 	{#if heroSlides.length > 0}
 		<Hero slides={heroSlides} />
@@ -215,8 +218,8 @@
 								<div class="flex items-center gap-2 opacity-80">
 									{#if tierList._created_local}
 										<span
-											class="flex items-center gap-1 bg-orange-600/70 px-2 py-0.5 text-[10px] font-semibold tracking-wide"
-											>LOCAL</span
+											class="flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold tracking-wide"
+											style="background-color: rgba(var(--primary-rgb), 0.7);">LOCAL</span
 										>
 									{:else}
 										<span class="flex items-center gap-1">

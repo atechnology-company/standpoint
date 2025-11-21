@@ -854,9 +854,11 @@
 				></textarea>
 				<div class="mt-2 flex items-center justify-between">
 					{#if !$currentUser}
-						<p class="text-xs text-orange-300">Sign in to comment</p>
+						<p class="text-xs" style="color: rgb(var(--primary));">Sign in to comment</p>
 					{:else}
-						<p class="text-xs text-orange-300">{commentText.length}/500 characters</p>
+						<p class="text-xs" style="color: rgb(var(--primary));">
+							{commentText.length}/500 characters
+						</p>
 					{/if}
 					<button
 						on:click={addComment}

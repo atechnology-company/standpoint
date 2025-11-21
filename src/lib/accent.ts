@@ -48,7 +48,10 @@ export async function setAccent(color: string) {
 		document.documentElement.style.setProperty('--pro-grad-stop-1', stop1);
 		document.documentElement.style.setProperty('--pro-grad-stop-2', stop2);
 		document.documentElement.style.setProperty('--pro-grad-stop-3', stop3);
-	} catch {}
+	} catch (e) {
+		// If HSL conversion fails for unexpected input, don't crash - log for debugging
+		console.warn('Failed to compute pro gradient stops for accent', e);
+	}
 
 	// Persist preference for logged-in user
 	try {
